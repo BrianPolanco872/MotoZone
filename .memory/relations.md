@@ -1,0 +1,16 @@
+feature-corte-dia-rediseno -> implemented_by_plan -> plan-corte-01
+plan-corte-01 -> implementa_feature -> feature-corte-dia-rediseno
+plan-corte-01 -> implementado_por -> fix-corte-01
+fix-corte-01 -> implementa_feature -> feature-corte-dia-rediseno
+feature-caja-fase2 -> implemented_by_plan -> plan-caja-02
+plan-caja-02 -> implementa_feature -> feature-caja-fase2
+feature-pos-pagos-fase3 -> implemented_by_plan -> plan-pos-03
+plan-pos-03 -> implementa_feature -> feature-pos-pagos-fase3
+plan-pos-03 -> implementado_por -> fix-pos-03
+fix-pos-03 -> implementa_feature -> feature-pos-pagos-fase3
+feature-permisos-seguridad-fase4 -> implemented_by_plan -> plan-permisos-04
+plan-permisos-04 -> implementa_feature -> feature-permisos-seguridad-fase4
+plan-permisos-04 -> implementado_por -> fix-permisos-seguridad-fase4
+fix-permisos-seguridad-fase4 -> implementa_feature -> feature-permisos-seguridad-fase4
+plan-fase-6 -> implementado_por -> fix-cierre-dia-fase6
+plan-fase-1-corte-dia-simple -> implementado_por -> fix-corte-dia-simple

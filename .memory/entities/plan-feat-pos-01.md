@@ -1,0 +1,31 @@
+---
+entity: plan-feat-pos-01
+type: plan
+---
+
+- Tipo: feature
+- Objetivo: Plan técnico detallado para POS, entregado en Fase 1 (análisis y propuesta) sin modificar código ni ejecutar migraciones.
+- Fases: 1 análisis/diseño; 2 autenticación/roles + shell frontend; 3 búsqueda y selección de productos; 4 ventas, pagos, pendientes y tickets; 5 entradas/salidas, ventas del día y devoluciones; 6 pruebas/permisos/correcciones; futura corte de caja.
+- Archivos previstos: rutas web; controladores Auth/Pos; modelos Sale, SaleItem, StockMovement, CashMovement, ProductPriceTier, SaleReturn, SaleReturnItem; servicios SaleService, PricingService, FolioGenerator; FormRequests; políticas/middleware de rol; migraciones; factories; vistas pos/*, ticket, login; JS pos/*; config/pos.php; pruebas Feature/Unit.
+- Cambios BD previstos: users.role/is_active; products.barcode/image_path; sales; sale_items; stock_movements; cash_movements; product_price_tiers; sale_returns; sale_return_items (fase 5).
+- Decisiones pendientes: confirmar repositorio; enfoque de auth/roles sin dependencias nuevas; proteger /admin; esquema de mayoreo; límite caja/corte; reglas de devolución; barcode vs sku; imágenes; formato de folio; datos del ticket; permiso de edición de precios; alcance de métodos de pago.
+- Corte de caja: solo documentar relación futura (cash_sessions, cash_session_id, fórmula de efectivo esperado); no crear tablas ni lógica.
+- Riesgos: introducir autenticación cambia el acceso público actual al panel; bloqueos de stock por concurrencia; doble cobro; manipulación de precios; alcance de devoluciones sin reglas; pruebas con SQLite deben evitar SQL específico de MySQL.
+- Estado: aprobado por el usuario el 2026-10-26. Listo para handoff al agente de implementación (03-fix.md).
+- Decisiones finales: repositorio MotoZone; spatie/laravel-permission; proteger /admin; mayoreo administrable; cash sin sesión; devoluciones solo solicitud; barcode; image_path opcional; folio V-000001; config/pos.php; permiso de edición de precios otorgable por admin; solo efectivo; empleado ve solo sus ventas; timezone America/Mexico_City; IVA editable en productos.
+- Prerrequisitos de implementación: verificar/instalar spatie/laravel-permission 8.3.2; publicar migraciones y config; crear login nativo; CRUD de usuarios/roles/permisos y de productos; definir semántica exacta de IVA (precio final con IVA incluido vs precio antes de IVA); backfill de barcode desde sku.
+- Handoff: la implementación corresponde al agente Fix/Implementación definido en 03-fix.md, no al agente Plan.
+- Plan final v2 (2026-10-26): auth nativa con guard web + Spatie 8.3.2. No agregar users.role; los roles viven en las tablas de Spatie. Mantener users.is_active. Login/logout, rate limit, roles admin/empleado y permisos granulares.
+- CRUD admin requerido: usuarios (crear/editar/asignar rol), roles/permisos (matriz), productos (crear/editar con sku, barcode, image_path, price, tax_rate, stock, categoría, activo, destacado) y precios de mayoreo por producto.
+- Impuestos: products.price es precio final con IVA incluido; products.tax_rate decimal(5,4) editable; sale_items guarda tax_rate, tax_amount, line_subtotal y line_total; sales guarda subtotal, tax_total y total. Ticket puede desglosar IVA.
+- Datos: sales (status pending/paid/cancelled, folio nullable unique, idempotency_key unique, payment_method cash, amount_paid, change_amount, paid_at), sale_items con snapshot, stock_movements, cash_movements, product_price_tiers, sale_returns y sale_return_items. No cash_sessions.
+- Rutas: auth login/logout; POS index, búsqueda por código/texto, mayoreo, ventas (store/pending/duplicate), ticket, ventas del día, tickets anteriores, caja y devoluciones; admin de usuarios/roles/productos/mayoreo.
+- Servicios: SaleService transaccional con lockForUpdate, PricingService (catálogo/mayoreo/manual e IVA), FolioGenerator (V-000001), Idempotencia. Policies de Sale, CashMovement y SaleReturn. Middleware permission/role de Spatie.
+- Frontend: layouts.admin reutilizado, sidebar filtrado por permisos, pos/index.blade.php, parciales de modales, ticket.blade.php, recursos JS vanilla pos/*, config/pos.php. Reutilizar Tailwind y componentes existentes.
+- Pruebas: acceso/roles, productos, búsqueda, carrito, cobro, stock, idempotencia, manipulación de precios, pendientes, caja, ventas del día, tickets y devoluciones. Actualizar AdminTest por auth.
+- Estado: plan final aprobado; listo para que el agente Fix ejecute Fase 2.
+- Fase 2 IMPLEMENTADA el 2026-10-26: Spatie 8.3.2, login/logout nativo, users.is_active, roles admin/empleado, permisos, CRUD de usuarios/roles/productos, protección de /admin y /pos, timezone America/Mexico_City y shell visual del POS. Detalle en fix-pos-fase-2.
+- Fase 2 verificada: 39 tests / 154 assertions, Pint passed, npm run build correcto. Migraciones aplicadas en MySQL local.
+- Desviaciones Fase 2: extensión GD no instalada (test de imagen usa PNG real); no se ejecutó db:seed completo; no se implementaron ventas, caja, tickets, devoluciones ni mayoreo.
+- Pendiente: Fase 3 (búsqueda/selección de productos y mayoreo), Fase 4 (ventas, pagos, pendientes y tickets), Fase 5 (caja, ventas del día y devoluciones), Fase 6 (pruebas/permisos/correcciones).
+- Nota de repositorio: los cambios de Fase 2 están sin commit; el repo raíz solo tiene README.md versionado y existe una carpeta anidada MotoZone con un .git vacío.

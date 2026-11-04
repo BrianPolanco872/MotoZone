@@ -1,0 +1,27 @@
+---
+entity: plan-feat-corte-dia-01
+type: plan
+---
+
+- Tipo: feature
+- Objetivo: Implementar el POS operativo y el módulo «Corte del día» sobre el catálogo, productos, permisos y layout existentes, sin rehacer el sistema.
+- Base: extiende plan-feat-pos-01 (fases 3-6) y la Fase 2 ya implementada (auth, Spatie, CRUD de productos/empleados, shell POS).
+- Decisiones cerradas 2026-11-02: corte global diario con desglose individual por empleado; sin sesión de caja (dinero inicial como entrada manual categoría initial); pagos de clientes/proveedores como cash_movements con categoría; costo en producto para ganancia real; impresión con window.print (ticket 80 mm, corte hoja); solo efectivo en MVP.
+- Modelo de datos nuevo: sales, sale_items, stock_movements, cash_movements, sale_returns, sale_return_items, daily_cuts. Columnas nuevas en products: cost, wholesale_price, min_stock, track_inventory.
+- sales: folio único, user_id cajero, status pending/paid, payment_method cash, subtotal/tax_total/total/amount_paid/change_amount, idempotency_key único, paid_at, notas. sale_items guarda snapshot de nombre, sku, barcode, categoría, precio, costo, IVA, importes y cantidad devuelta.
+- cash_movements: type in/out, category initial/change/sale/customer_payment/supplier_payment/expense/withdrawal/refund/other, amount, concept, sale_id opcional, happened_at, user_id.
+- daily_cuts: cut_key único, cut_date, scope global/employee, user_id opcional, totals JSON, generated_by/generated_at. «Hacer corte» hace upsert del corte global y de un corte por empleado con actividad; no bloquea ventas.
+- Fórmulas del corte: entradas = cambio + dinero inicial; dinero en caja = ventas efectivo + entradas − pagos a proveedores − otras salidas; pagos de contado = ventas en efectivo; pagos de clientes = entradas categoría customer_payment; ventas totales = contado + clientes; ganancia = Σ(line_total − tax_amount − costo×cantidad) − ganancia devuelta; devoluciones se muestran aparte y como ventas netas.
+- Permisos: se conserva Spatie. Se agrega pos.cut.manage al seeder y al catálogo claro por grupos (Ventas, Caja y corte, Tickets y consultas, Devoluciones, Productos). Se reutilizan pos.sell, pos.price.edit, pos.wholesale, pos.cash.manage, pos.tickets.print.own/any, pos.sales.day.own/any, pos.returns.request/aprobar.
+- UI POS: búsqueda por código exacto y texto, productos frecuentes, carrito con cantidades, edición de precio solo con permiso, mayoreo solo con permiso, totales, pago con y cambio, cobrar, dejar pendiente, nueva venta, eliminar línea. Todo con JS vanilla y fetch; el servidor revalida.
+- UI corte: entradas de efectivo, dinero en caja, pagos de contado, pagos de clientes, pagos a proveedores, otras salidas, ventas por departamento, ventas totales, devoluciones, ventas netas, ganancia del día y número de tickets; selector global/empleado; botones Hacer corte de hoy e Imprimir corte; historial por fecha.
+- Productos: formulario con código de barras, descripción, marca, departamento, SKU, precio costo, ganancia %, precio venta, precio mayoreo, IVA, control de inventario, cantidad actual, mínimo, foto y publicación. La ganancia % es calculadora de UI: se guardan costo, precio y mayoreo.
+- Rutas previstas: pos.products.search, pos.sales.store/pending/day/previous/ticket, pos.cash.index/store, pos.returns.index/store/approve/reject, pos.cuts.index/store/print/history. Todas bajo auth + active + permission:pos.access y permisos específicos.
+- Archivos previstos: migraciones nuevas; modelos Sale, SaleItem, StockMovement, CashMovement, SaleReturn, SaleReturnItem, DailyCut; servicios SaleService, PricingService, FolioGenerator, CashMovementService, ReturnService, DailyCutService; FormRequests; controladores Pos y Admin/ProductController; vistas pos/* y admin/products/partials/form.blade.php; JS resources/js/pos/*; config/pos.php; seeders; tests Feature/Unit.
+- Pruebas previstas: búsqueda, carrito, cobro, stock, idempotencia, precio manipulado, mayoreo, pendientes, ticket, caja, corte global y por empleado, devoluciones, permisos, costo/ganancia, formulario de producto.
+- Rollback: banderas pos.features.sales/cash/cuts/returns para desactivar sin desplegar; migraciones nuevas con columnas nullable/default; respaldo previo; rollback por pasos solo en ventana de mantenimiento porque las tablas nuevas contienen ventas.
+- Riesgos: redondeo de dinero, doble cobro, descuadre por devoluciones, límites de día por zona horaria, usuarios soft-deleted referenciados, borrado de categorías con productos, rendimiento de búsqueda LIKE, impresión variable según navegador/impresora, permisos mal asignados.
+- Alternativas descartadas: sesión formal de caja (más control pero retrasa la salida), módulos completos de clientes/proveedores (proyecto aparte), PDF con dependencia nueva (se usa impresión del navegador), cantidades decimales para granel/paquete (fuera de alcance MVP), carrito server-side (más latencia; se revalida en servidor).
+- Estado: IMPLEMENTADO. Implementado por fix-feat-corte-dia-01 el 2026-11-02.
+- Cambios aplicados: migraciones ejecutadas, modelos y servicios creados, controladores y rutas registradas, vistas del POS y corte implementadas, navegación del layout actualizada, pruebas nuevas escritas y pasando (63 tests / 247 assertions), Pint aplicado, npm run build correcto.
+- Desviaciones: ninguna relevante; todas las funcionalidades del plan implementadas (venta, stock, idempotencia, caja, devoluciones, corte global/por empleado, producto con costo).
