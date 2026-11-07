@@ -9,7 +9,7 @@
         body {
             margin: 0;
             padding: 12px;
-            background: #f1f5f9;
+            background: #111318;
             font-family: "Courier New", ui-monospace, monospace;
             color: #0f172a;
         }
@@ -25,9 +25,9 @@
             flex: 1;
             padding: 10px 12px;
             border-radius: 8px;
-            border: 1px solid #cbd5e1;
-            background: #fff;
-            color: #334155;
+            border: 1px solid #374151;
+            background: #1C2028;
+            color: #FFFFFF;
             font-size: 13px;
             font-weight: 600;
             text-align: center;
@@ -35,9 +35,12 @@
             cursor: pointer;
         }
         .toolbar button.primary {
-            background: #0f172a;
-            border-color: #0f172a;
+            background: #F97316;
+            border-color: #F97316;
             color: #fff;
+        }
+        .toolbar button.primary:hover {
+            background: #EA580C;
         }
         .ticket {
             width: {{ (int) ($settings['ticket']['width_mm'] ?? 80) }}mm;

@@ -20,11 +20,40 @@
         body {
             margin: 0;
             padding: 8px;
-            background: #ffffff;
+            background: #111318;
             font-family: "Courier New", ui-monospace, monospace;
             color: #0f172a;
             font-size: 11px;
             line-height: 1.4;
+        }
+        .toolbar {
+            max-width: 320px;
+            margin: 0 auto 12px;
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        }
+        .toolbar button, .toolbar a {
+            flex: 1;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid #374151;
+            background: #1C2028;
+            color: #FFFFFF;
+            font-size: 13px;
+            font-weight: 600;
+            text-align: center;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .toolbar button.primary {
+            background: #F97316;
+            border-color: #F97316;
+            color: #fff;
+        }
+        .toolbar button.primary:hover {
+            background: #EA580C;
         }
         .sheet {
             width: {{ (int) ($settings['ticket']['width_mm'] ?? 80) }}mm;
@@ -72,12 +101,18 @@
         .footer { margin-top: 12px; font-size: 9px; color: #64748b; text-align: center; }
         @media print {
             body { padding: 0; background: #fff; font-size: 11px; }
+            .toolbar { display: none; }
             .sheet { box-shadow: none; max-width: none; padding: 0; width: {{ (int) ($settings['ticket']['width_mm'] ?? 80) }}mm; }
             @page { size: {{ (int) ($settings['ticket']['width_mm'] ?? 80) }}mm auto; margin: 4mm; }
         }
     </style>
 </head>
 <body>
+    <div class="toolbar">
+        <button type="button" class="primary" onclick="window.print()">Imprimir</button>
+        <a href="{{ route('pos.cuts.index') }}">Nuevo corte</a>
+    </div>
+
     <div class="sheet">
         <header>
             <h1>{{ $settings['business']['name'] ?? config('app.name') }}</h1>
@@ -181,6 +216,10 @@
                 @endforelse
             </tbody>
         </table>
+
+        @if (! $employee && $breakdown)
+            @include('pos.cuts.partials.employee-breakdown', ['date' => $date, 'breakdown' => $breakdown])
+        @endif
 
         <div class="sign">
             <div>Firma del cajero</div>

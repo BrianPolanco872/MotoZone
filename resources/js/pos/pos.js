@@ -1,3 +1,5 @@
+import numeral from 'numeral';
+
 const configElement = document.getElementById('pos-config');
 
 if (configElement) {
@@ -15,6 +17,7 @@ if (configElement) {
     const totalEl = document.getElementById('pos-total');
     const wholesaleToggle = document.getElementById('pos-wholesale');
     const errorBox = document.getElementById('pos-error');
+    const reopenDayBtn = document.getElementById('pos-reopen-day');
     const pendingBanner = document.getElementById('pending-banner');
     const paymentDialog = document.getElementById('payment-dialog');
     const paymentAmount = document.getElementById('payment-amount');
@@ -27,6 +30,7 @@ if (configElement) {
     const cashType = document.getElementById('cash-type');
     const cashCategory = document.getElementById('cash-category');
     const cashTitle = document.getElementById('cash-title');
+    const cashError = document.getElementById('cash-error');
 
     // Estado para detectar escáner
     let isScanning = false;
@@ -39,6 +43,17 @@ if (configElement) {
 
     const formatMoney = (value) => `$${money.format(Number(value) || 0)}`;
     const round = (value) => Math.round((Number(value) || 0) * 100) / 100;
+
+    // Formatea el monto de movimiento de caja con separador de miles y dos decimales
+    const formatCashAmount = (value) => {
+        const num = Number(value) || 0;
+        return numeral(num).format('0,0.00');
+    };
+
+    // Devuelve el número plano a partir de un monto formateado (ej. "1,234.56" -> 1234.56)
+    const parseCashAmount = (value) => {
+        return numeral(value || '0').value();
+    };
 
     const escapeHtml = (value) => String(value ?? '')
         .replaceAll('&', '&amp;')
@@ -277,12 +292,12 @@ if (configElement) {
             const row = document.createElement('tr');
             const locked = pendingSaleId !== null;
             const priceControl = permissions.price_edit && !locked
-                ? `<input type="number" step="0.01" min="0" value="${item.unit_price.toFixed(2)}" data-action="price" data-index="${index}" class="h-9 w-24 rounded-md border border-slate-200 bg-white px-2 text-right text-sm font-medium tabular-nums text-slate-800 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20">`
-                : `<span class="tabular-nums text-slate-700">${formatMoney(item.unit_price)}</span>`;
+                ? `<input type="number" step="0.01" min="0" value="${item.unit_price.toFixed(2)}" data-action="price" data-index="${index}" class="h-9 w-24 rounded-md border border-mz-border-light bg-mz-bg-surface-2 px-2 text-right text-sm font-medium tabular-nums text-mz-text-primary focus:border-mz-accent-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/20">`
+                : `<span class="tabular-nums text-mz-text-secondary">${formatMoney(item.unit_price)}</span>`;
 
             const quantityControl = !locked
-                ? `<input type="number" step="1" min="1" value="${item.quantity}" data-action="quantity" data-index="${index}" class="h-9 w-20 rounded-md border border-slate-200 bg-white px-2 text-center text-sm font-medium tabular-nums text-slate-800 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20">`
-                : `<span class="tabular-nums text-slate-700">${item.quantity}</span>`;
+                ? `<input type="number" step="1" min="1" value="${item.quantity}" data-action="quantity" data-index="${index}" class="h-9 w-20 rounded-md border border-mz-border-light bg-mz-bg-surface-2 px-2 text-center text-sm font-medium tabular-nums text-mz-text-primary focus:border-mz-accent-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/20">`
+                : `<span class="tabular-nums text-mz-text-secondary">${item.quantity}</span>`;
 
             const stockLabel = item.track_inventory
                 ? `${item.stock ?? 0} disponibles`
@@ -290,15 +305,15 @@ if (configElement) {
 
             row.innerHTML = `
                 <td class="px-4 py-3">
-                    <p class="font-medium text-slate-900">${escapeHtml(item.name)}</p>
-                    <p class="text-xs text-slate-500">${escapeHtml(item.sku || item.barcode || '')}${item.category ? ` · ${escapeHtml(item.category)}` : ''}</p>
+                    <p class="font-medium text-mz-text-primary">${escapeHtml(item.name)}</p>
+                    <p class="text-xs text-mz-text-muted">${escapeHtml(item.sku || item.barcode || '')}${item.category ? ` · ${escapeHtml(item.category)}` : ''}</p>
                 </td>
                 <td class="whitespace-nowrap px-4 py-3 text-right">${priceControl}</td>
                 <td class="whitespace-nowrap px-4 py-3 text-center">${quantityControl}</td>
-                <td class="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums text-slate-900">${formatMoney(lineTotal(item))}</td>
-                <td class="whitespace-nowrap px-4 py-3 text-right text-xs ${item.track_inventory && item.stock <= (item.min_stock ?? 0) ? 'text-amber-600' : 'text-slate-500'}">${stockLabel}</td>
+                <td class="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums text-mz-text-primary">${formatMoney(lineTotal(item))}</td>
+                <td class="whitespace-nowrap px-4 py-3 text-right text-xs ${item.track_inventory && item.stock <= (item.min_stock ?? 0) ? 'text-mz-warning' : 'text-mz-text-muted'}">${stockLabel}</td>
                 <td class="px-4 py-3 text-right">
-                    ${locked ? '' : `<button type="button" data-action="remove" data-index="${index}" class="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 text-slate-400 transition hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600" aria-label="Quitar ${escapeHtml(item.name)}"><svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>`}
+                    ${locked ? '' : `<button type="button" data-action="remove" data-index="${index}" class="inline-flex size-8 items-center justify-center rounded-lg border border-mz-border-light text-mz-text-muted transition hover:border-mz-error/40 hover:bg-mz-error/10 hover:text-mz-error" aria-label="Quitar ${escapeHtml(item.name)}"><svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>`}
                 </td>
             `;
 
@@ -383,20 +398,20 @@ if (configElement) {
         productCache = new Map(products.map((product) => [Number(product.id), product]));
 
         if (products.length === 0) {
-            resultsBox.innerHTML = '<p class="px-4 py-6 text-center text-sm text-slate-500">No se encontraron productos activos.</p>';
+            resultsBox.innerHTML = '<p class="px-4 py-6 text-center text-sm text-mz-text-muted">No se encontraron productos activos.</p>';
             resultsBox.classList.remove('hidden');
             return;
         }
 
         resultsBox.innerHTML = products.map((product) => `
-            <button type="button" data-product-id="${product.id}" class="flex w-full items-center justify-between gap-4 border-b border-slate-100 px-4 py-3 text-left transition last:border-b-0 hover:bg-brand-50">
+            <button type="button" data-product-id="${product.id}" class="flex w-full items-center justify-between gap-4 border-b border-mz-border px-4 py-3 text-left transition last:border-b-0 hover:bg-mz-bg-surface-2">
                 <span class="min-w-0">
-                    <span class="block truncate text-sm font-medium text-slate-900">${escapeHtml(product.name)}</span>
-                    <span class="block truncate text-xs text-slate-500">${escapeHtml(product.sku || product.barcode || '')}${product.category ? ` · ${escapeHtml(product.category)}` : ''}</span>
+                    <span class="block truncate text-sm font-medium text-mz-text-primary">${escapeHtml(product.name)}</span>
+                    <span class="block truncate text-xs text-mz-text-muted">${escapeHtml(product.sku || product.barcode || '')}${product.category ? ` · ${escapeHtml(product.category)}` : ''}</span>
                 </span>
                 <span class="shrink-0 text-right">
-                    <span class="block text-sm font-semibold tabular-nums text-slate-900">${formatMoney(product.price)}</span>
-                    <span class="block text-[11px] ${product.in_stock ? 'text-emerald-600' : 'text-rose-600'}">${escapeHtml(product.stock_label)}</span>
+                    <span class="block text-sm font-semibold tabular-nums text-mz-text-primary">${formatMoney(product.price)}</span>
+                    <span class="block text-[11px] ${product.in_stock ? 'text-mz-success' : 'text-mz-error'}">${escapeHtml(product.stock_label)}</span>
                 </span>
             </button>
         `).join('');
@@ -471,6 +486,13 @@ if (configElement) {
         });
 
         const data = await response.json().catch(() => ({}));
+
+        // Detectar día cerrado para el usuario: mostrar botón de reabrir
+        if (data.day_closed_for_user) {
+            reopenDayBtn?.classList.remove('hidden');
+        } else {
+            reopenDayBtn?.classList.add('hidden');
+        }
 
         if (response.status === 422) {
             const errors = data.errors ? Object.values(data.errors).flat().join(' ') : (data.message || 'Revisa los datos de la venta.');
@@ -552,7 +574,8 @@ if (configElement) {
         const missing = change < 0;
 
         paymentChange.textContent = missing ? formatMoney(0) : formatMoney(change);
-        paymentChange.classList.toggle('text-rose-600', missing);
+        paymentChange.classList.toggle('text-mz-error', missing);
+        paymentChange.classList.toggle('text-mz-text-primary', !missing);
         paymentError.classList.toggle('hidden', !missing);
         paymentError.textContent = missing ? `Faltan ${formatMoney(Math.abs(change))} para cubrir el total.` : '';
         paymentConfirm.disabled = missing || submitting;
@@ -749,6 +772,29 @@ if (configElement) {
 
     paymentAmount?.addEventListener('input', updateChange);
 
+    const reopenMyDay = async () => {
+        try {
+            const response = await fetch(config.routes.reopen_my_day, {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'X-CSRF-TOKEN': csrf,
+                },
+            });
+
+            if (response.ok) {
+                window.location.reload();
+            } else {
+                const data = await response.json().catch(() => ({}));
+                showError(data.message || 'No se pudo reabrir el corte.');
+            }
+        } catch (error) {
+            showError('No se pudo reabrir el corte. Revisa tu conexión.');
+        }
+    };
+
+    document.getElementById('pos-reopen-day')?.addEventListener('click', reopenMyDay);
+
     document.getElementById('pos-charge')?.addEventListener('click', openPayment);
 
     document.getElementById('pos-pending')?.addEventListener('click', async () => {
@@ -821,6 +867,8 @@ if (configElement) {
             const first = Array.from(cashCategory.options).find((option) => !option.disabled);
             cashCategory.value = first?.value ?? '';
 
+            cashError?.classList.add('hidden');
+
             cashDialog.showModal();
         });
     });
@@ -831,6 +879,97 @@ if (configElement) {
         }
 
         cashType.value = cashCategory.selectedOptions[0]?.dataset.type ?? cashType.value;
+    });
+
+    // Formato de miles y centavos al salir del campo de monto
+    const cashAmount = document.getElementById('cash-amount');
+    cashAmount?.addEventListener('blur', () => {
+        cashAmount.value = formatCashAmount(cashAmount.value);
+    });
+
+    // Envía el movimiento por AJAX para mostrar los errores de validación dentro del modal
+    const cashForm = document.getElementById('cash-form');
+    const cashSaveButton = cashForm?.querySelector('button[type="submit"]');
+    let cashSubmitting = false;
+
+    const setCashSubmitting = (value) => {
+        cashSubmitting = value;
+
+        if (value) {
+            cashSaveButton?.setAttribute('disabled', 'disabled');
+            cashSaveButton?.classList.add('opacity-75', 'cursor-not-allowed');
+        } else {
+            cashSaveButton?.removeAttribute('disabled');
+            cashSaveButton?.classList.remove('opacity-75', 'cursor-not-allowed');
+        }
+    };
+
+    const showCashError = (message) => {
+        if (!cashError) {
+            return;
+        }
+
+        cashError.textContent = message;
+        cashError.classList.remove('hidden');
+    };
+
+    cashForm?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        if (cashSubmitting) {
+            return; // Evita doble envío por clic rápido
+        }
+
+        cashError?.classList.add('hidden');
+
+        const raw = Number(parseCashAmount(cashAmount?.value));
+
+        if (!Number.isFinite(raw) || raw <= 0) {
+            showCashError('Escribe un monto válido mayor a cero.');
+            cashAmount?.focus();
+            return;
+        }
+
+        cashAmount.value = String(raw);
+        setCashSubmitting(true);
+
+        try {
+            const response = await fetch(cashForm.action, {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'X-CSRF-TOKEN': csrf,
+                },
+                body: new FormData(cashForm),
+                redirect: 'manual',
+            });
+
+            // Laravel responde con un redirect (302) cuando el movimiento se guarda
+            if (response.type === 'opaqueredirect' || response.redirected || response.ok) {
+                cashForm.reset();
+                cashDialog?.close();
+                window.location.href = config.routes.cash;
+                return;
+            }
+
+            const data = await response.json().catch(() => ({}));
+            const errors = data.errors
+                ? Object.values(data.errors).flat().join(' ')
+                : (data.message || 'No se pudo registrar el movimiento.');
+
+            showCashError(errors);
+        } catch (error) {
+            showCashError(error.message || 'No se pudo registrar el movimiento. Revisa tu conexión.');
+        } finally {
+            setCashSubmitting(false);
+        }
+    });
+
+    // Re-habilitar el botón si el diálogo se cierra sin enviar (evita quedar bloqueado)
+    cashDialog?.addEventListener('close', () => {
+        setCashSubmitting(false);
+        cashForm?.reset();
+        cashError?.classList.add('hidden');
     });
 
     document.addEventListener('keydown', (event) => {

@@ -199,7 +199,8 @@ class PosPaymentMethodsTest extends TestCase
 
     public function test_empleado_sin_permiso_no_puede_cobrar(): void
     {
-        $employee = $this->employee(['pos.access']); // sin pos.sell
+        $employee = User::factory()->create()->assignRole('empleado');
+        $employee->givePermissionTo(['pos.access']); // sin pos.sell
         $product = $this->product(['stock' => 10]);
 
         $response = $this->actingAs($employee)->postJson(route('pos.sales.store'), [

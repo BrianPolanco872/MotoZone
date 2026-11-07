@@ -26,6 +26,23 @@ class SaleController extends Controller
 
     public function store(StoreSaleRequest $request, SaleService $service): JsonResponse|RedirectResponse
     {
+        $user = $request->user();
+
+        // Un empleado que cerró su propio corte no puede vender hasta reabrirlo.
+        if (DailyCut::isDayClosedForUser(today()->toDateString(), $user)) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => 'Este día ya está cerrado para ti. No se pueden registrar ventas.',
+                    'day_closed_for_user' => true,
+                    'reopen_url' => route('cuts.reopen-my-day'),
+                ], 422);
+            }
+
+            throw ValidationException::withMessages([
+                'sale' => 'Este día ya está cerrado. No se pueden registrar ventas.',
+            ]);
+        }
+
         if (DailyCut::isDayClosed(today()->toDateString())) {
             throw ValidationException::withMessages(['sale' => 'Este día ya está cerrado. No se pueden registrar ventas.']);
         }
@@ -45,6 +62,23 @@ class SaleController extends Controller
 
     public function charge(ChargePendingSaleRequest $request, Sale $sale, SaleService $service): JsonResponse|RedirectResponse
     {
+        $user = $request->user();
+
+        // Un empleado que cerró su propio corte no puede cobrar hasta reabrirlo.
+        if (DailyCut::isDayClosedForUser(today()->toDateString(), $user)) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => 'Este día ya está cerrado para ti. No se pueden cobrar ventas.',
+                    'day_closed_for_user' => true,
+                    'reopen_url' => route('cuts.reopen-my-day'),
+                ], 422);
+            }
+
+            throw ValidationException::withMessages([
+                'sale' => 'Este día ya está cerrado. No se pueden cobrar ventas.',
+            ]);
+        }
+
         if (DailyCut::isDayClosed(today()->toDateString())) {
             throw ValidationException::withMessages(['sale' => 'Este día ya está cerrado. No se pueden cobrar ventas.']);
         }
@@ -109,14 +143,17 @@ class SaleController extends Controller
         $request->validate(['date' => ['nullable', 'date']]);
 
         $user = $request->user();
-        $canSeeAny = $user->can('pos.sales.day.any');
+
+        // Solo el administrador puede consultar las ventas de todos los empleados.
+        // Un cajero o empleado ve únicamente su propia tabla del día.
+        $canSeeAny = $user->hasRole('admin');
         $date = Carbon::parse($request->query('date', today()->toDateString()));
 
         $query = Sale::query()
             ->paid()
             ->whereBetween('paid_at', [$date->copy()->startOfDay(), $date->copy()->endOfDay()])
             ->when(! $canSeeAny, fn ($query) => $query->where('user_id', $user->id))
-            ->when($request->filled('employee'), fn ($query, $employee) => $query->where('user_id', (int) $employee));
+            ->when($canSeeAny && $request->filled('employee'), fn ($query, $employee) => $query->where('user_id', (int) $employee));
 
         $summary = [
             'count' => (clone $query)->count(),

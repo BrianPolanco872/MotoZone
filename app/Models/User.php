@@ -141,6 +141,64 @@ class User extends Authenticatable
     }
 
     /**
+     * Módulos de acceso asignables a un empleado desde su alta.
+     *
+     * @var array<string, array{label: string, description: string, permissions: list<string>}>
+     */
+    public const ACCESS_MODULES = [
+        'pos' => [
+            'label' => 'Punto de venta',
+            'description' => 'Usar el módulo de punto de venta para cobrar ventas.',
+            'permissions' => [
+                'pos.access',
+                'pos.sell',
+                'pos.products.view',
+                'pos.tickets.print.own',
+                'pos.sales.day.own',
+            ],
+        ],
+        'cut' => [
+            'label' => 'Corte del día',
+            'description' => 'Generar y ver su propio corte del día.',
+            'permissions' => [
+                'pos.cut.own',
+                'pos.sales.day.own',
+            ],
+        ],
+        'products' => [
+            'label' => 'Productos',
+            'description' => 'Ver y administrar el catálogo de productos.',
+            'permissions' => [
+                'admin.products.manage',
+            ],
+        ],
+    ];
+
+    /**
+     * Resuelve los permisos que otorgan los módulos indicados, respetando
+     * solo los permisos asignables (nunca admin.users.manage).
+     *
+     * @param  list<string>  $modules
+     * @return array<int, string>
+     */
+    public static function permissionsForModules(array $modules): array
+    {
+        $permissions = [];
+
+        foreach ($modules as $module) {
+            if (! array_key_exists($module, self::ACCESS_MODULES)) {
+                continue;
+            }
+
+            $permissions = array_merge($permissions, self::ACCESS_MODULES[$module]['permissions']);
+        }
+
+        return array_values(
+            array_unique(array_intersect($permissions, self::assignablePermissions()))
+        );
+    }
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>

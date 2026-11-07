@@ -8,7 +8,7 @@ class GenerateDailyCutRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()?->can('pos.cut.manage') ?? false;
+        return $this->user()?->canAny(['pos.cut.manage', 'pos.cut.own']) ?? false;
     }
 
     /**

@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Models\CashMovement;
+use App\Models\CustomerPayment;
+use App\Models\SupplierPayment;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -11,11 +13,13 @@ use Illuminate\Validation\ValidationException;
 class CashMovementService
 {
     /**
-     * Create a manual cash movement.
+     * Create a manual cash movement, or a customer/supplier payment when the
+     * category corresponds to one of those dedicated tables.
      *
-     * @param  array{type?: string, category: string, amount: float|string, concept: string}  $data
+     * @param  array{type?: string, category: string, amount: float|string, concept?: string, method?: string, customer_name?: string, customer_id?: int, supplier_name?: string, supplier_id?: int, reason?: string}  $data
+     * @return CashMovement|CustomerPayment|SupplierPayment
      */
-    public function create(User $user, array $data): CashMovement
+    public function create(User $user, array $data)
     {
         $category = (string) ($data['category'] ?? '');
         $definition = CashMovement::CATEGORIES[$category] ?? null;
@@ -24,23 +28,54 @@ class CashMovementService
             throw ValidationException::withMessages(['category' => 'Selecciona un tipo de movimiento válido.']);
         }
 
-        $type = $definition['type'];
-
-        if ($category === 'other' && in_array($data['type'] ?? null, [CashMovement::TYPE_IN, CashMovement::TYPE_OUT], true)) {
-            $type = $data['type'];
-        }
-
         $amount = round((float) ($data['amount'] ?? 0), 2);
 
         if ($amount <= 0) {
             throw ValidationException::withMessages(['amount' => 'El monto debe ser mayor a cero.']);
         }
 
-        $concept = trim((string) ($data['concept'] ?? ''));
+        // --- Abono de cliente → tabla dedicada (no crea CashMovement) ---
+        if ($category === 'customer_payment') {
+            $payment = CustomerPayment::create([
+                'user_id' => $user->id,
+                'amount' => $amount,
+                'method' => $data['method'] ?? CashMovement::TYPE_IN,
+                'reason' => $data['reason'] ?? null,
+                'customer_name' => $data['customer_name'] ?? '',
+                'customer_id' => $data['customer_id'] ?? null,
+                'happened_at' => $data['happened_at'] ?? now(),
+            ]);
 
-        if ($concept === '') {
-            throw ValidationException::withMessages(['concept' => 'Escribe el motivo del movimiento.']);
+            $this->audit('customer_payment.create', $user, $payment, null, $payment->getAttributes());
+
+            return $payment;
         }
+
+        // --- Pago a proveedor → tabla dedicada (no crea CashMovement) ---
+        if ($category === 'supplier_payment') {
+            $payment = SupplierPayment::create([
+                'user_id' => $user->id,
+                'amount' => $amount,
+                'method' => $data['method'] ?? CashMovement::TYPE_OUT,
+                'reason' => $data['reason'] ?? '',
+                'supplier_name' => $data['supplier_name'] ?? '',
+                'supplier_id' => $data['supplier_id'] ?? null,
+                'happened_at' => $data['happened_at'] ?? now(),
+            ]);
+
+            $this->audit('supplier_payment.create', $user, $payment, null, $payment->getAttributes());
+
+            return $payment;
+        }
+
+        // --- Movimiento de caja tradicional ---
+        $type = $definition['type'];
+
+        if ($category === 'other' && in_array($data['type'] ?? null, [CashMovement::TYPE_IN, CashMovement::TYPE_OUT], true)) {
+            $type = $data['type'];
+        }
+
+        $concept = trim((string) ($data['concept'] ?? ''));
 
         $movement = CashMovement::create([
             'user_id' => $user->id,
@@ -48,7 +83,7 @@ class CashMovementService
             'category' => $category,
             'amount' => $amount,
             'concept' => $concept,
-            'happened_at' => now(),
+            'happened_at' => $data['happened_at'] ?? now(),
         ]);
 
         $this->audit('cash_movement.create', $user, $movement, null, $movement->getAttributes());

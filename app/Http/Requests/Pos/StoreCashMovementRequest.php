@@ -22,7 +22,13 @@ class StoreCashMovementRequest extends FormRequest
             'category' => ['required', 'string', Rule::in(array_keys(CashMovement::manualCategories()))],
             'type' => ['nullable', Rule::in([CashMovement::TYPE_IN, CashMovement::TYPE_OUT])],
             'amount' => ['required', 'numeric', 'min:0.01', 'max:9999999'],
-            'concept' => ['required', 'string', 'max:255'],
+            'concept' => ['nullable', 'string', 'max:255'],
+            'method' => ['sometimes', 'required_if:category,customer_payment,supplier_payment', 'string', Rule::in(['cash', 'card', 'transfer'])],
+            'customer_name' => ['sometimes', 'required_if:category,customer_payment', 'string', 'max:255'],
+            'supplier_name' => ['sometimes', 'required_if:category,supplier_payment', 'string', 'max:255'],
+            'reason' => ['sometimes', 'required_if:category,supplier_payment', 'string', 'max:500'],
+            'customer_id' => ['nullable', 'integer'],
+            'supplier_id' => ['nullable', 'integer'],
         ];
     }
 
@@ -36,7 +42,6 @@ class StoreCashMovementRequest extends FormRequest
             'category.in' => 'El tipo de movimiento no es válido.',
             'amount.required' => 'Escribe el monto.',
             'amount.min' => 'El monto debe ser mayor a cero.',
-            'concept.required' => 'Escribe el motivo del movimiento.',
         ];
     }
 }

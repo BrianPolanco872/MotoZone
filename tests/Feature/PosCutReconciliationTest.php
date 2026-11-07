@@ -382,4 +382,84 @@ class PosCutReconciliationTest extends TestCase
         $this->assertEquals(0.00, (float) $globalCut->difference);
         $this->assertTrue($globalCut->is_reconciled);
     }
+
+    public function test_efectivo_contado_se_registra_por_http(): void
+    {
+        $admin = $this->admin();
+        $today = Carbon::now()->toDateString();
+
+        $this->cashMovement($admin, 'initial', 500.00, 'in');
+        $this->paidSale($admin, 100.00, 'http-001');
+
+        $cuts = app(DailyCutService::class)->generate($today, $admin);
+        $globalCut = $cuts->firstWhere('scope', 'global');
+
+        $response = $this->actingAs($admin)->post(route('pos.cuts.record-cash', $globalCut), [
+            'cash_counted' => 610.00,
+            'reason' => 'Conteo físico desde el panel',
+        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionHasNoErrors();
+
+        $globalCut->refresh();
+        $this->assertEquals(610.00, (float) $globalCut->cash_counted);
+        $this->assertEquals(10.00, (float) $globalCut->difference);
+        $this->assertSame('Conteo físico desde el panel', $globalCut->reason);
+    }
+
+    public function test_efectivo_contado_acepta_separador_de_miles(): void
+    {
+        $admin = $this->admin();
+        $today = Carbon::now()->toDateString();
+
+        $cuts = app(DailyCutService::class)->generate($today, $admin);
+        $globalCut = $cuts->firstWhere('scope', 'global');
+
+        $response = $this->actingAs($admin)->post(route('pos.cuts.record-cash', $globalCut), [
+            'cash_counted' => '14,325',
+            'reason' => 'Conteo con separador de miles',
+        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionHasNoErrors();
+
+        $this->assertEquals(14325.00, (float) $globalCut->refresh()->cash_counted);
+    }
+
+    public function test_efectivo_contado_se_compara_contra_el_total_de_caja_mostrado(): void
+    {
+        $admin = $this->admin();
+        $today = Carbon::now()->toDateString();
+
+        $this->cashMovement($admin, 'initial', 500.00, 'in');
+        $sale = $this->paidSale($admin, 100.00, 'caja-001');
+
+        // Devolución aprobada sin movimiento de caja: el panel "Dinero en caja"
+        // sigue en 600 aunque el panel de computadora reste 50.
+        SaleReturn::create([
+            'sale_id' => $sale->id,
+            'requested_by' => $admin->id,
+            'approved_by' => $admin->id,
+            'status' => 'approved',
+            'reason' => 'Prueba',
+            'total' => 50.00,
+            'approved_at' => now(),
+        ]);
+
+        $cuts = app(DailyCutService::class)->generate($today, $admin);
+        $globalCut = $cuts->firstWhere('scope', 'global');
+
+        $response = $this->actingAs($admin)->post(route('pos.cuts.record-cash', $globalCut), [
+            'cash_counted' => '600',
+            'reason' => 'Conteo igual al total de caja',
+        ]);
+
+        $response->assertSessionHasNoErrors();
+
+        $globalCut->refresh();
+        $this->assertEquals(600.00, (float) $globalCut->cash_counted);
+        $this->assertEquals(0.00, (float) $globalCut->difference);
+        $this->assertTrue($globalCut->is_reconciled);
+    }
 }

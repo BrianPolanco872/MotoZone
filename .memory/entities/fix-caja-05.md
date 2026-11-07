@@ -1,0 +1,12 @@
+---
+entity: fix-caja-05
+type: fix
+---
+
+- Objetivo: Mostrar el corte del día por empleado activo en la pantalla Caja del POS, con actualización automática cada 25 s, y simplificar los paneles de la pantalla.
+- Archivos tocados: app/Http/Controllers/Pos/CashMovementController.php, app/Http/Controllers/Admin/CajaController.php, routes/web.php, resources/views/pos/cash/index.blade.php, resources/views/pos/cash/partials/employee-cut-board.blade.php (nuevo), resources/views/layouts/admin.blade.php.
+- Cambios aplicados: `index()` inyecta `DailyCutService` + `PresenceService` y pasa `$cutBoard`/`$cutBoardDate`; nuevo `cutBoard()` (JSON con HTML renderizado, `date`, `generated_at`, `count`); ruta `GET /pos/caja/corte-empleados` (`pos.cash.cut-board`); partial único con badges de sesión y corte, tickets, ventas, efectivo, saldo esperado, diferencia y "Ver corte", más totales; vista reescrita sin las 3 tarjetas KPI, con filtros y formulario colapsables, panel de corte y polling cada 25 s (pausa con `document.hidden`); menú lateral "Caja" apunta a `pos.cash.index`; `Admin\CajaController@index` y `@corte` ahora redirigen.
+- Desviaciones del plan: (1) se movieron las rutas `pos.cash.*` fuera del grupo `permission:pos.access` a un grupo propio con `permission:pos.cash.manage` para no romper el acceso de usuarios de caja sin acceso al POS; (2) `concept` también quedó opcional en el formulario de esta pantalla (coherencia con fix-caja-04); (3) `admin.caja.corte` redirige a `pos.cuts.index` solo si el usuario tiene `pos.cut.manage`, si no a `pos.cash.index`; (4) se regeneró el cache de rutas (`route:cache`) porque el proyecto tenía rutas cacheadas y la ruta nueva no existía; (5) los `index()`/`corte()` del admin se reemplazaron por redirects (las vistas `admin/caja/*` quedan huérfanas en el repositorio).
+- Verificación: `php -l` OK; `view:cache` OK; `route:cache` OK (sin closures); render real de `/pos/caja` (135 KB, panel + endpoint + polling presentes, KPIs ausentes); endpoint JSON 200 con `html/date/generated_at/count`; empleado sin `pos.sales.day.any` recibe solo su fila (count=0 sin actividad). No se ejecutó la suite de tests (requiere solicitud explícita).
+- Nota: `app/Http/Controllers/Admin/CajaController.php`, `app/Services/PresenceService.php` y `resources/views/admin/caja/` están sin seguimiento en git (trabajo previo no commiteado), por lo que el rollback de esos archivos no aplica vía `git checkout`.
+- Fecha: 2026-11-06

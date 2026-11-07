@@ -7,7 +7,7 @@
     $roleLabel = $isAdmin ? 'Administrador' : ($user?->hasRole('empleado') ? 'Empleado' : 'Sin rol');
     $panelHome = $isAdmin
         ? route('admin.dashboard')
-        : ($user?->can('pos.access') ? route('pos.index') : route('home'));
+        : ($user?->can('admin.products.manage') ? route('admin.products.index') : ($user?->can('pos.access') ? route('pos.index') : route('home')));
 
     $adminNavigation = [];
 
@@ -29,7 +29,7 @@
 
     if ($user?->can('pos.cut.manage')) {
         $adminNavigation[] = ['label' => 'Corte del día', 'icon' => 'report', 'route' => 'pos.cuts.index'];
-    } elseif ($user?->can('pos.sales.day.own')) {
+    } elseif ($user?->can('pos.cut.own')) {
         $adminNavigation[] = ['label' => 'Mi corte', 'icon' => 'chart', 'route' => 'pos.cuts.mine'];
     }
 
@@ -38,33 +38,26 @@
     }
 
     $adminNavigation[] = ['label' => 'Mi perfil', 'icon' => 'lock', 'route' => 'admin.profile.edit'];
-
-    if ($isAdmin) {
-        $adminNavigation[] = ['label' => 'Taller', 'icon' => 'wrench'];
-        $adminNavigation[] = ['label' => 'Clientes', 'icon' => 'users'];
-        $adminNavigation[] = ['label' => 'Reportes', 'icon' => 'chart'];
-        $adminNavigation[] = ['label' => 'Configuración', 'icon' => 'cog'];
-    }
 @endphp
 
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="h-full bg-slate-100">
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="h-full bg-mz-bg-primary">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>@yield('title', 'Panel') · {{ config('app.name') }}</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
-<body class="h-full font-sans text-slate-900 antialiased">
+<body class="h-full font-sans text-mz-text-primary antialiased">
     <div class="min-h-full">
-        <aside class="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col bg-ink-950 lg:flex">
+        <aside class="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col bg-mz-bg-surface lg:flex">
             <a href="{{ $panelHome }}" class="flex h-16 items-center gap-3 px-6">
-                <span class="flex size-9 items-center justify-center rounded-lg bg-brand-500 text-white">
+                <span class="flex size-9 items-center justify-center rounded-md bg-mz-accent-primary text-white">
                     <x-icon name="moto" class="size-5" />
                 </span>
                 <div>
-                    <p class="font-display text-xl font-bold uppercase leading-none tracking-tight text-white">Moto<span class="text-brand-500">Zone</span></p>
-                    <p class="mt-0.5 text-[11px] text-slate-400">Panel administrativo</p>
+                    <p class="font-display text-xl font-bold uppercase leading-none tracking-tight text-mz-text-primary">Moto<span class="text-mz-accent-primary">Zone</span></p>
+                    <p class="mt-0.5 text-[11px] text-mz-text-muted">Panel administrativo</p>
                 </div>
             </a>
 
@@ -76,45 +69,45 @@
                     @if (isset($item['route']))
                         <a href="{{ route($item['route']) }}"
                            @class([
-                               'group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition',
-                               'bg-white/10 text-white' => $isActive,
-                               'text-slate-400 hover:bg-white/5 hover:text-white' => ! $isActive,
+                               'group flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors',
+                               'bg-white/10 text-mz-text-primary' => $isActive,
+                               'text-mz-text-muted hover:bg-white/5 hover:text-mz-text-primary' => ! $isActive,
                            ])
                            @if ($isActive) aria-current="page" @endif>
-                            <x-icon :name="$item['icon']" class="size-5 {{ $isActive ? 'text-brand-400' : '' }}" />
+                            <x-icon :name="$item['icon']" class="size-5 {{ $isActive ? 'text-mz-accent-primary' : '' }}" />
                             {{ $item['label'] }}
                         </a>
                     @else
-                        <span class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-400">
+                        <span class="flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-mz-text-muted">
                             <x-icon :name="$item['icon']" class="size-5" />
                             {{ $item['label'] }}
-                            <span class="ml-auto rounded bg-white/5 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-400">Pronto</span>
+                            <span class="ml-auto rounded bg-white/5 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-mz-text-muted">Pronto</span>
                         </span>
                     @endif
                 @endforeach
 
                 <div class="my-3 border-t border-white/10" aria-hidden="true"></div>
 
-                <a href="{{ route('home') }}" class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-400 transition hover:bg-white/5 hover:text-white">
+                <a href="{{ route('home') }}" class="flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-mz-text-muted transition-colors hover:bg-white/5 hover:text-mz-text-primary">
                     <x-icon name="store" class="size-5" />
                     Ver tienda
-                    <x-icon name="arrow-right" class="ml-auto size-4 text-slate-500" />
+                    <x-icon name="arrow-right" class="ml-auto size-4 text-mz-text-muted" />
                 </a>
             </nav>
 
-            <div class="m-3 rounded-xl bg-white/5 p-3">
+            <div class="m-3 rounded-lg bg-white/5 p-3">
                 <div class="flex items-center gap-3">
-                    <span class="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-500 text-sm font-semibold text-white">{{ $initials }}</span>
+                    <span class="flex size-9 shrink-0 items-center justify-center rounded-full bg-mz-accent-primary text-sm font-semibold text-white">{{ $initials }}</span>
                     <div class="min-w-0">
-                        <p class="truncate text-sm font-medium text-white">{{ $user?->name ?? 'Invitado' }}</p>
-                        <p class="truncate text-xs text-slate-400">{{ $user?->email }}</p>
-                        <p class="truncate text-[11px] text-brand-300">{{ $roleLabel }}</p>
+                        <p class="truncate text-sm font-medium text-mz-text-primary">{{ $user?->name ?? 'Invitado' }}</p>
+                        <p class="truncate text-xs text-mz-text-muted">{{ $user?->email }}</p>
+                        <p class="truncate text-[11px] text-mz-accent-primary/70">{{ $roleLabel }}</p>
                     </div>
                 </div>
 
                 <form action="{{ route('logout') }}" method="POST" class="mt-3">
                     @csrf
-                    <button type="submit" class="flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-xs font-medium text-slate-300 transition hover:bg-white/5 hover:text-white">
+                    <button type="submit" class="x-button x-button-secondary w-full text-xs">
                         <x-icon name="logout" class="size-4" />
                         Cerrar sesión
                     </button>
@@ -123,58 +116,60 @@
         </aside>
 
         <div class="lg:pl-64">
-            <header class="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur">
+            <header class="sticky top-0 z-20 border-b border-mz-border-light bg-mz-bg-surface/90 backdrop-blur">
                 <div class="flex h-16 items-center gap-4 px-4 sm:px-6 lg:px-8">
-                    <a href="{{ route('home') }}" class="flex size-9 items-center justify-center rounded-lg bg-brand-500 text-white lg:hidden" aria-label="Ir a la tienda">
+                    <a href="{{ route('home') }}" class="flex size-9 items-center justify-center rounded-md bg-mz-accent-primary text-white lg:hidden" aria-label="Ir a la tienda">
                         <x-icon name="moto" class="size-5" />
                     </a>
 
                     <div class="min-w-0">
-                        <h1 class="truncate text-lg font-semibold tracking-tight text-slate-900">@yield('title', 'Panel')</h1>
-                        <p class="hidden text-xs text-slate-500 sm:block">@yield('subtitle', 'Administración de ' . config('app.name'))</p>
+                        <h1 class="truncate text-lg font-semibold tracking-tight text-mz-text-primary">@yield('title', 'Panel')</h1>
+                        <p class="hidden text-xs text-mz-text-muted sm:block">@yield('subtitle', 'Administración de ' . config('app.name'))</p>
                     </div>
 
                     <div class="ml-auto flex items-center gap-2">
-                        <a href="{{ route('home') }}" class="hidden h-9 items-center gap-2 rounded-lg border border-slate-200 px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 sm:inline-flex">
+                        <a href="{{ route('home') }}" class="hidden h-9 items-center gap-2 rounded-md border border-mz-border-light px-3 text-sm font-medium text-mz-text-secondary transition-colors hover:bg-mz-bg-surface-2 sm:inline-flex">
                             <x-icon name="store" class="size-4" />
                             Ver tienda
                         </a>
 
-                        <span class="flex size-9 items-center justify-center rounded-full bg-ink-900 text-sm font-semibold text-white" title="{{ $user?->name }}">{{ $initials }}</span>
+                        @include('admin.partials.presence')
+
+                        <span class="flex size-9 items-center justify-center rounded-full bg-mz-bg-surface-2 text-sm font-semibold text-mz-text-primary" title="{{ $user?->name }}">{{ $initials }}</span>
 
                         <form action="{{ route('logout') }}" method="POST" class="hidden sm:block">
                             @csrf
-                            <button type="submit" class="flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+                            <button type="submit" class="x-button x-button-ghost h-9 text-sm">
                                 <x-icon name="logout" class="size-4" />
                                 Salir
                             </button>
                         </form>
 
                         <details class="relative lg:hidden" data-dismissable>
-                            <summary class="flex size-9 cursor-pointer list-none items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-50 [&::-webkit-details-marker]:hidden" aria-label="Abrir menú del panel">
+                            <summary class="flex size-9 cursor-pointer list-none items-center justify-center rounded-md border border-mz-border-light text-mz-text-secondary transition-colors hover:bg-mz-bg-surface-2 [&::-webkit-details-marker]:hidden" aria-label="Abrir menú del panel">
                                 <x-icon name="menu" class="size-5" />
                             </summary>
-                            <div class="absolute right-0 mt-2 w-56 rounded-xl border border-slate-200 bg-white p-2 shadow-xl shadow-slate-900/10">
+                            <div class="absolute right-0 mt-2 w-56 rounded-lg border border-mz-border-light bg-mz-bg-surface p-2 shadow-xl shadow-black/40">
                                 @foreach ($adminNavigation as $item)
                                     @if (isset($item['route']))
                                         <a href="{{ route($item['route']) }}" @class([
-                                            'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition',
-                                            'bg-slate-100 text-ink-900' => request()->routeIs($item['route']),
-                                            'text-slate-600 hover:bg-slate-50' => ! request()->routeIs($item['route']),
+                                            'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                                            'bg-mz-bg-surface-2 text-mz-text-primary' => request()->routeIs($item['route']),
+                                            'text-mz-text-muted hover:bg-mz-bg-surface-2' => ! request()->routeIs($item['route']),
                                         ])>
-                                            <x-icon :name="$item['icon']" class="size-4 text-slate-500" />
+                                            <x-icon :name="$item['icon']" class="size-4 text-mz-text-muted" />
                                             {{ $item['label'] }}
                                         </a>
                                     @endif
                                 @endforeach
-                                <a href="{{ route('home') }}" class="mt-2 flex items-center gap-3 border-t border-slate-100 px-3 pt-3 pb-1 text-sm font-medium text-slate-600 hover:text-brand-700">
-                                    <x-icon name="store" class="size-4 text-slate-500" />
+                                <a href="{{ route('home') }}" class="mt-2 flex items-center gap-3 border-t border-mz-border-light px-3 pt-3 pb-1 text-sm font-medium text-mz-text-secondary hover:text-mz-accent-primary">
+                                    <x-icon name="store" class="size-4 text-mz-text-muted" />
                                     Ver tienda
                                 </a>
-                                <form action="{{ route('logout') }}" method="POST" class="border-t border-slate-100 pt-1">
+                                <form action="{{ route('logout') }}" method="POST" class="border-t border-mz-border-light pt-1">
                                     @csrf
-                                    <button type="submit" class="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-brand-700">
-                                        <x-icon name="logout" class="size-4 text-slate-500" />
+                                    <button type="submit" class="x-button x-button-ghost w-full text-sm">
+                                        <x-icon name="logout" class="size-4" />
                                         Cerrar sesión
                                     </button>
                                 </form>
@@ -186,10 +181,9 @@
 
             <main class="px-4 py-6 sm:px-6 lg:px-8">
                 @if (session('status'))
-                    <div class="mb-5 flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800" role="status">
-                        <x-icon name="check" class="mt-0.5 size-4 shrink-0" />
-                        <p>{{ session('status') }}</p>
-                    </div>
+                    <x-alert variant="success">
+                        {{ session('status') }}
+                    </x-alert>
                 @endif
 
                 @yield('content')

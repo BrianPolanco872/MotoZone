@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Admin;
 
+use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -10,6 +11,16 @@ class StoreUserRequest extends FormRequest
     public function authorize(): bool
     {
         return $this->user()?->can('admin.users.manage') ?? false;
+    }
+
+    /**
+     * Módulos de acceso que se pueden marcar al crear un empleado.
+     *
+     * @return list<string>
+     */
+    private function accessModules(): array
+    {
+        return array_keys(User::ACCESS_MODULES);
     }
 
     protected function prepareForValidation(): void
@@ -30,6 +41,10 @@ class StoreUserRequest extends FormRequest
             'password' => ['required', 'string', 'min:8', 'confirmed'],
             'is_active' => ['boolean'],
             'role' => ['required', 'string', Rule::exists('roles', 'name')->where('guard_name', 'web')],
+            'modules' => ['nullable', 'array'],
+            'modules.*' => ['string', Rule::in($this->accessModules())],
+            'permissions' => ['nullable', 'array'],
+            'permissions.*' => ['string', Rule::in(User::assignablePermissions())],
         ];
     }
 

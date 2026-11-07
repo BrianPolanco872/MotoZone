@@ -5,49 +5,51 @@
 
 @section('content')
     <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <p class="text-sm text-slate-500">
-            <span class="font-semibold text-slate-900">{{ $products->total() }}</span>
-            {{ $products->total() === 1 ? 'producto registrado' : 'productos registrados' }}
-        </p>
+        <div>
+            <p class="text-sm text-mz-text-secondary">
+                <span class="font-semibold text-mz-text-primary">{{ $products->total() }}</span>
+                {{ $products->total() === 1 ? 'producto registrado' : 'productos registrados' }}
+            </p>
+        </div>
         <div class="flex items-center gap-2">
-            <a href="{{ route('catalog.index') }}" class="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+            <a href="{{ route('catalog.index') }}" class="x-button x-button-secondary size-sm">
                 <x-icon name="store" class="size-4" />
                 Ver tienda
             </a>
-            <a href="{{ route('admin.products.create') }}" class="inline-flex h-10 items-center gap-2 rounded-lg bg-brand-700 px-4 text-sm font-medium text-white transition hover:bg-brand-800">
+            <a href="{{ route('admin.products.create') }}" class="x-button x-button-primary size-sm">
                 <x-icon name="plus" class="size-4" />
                 Nuevo producto
             </a>
         </div>
     </div>
 
-    <!-- Panel de herramientas avanzadas -->
-    <div class="mt-5 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div class="border-b border-slate-100 bg-slate-50/75 px-5 py-3.5">
-            <h2 class="text-sm font-semibold text-slate-900">Herramientas de inventario y precios</h2>
-            <p class="text-xs text-slate-500">Actualización masiva, importación de datos y gestión global de stock.</p>
+    {{-- Panel de herramientas avanzadas --}}
+    <section class="mt-4 mz-card mz-card-padded overflow-hidden">
+        <div class="border-b border-mz-border-light px-4 py-3">
+            <h2 class="text-sm font-semibold text-mz-text-primary">Herramientas de inventario y precios</h2>
+            <p class="text-xs text-mz-text-muted">Actualización masiva, importación de datos y gestión global de stock.</p>
         </div>
 
-        <div class="p-5 space-y-5">
-            <!-- Formulario de Precios Masivos -->
+        <div class="p-4 sm:p-5 space-y-4">
+            {{-- Formulario de Precios Masivos --}}
             <form action="{{ route('admin.products.massUpdate') }}" method="POST" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto_auto] lg:items-end">
                 @csrf
                 <div>
-                    <label for="mass-tax-rate" class="block text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">IVA global (%)</label>
-                    <input id="mass-tax-rate" name="tax_rate" type="number" step="0.01" min="0" max="100" value="16" class="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20">
+                    <label for="mass-tax-rate" class="block text-xs font-semibold uppercase tracking-[0.12em] text-mz-text-muted">IVA global (%)</label>
+                    <input id="mass-tax-rate" name="tax_rate" type="number" step="0.01" min="0" max="100" value="16" class="mz-input mt-1.5 h-10 w-full">
                 </div>
                 <div>
-                    <label for="mass-margin" class="block text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Ganancia global (%)</label>
-                    <input id="mass-margin" name="margin_percentage" type="number" step="0.01" min="0" value="30" class="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20">
+                    <label for="mass-margin" class="block text-xs font-semibold uppercase tracking-[0.12em] text-mz-text-muted">Ganancia global (%)</label>
+                    <input id="mass-margin" name="margin_percentage" type="number" step="0.01" min="0" value="30" class="mz-input mt-1.5 h-10 w-full">
                 </div>
                 <div>
-                    <button type="submit" class="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-ink-900 px-4 text-sm font-medium text-white transition hover:bg-ink-800">
+                    <button type="submit" class="x-button x-button-primary size-sm w-full">
                         <x-icon name="refresh-cw" class="size-4" />
                         Aplicar a todos
                     </button>
                 </div>
                 <div>
-                    <button type="button" onclick="if(confirm('¿Estás seguro de limpiar TODO el inventario? Todas las existencias pasarán a cero.')) { document.getElementById('clear-inventory-form').submit(); }" class="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-rose-200 bg-white px-4 text-sm font-medium text-rose-600 transition hover:bg-rose-50">
+                    <button type="button" onclick="if(confirm('¿Estás seguro de limpiar TODO el inventario? Todas las existencias pasarán a cero.')) { document.getElementById('clear-inventory-form').submit(); }" class="x-button x-button-danger size-sm w-full">
                         <x-icon name="trash" class="size-4" />
                         Limpiar inventario
                     </button>
@@ -58,41 +60,42 @@
                 @csrf
             </form>
 
-            <hr class="border-slate-100">
+            <hr class="border-mz-border-light">
 
-            <!-- Importación CSV -->
+            {{-- Importación CSV --}}
             <form action="{{ route('admin.products.import') }}" method="POST" enctype="multipart/form-data" class="flex flex-col gap-3 lg:flex-row lg:items-end">
                 @csrf
                 <div class="flex-1">
-                    <label for="import_file" class="block text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Importar catálogo CSV</label>
+                    <label for="import_file" class="block text-xs font-semibold uppercase tracking-[0.12em] text-mz-text-muted">Importar catálogo CSV</label>
                     <div class="mt-1.5 flex items-center gap-2">
-                        <input id="import_file" type="file" name="import_file" accept=".csv,.txt,.xlsx,.xls" class="block w-full text-sm text-slate-500 file:mr-3 file:h-10 file:rounded-lg file:border-0 file:bg-slate-100 file:px-4 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200">
+                        <input id="import_file" type="file" name="import_file" accept=".csv,.txt,.xlsx,.xls" class="block w-full text-sm text-mz-text-secondary file:mr-3 file:h-10 file:rounded-md file:border-0 file:bg-mz-bg-surface-2 file:px-3 file:text-sm file:font-medium file:text-mz-text-secondary hover:file:bg-mz-bg-surface-2">
                     </div>
-                    <p class="mt-1 text-xs text-slate-400">Columnas: sku, nombre, marca, categoria, costo, precio_venta, precio_mayoreo, stock, min_stock, iva, codigo_barras, descripcion</p>
+                    <p class="mt-1 text-xs text-mz-text-muted">Columnas: sku, nombre, marca, categoria, costo, precio_venta, precio_mayoreo, stock, min_stock, iva, codigo_barras, descripcion</p>
                 </div>
                 <div>
-                    <button type="submit" class="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand-700 px-5 text-sm font-semibold text-white transition hover:bg-brand-800">
+                    <button type="submit" class="x-button x-button-primary size-sm">
                         <x-icon name="upload" class="size-4" />
                         Importar archivo
                     </button>
                 </div>
             </form>
         </div>
-    </div>
+    </section>
 
-    <form action="{{ route('admin.products.index') }}" method="GET" class="mt-5 rounded-xl border border-slate-200 bg-white p-4">
+    {{-- Filtros --}}
+    <form action="{{ route('admin.products.index') }}" method="GET" class="mt-4 mz-card mz-card-padded overflow-hidden">
         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_14rem_12rem_auto] lg:items-end">
             <div>
-                <label for="admin-search" class="block text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Buscar</label>
+                <label for="admin-search" class="block text-xs font-semibold uppercase tracking-[0.12em] text-mz-text-muted">Buscar</label>
                 <div class="relative mt-1.5">
-                    <x-icon name="search" class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
-                    <input id="admin-search" type="search" name="search" value="{{ $search }}" placeholder="Nombre, marca o SKU" class="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm text-slate-700 placeholder:text-slate-500 focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20">
+                    <x-icon name="search" class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-mz-text-muted" />
+                    <input id="admin-search" type="search" name="search" value="{{ $search }}" placeholder="Nombre, marca o SKU" class="mz-input pl-9 mt-1.5 h-10 w-full">
                 </div>
             </div>
 
             <div>
-                <label for="admin-category" class="block text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Categoría</label>
-                <select id="admin-category" name="categoria" class="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-3 pr-8 text-sm text-slate-700 focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20">
+                <label for="admin-category" class="block text-xs font-semibold uppercase tracking-[0.12em] text-mz-text-muted">Categoría</label>
+                <select id="admin-category" name="categoria" class="mz-select mt-1.5 h-10 w-full">
                     <option value="">Todas</option>
                     @foreach ($categories as $category)
                         <option value="{{ $category->slug }}" @selected(request('categoria') === $category->slug)>{{ $category->name }}</option>
@@ -101,8 +104,8 @@
             </div>
 
             <div>
-                <label for="admin-stock" class="block text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Existencia</label>
-                <select id="admin-stock" name="stock" class="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-3 pr-8 text-sm text-slate-700 focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20">
+                <label for="admin-stock" class="block text-xs font-semibold uppercase tracking-[0.12em] text-mz-text-muted">Existencia</label>
+                <select id="admin-stock" name="stock" class="mz-select mt-1.5 h-10 w-full">
                     <option value="">Todas</option>
                     <option value="bajo" @selected($stockFilter === 'bajo')>Stock bajo</option>
                     <option value="agotado" @selected($stockFilter === 'agotado')>Agotados</option>
@@ -110,72 +113,80 @@
             </div>
 
             <div class="flex items-center gap-2">
-                <button type="submit" class="h-10 rounded-lg bg-ink-900 px-4 text-sm font-medium text-white transition hover:bg-ink-800">Filtrar</button>
-                <a href="{{ route('admin.products.index') }}" class="h-10 rounded-lg border border-slate-200 px-4 text-sm font-medium leading-10 text-slate-600 transition hover:bg-slate-50">Limpiar</a>
+                <button type="submit" class="x-button x-button-primary size-sm">
+                    Filtrar
+                </button>
+                <a href="{{ route('admin.products.index') }}" class="x-button x-button-secondary size-sm">
+                    Limpiar
+                </a>
             </div>
         </div>
     </form>
 
-    <div class="mt-5 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+    {{-- Tabla de productos --}}
+    <section class="mt-4 mz-card overflow-hidden">
         <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-slate-200 text-sm">
-                <thead class="bg-slate-50">
-                    <tr class="text-left text-xs uppercase tracking-wide text-slate-500">
-                        <th scope="col" class="px-5 py-3 font-medium">Producto</th>
-                        <th scope="col" class="px-5 py-3 font-medium">SKU / Código</th>
-                        <th scope="col" class="px-5 py-3 font-medium">Categoría</th>
-                        <th scope="col" class="px-5 py-3 font-medium">Existencia</th>
-                        <th scope="col" class="px-5 py-3 font-medium">Estado</th>
-                        <th scope="col" class="px-5 py-3 text-right font-medium">Precio</th>
-                        <th scope="col" class="px-5 py-3"><span class="sr-only">Ver</span></th>
+            <table class="min-w-full divide-y divide-mz-border-light text-sm">
+                <thead class="bg-mz-bg-surface">
+                    <tr class="text-left text-xs uppercase tracking-wide text-mz-text-muted">
+                        <th scope="col" class="px-4 py-3 font-medium">Producto</th>
+                        <th scope="col" class="px-4 py-3 font-medium">SKU / Código</th>
+                        <th scope="col" class="px-4 py-3 font-medium">Categoría</th>
+                        <th scope="col" class="px-4 py-3 font-medium">Existencia</th>
+                        <th scope="col" class="px-4 py-3 font-medium">Estado</th>
+                        <th scope="col" class="px-4 py-3 text-right font-medium">Precio</th>
+                        <th scope="col" class="px-4 py-3"><span class="sr-only">Acciones</span></th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-slate-100">
+                <tbody class="divide-y divide-mz-border-light">
                     @forelse ($products as $product)
-                        <tr class="transition hover:bg-slate-50">
-                            <td class="px-5 py-3">
-                                <p class="font-medium text-slate-900">{{ $product->name }}</p>
-                                <p class="text-xs text-slate-500">{{ $product->brand }}</p>
+                        <tr class="transition hover:bg-mz-bg-surface-2">
+                            <td class="px-4 py-3">
+                                <p class="font-medium text-mz-text-primary">{{ $product->name }}</p>
+                                <p class="text-xs text-mz-text-secondary">{{ $product->brand }}</p>
                             </td>
-                            <td class="whitespace-nowrap px-5 py-3 font-mono text-xs text-slate-500">
+                            <td class="whitespace-nowrap px-4 py-3 font-mono text-xs text-mz-text-secondary">
                                 <p>{{ $product->sku }}</p>
                                 @if ($product->barcode)
-                                    <p class="mt-0.5 text-[11px] text-slate-400">{{ $product->barcode }}</p>
+                                    <p class="mt-0.5 text-[11px] text-mz-text-muted">{{ $product->barcode }}</p>
                                 @endif
                             </td>
-                            <td class="whitespace-nowrap px-5 py-3 text-slate-600">{{ $product->category->name }}</td>
-                            <td class="whitespace-nowrap px-5 py-3">
+                            <td class="whitespace-nowrap px-4 py-3 text-mz-text-secondary">{{ $product->category->name }}</td>
+                            <td class="whitespace-nowrap px-4 py-3">
                                 <x-stock-badge :product="$product" />
                             </td>
-                            <td class="whitespace-nowrap px-5 py-3">
+                            <td class="whitespace-nowrap px-4 py-3">
                                 <span @class([
-                                    'inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset',
-                                    'bg-emerald-50 text-emerald-700 ring-emerald-600/20' => $product->is_active,
-                                    'bg-slate-100 text-slate-600 ring-slate-500/20' => ! $product->is_active,
-                                ])>{{ $product->is_active ? 'Publicado' : 'Borrador' }}</span>
+                                    'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset',
+                                    'bg-mz-success/10 text-mz-success ring-mz-success/20' => $product->is_active,
+                                    'bg-mz-text-muted/10 text-mz-text-muted ring-mz-text-muted/20' => ! $product->is_active,
+                                ])>
+                                    <x-icon name="{{ $product->is_active ? 'check' : 'clock' }}" class="size-3" />
+                                    {{ $product->is_active ? 'Publicado' : 'Borrador' }}
+                                </span>
                             </td>
-                            <td class="whitespace-nowrap px-5 py-3 text-right font-medium tabular-nums text-slate-900">
+                            <td class="whitespace-nowrap px-4 py-3 text-right font-medium tabular-nums text-mz-text-primary">
                                 <p>${{ number_format((float) $product->price, 2) }}</p>
                                 @if ($product->hasCost())
-                                    <p class="mt-0.5 text-[11px] font-normal text-slate-400">Costo ${{ number_format((float) $product->cost, 2) }} · {{ number_format((float) $product->marginPercentage(), 1) }}%</p>
+                                    <p class="mt-0.5 text-[11px] font-normal text-mz-text-muted">Costo ${{ number_format((float) $product->cost, 2) }} · {{ number_format((float) $product->marginPercentage(), 1) }}%</p>
                                 @else
-                                    <p class="mt-0.5 text-[11px] font-normal text-amber-600">Sin costo capturado</p>
+                                    <p class="mt-0.5 text-[11px] font-normal text-mz-warning">Sin costo capturado</p>
                                 @endif
-                                <p class="mt-0.5 text-[11px] font-normal text-slate-400">IVA {{ number_format((float) $product->tax_rate * 100, 2) }}%</p>
+                                <p class="mt-0.5 text-[11px] font-normal text-mz-text-muted">IVA {{ number_format((float) $product->tax_rate * 100, 2) }}%</p>
                             </td>
-                            <td class="px-5 py-3">
+                            <td class="px-4 py-3">
                                 <div class="flex items-center justify-end gap-1.5">
-                                    <a href="{{ route('catalog.show', $product) }}" class="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-brand-500 hover:text-brand-700" aria-label="Ver {{ $product->name }} en la tienda">
+                                    <a href="{{ route('catalog.show', $product) }}" class="inline-flex size-8 items-center justify-center rounded-md border border-mz-border-light text-mz-text-muted transition hover:border-mz-accent-primary hover:text-mz-accent-primary" aria-label="Ver {{ $product->name }} en la tienda">
                                         <x-icon name="arrow-right" class="size-4" />
                                     </a>
-                                    <a href="{{ route('admin.products.edit', $product) }}" class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-xs font-medium text-slate-600 transition hover:border-brand-500 hover:text-brand-700">
+                                    <a href="{{ route('admin.products.edit', $product) }}" class="x-button x-button-ghost size-xs text-mz-text-secondary">
                                         <x-icon name="pencil" class="size-3.5" />
                                         Editar
                                     </a>
-                                    <form action="{{ route('admin.products.destroy', $product) }}" method="POST" onsubmit="return confirm('¿Estás seguro de eliminar el producto "{{ $product->name }}"? Esta acción no se puede deshacer.')" class="ml-1">
+                                    <form action="{{ route('admin.products.destroy', $product) }}" method="POST" onsubmit="return confirm('¿Estás seguro de eliminar el producto \"{{ $product->name }}\"? Esta acción no se puede deshacer.')" class="ml-1">
                                         @csrf
                                         @method('DELETE')
-                                        <button type="submit" class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 text-red-600 transition hover:bg-red-50 hover:text-white" aria-label="Eliminar {{ $product->name }}">
+                                        <button type="submit" class="x-button x-button-ghost size-xs text-mz-error" aria-label="Eliminar {{ $product->name }}">
                                             <x-icon name="trash" class="size-3.5" />
                                         </button>
                                     </form>
@@ -184,18 +195,18 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="px-5 py-14 text-center">
-                                <p class="text-sm font-medium text-slate-700">Sin productos con esos filtros</p>
-                                <a href="{{ route('admin.products.index') }}" class="mt-2 inline-block text-xs font-medium text-brand-700 hover:text-brand-800">Limpiar filtros</a>
+                            <td colspan="7" class="px-4 py-14 text-center">
+                                <p class="text-sm font-medium text-mz-text-secondary">Sin productos con esos filtros</p>
+                                <a href="{{ route('admin.products.index') }}" class="mt-2 inline-block text-xs font-medium text-mz-accent-primary hover:text-mz-accent-hover">Limpiar filtros</a>
                             </td>
                         </tr>
                     @endforelse
                 </tbody>
             </table>
         </div>
-    </div>
+    </section>
 
-    <div class="mt-6">
+    <div class="mt-4">
         {{ $products->links() }}
     </div>
 @endsection

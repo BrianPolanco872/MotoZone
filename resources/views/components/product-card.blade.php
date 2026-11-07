@@ -12,12 +12,15 @@
         </div>
 
         <h3 class="mt-2 text-sm font-medium leading-snug text-slate-900">
-            <a href="{{ route('catalog.show', $product) }}" class="transition hover:text-brand-700">{{ $product->name }}</a>
+            <a href="{{ route('catalog.show', $product) }}" class="transition hover:text-mz-accent-primary">{{ $product->name }}</a>
         </h3>
 
-        <div class="mt-auto flex items-end justify-between pt-4">
-            <p class="font-display text-2xl font-semibold leading-none text-slate-900">${{ number_format((float) $product->price, 2) }}</p>
-            <a href="{{ route('catalog.show', $product) }}" class="flex size-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition group-hover:border-brand-600 group-hover:bg-brand-800 group-hover:text-white" aria-label="Consultar {{ $product->name }}">
+        <div class="mt-auto flex items-end justify-between gap-3 pt-4">
+            <div>
+                <p class="font-display text-2xl font-semibold leading-none text-slate-900">${{ number_format((float) $product->price, 2) }}</p>
+                <p class="mt-1 font-mono text-[11px] uppercase tracking-wide text-slate-400">{{ $product->sku }}</p>
+            </div>
+            <a href="{{ route('catalog.show', $product) }}" class="flex size-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition group-hover:border-mz-accent-primary group-hover:bg-mz-accent-primary group-hover:text-white" aria-label="Consultar {{ $product->name }}">
                 <x-icon name="arrow-right" class="size-4" />
             </a>
         </div>

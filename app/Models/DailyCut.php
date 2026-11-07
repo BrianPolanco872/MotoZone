@@ -80,6 +80,19 @@ class DailyCut extends Model
             ->exists();
     }
 
+    /**
+     * Verifica si un usuario tiene su corte de empleado cerrado para una fecha.
+     */
+    public static function isDayClosedForUser(string $date, User $user): bool
+    {
+        return self::query()
+            ->where('scope', self::SCOPE_EMPLOYEE)
+            ->where('user_id', $user->id)
+            ->whereDate('cut_date', $date)
+            ->whereNotNull('closed_at')
+            ->exists();
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

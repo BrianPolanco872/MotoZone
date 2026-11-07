@@ -3,11 +3,14 @@
 namespace App\Services;
 
 use App\Models\CashMovement;
+use App\Models\CustomerPayment;
 use App\Models\DailyCut;
 use App\Models\Sale;
 use App\Models\SaleReturn;
+use App\Models\SupplierPayment;
 use App\Models\User;
 use Carbon\CarbonInterface;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -59,12 +62,34 @@ class DailyCutService
 
         $initial = $this->sumMovement($cash, 'in', 'initial');
         $change = $this->sumMovement($cash, 'in', 'change');
-        $customerPayments = $this->sumMovement($cash, 'in', 'customer_payment');
         $otherIn = $this->sumMovement($cash, 'in', 'other');
-        $supplierPayments = $this->sumMovement($cash, 'out', 'supplier_payment');
+        $supplierPaymentsLegacy = $this->sumMovement($cash, 'out', 'supplier_payment');
         $expenses = $this->sumMovement($cash, 'out', 'expense');
         $withdrawals = $this->sumMovement($cash, 'out', 'withdrawal');
         $otherOut = $this->sumMovement($cash, 'out', 'other');
+
+        // ---------- Abonos de clientes y pagos a proveedores (tablas dedicadas) ----------
+        $customerPaymentsAll = CustomerPayment::query()
+            ->whereBetween('happened_at', [$start, $end])
+            ->when($employee, fn ($query) => $query->where('user_id', $employee->id))
+            ->get();
+
+        $supplierPaymentsAll = SupplierPayment::query()
+            ->whereBetween('happened_at', [$start, $end])
+            ->when($employee, fn ($query) => $query->where('user_id', $employee->id))
+            ->get();
+
+        // Solo los abonos en EFECTIVO suman al dinero esperado en caja.
+        $customerPaymentsCash = round((float) $customerPaymentsAll->where('method', 'cash')->sum('amount'), 2);
+        $customerPaymentsNonCash = round((float) $customerPaymentsAll->where('method', '!=', 'cash')->sum('amount'), 2);
+        $customerPaymentsTotal = round($customerPaymentsCash + $customerPaymentsNonCash, 2);
+
+        // Los pagos a proveedores son egreso sin importar el método.
+        $supplierPaymentsTotal = round((float) $supplierPaymentsAll->sum('amount'), 2);
+
+        // Mantener la variable legacy para no romper código existente que la use.
+        $customerPayments = $customerPaymentsCash;
+        $supplierPayments = $supplierPaymentsTotal;
 
         // ---------- Devoluciones aprobadas ----------
         $returns = SaleReturn::query()
@@ -193,7 +218,10 @@ class DailyCutService
                 'cash_out' => $boxCashOut,
                 'subtotal' => $cashBoxSubtotal,
             ],
-            'customer_payments' => $customerPayments,
+            'customer_payments' => $customerPaymentsTotal,
+            'customer_payments_cash' => $customerPaymentsCash,
+            'customer_payments_non_cash' => $customerPaymentsNonCash,
+            'supplier_payments' => $supplierPaymentsTotal,
             'reconciliation' => [
                 'computer_subtotal' => $computerSubtotal,
                 'cash_box_subtotal' => $cashBoxSubtotal,
@@ -227,8 +255,11 @@ class DailyCutService
      */
     public function recordCashCounted(DailyCut $cut, float $amount, string $reason = ''): DailyCut
     {
-        $computerSubtotal = (float) ($cut->totals['computer_panel']['subtotal'] ?? 0);
-        $difference = round($amount - $computerSubtotal, 2);
+        // El conteo físico se compara contra el total mostrado en "Dinero en caja"
+        // (movimientos de caja), que es el mismo "TOTAL (debe haber)" del corte.
+        $totals = $cut->totals ?? [];
+        $expected = (float) ($totals['cash_box_panel']['subtotal'] ?? $totals['computer_panel']['subtotal'] ?? 0);
+        $difference = round($amount - $expected, 2);
 
         $cut->update([
             'cash_counted' => $amount,
@@ -242,16 +273,32 @@ class DailyCutService
     }
 
     /**
-     * Generate and persist the global cut plus one cut per employee with activity.
-     * Creates a NEW version each time instead of overwriting.
+     * Generate and persist cuts.
+     *
+     * When $onlyEmployee is given, only that employee's cut is generated
+     * (corte propio). No global cut, no other employees, no day closure.
      *
      * @return Collection<int, DailyCut>
      */
-    public function generate(CarbonInterface|string $date, User $generatedBy): Collection
+    public function generate(CarbonInterface|string $date, User $generatedBy, ?User $onlyEmployee = null): Collection
     {
         $start = Carbon::parse($date)->startOfDay();
         $end = $start->copy()->endOfDay();
         $cutDate = $start->toDateString();
+
+        // Corte propio de un empleado: aislado, nunca global ni de otros.
+        if ($onlyEmployee) {
+            $cut = $this->storeVersion(
+                $cutDate,
+                DailyCut::SCOPE_EMPLOYEE,
+                $onlyEmployee->id,
+                $this->build($start, $onlyEmployee),
+                $generatedBy,
+                notes: "Corte de {$onlyEmployee->name} generado el {$start->format('d/m/Y')}"
+            );
+
+            return collect([$cut]);
+        }
 
         // Global cut (new version)
         $this->storeVersion(
@@ -321,32 +368,56 @@ class DailyCutService
         User $generatedBy,
         string $notes = ''
     ): DailyCut {
-        $cutKey = DailyCut::keyFor($cutDate, $scope, $userId);
-        $version = DailyCut::nextVersionFor($cutDate, $scope, $userId);
+        $attempts = 0;
+        $maxAttempts = 3;
 
-        // Find previous latest version to link
-        $previous = DailyCut::query()
-            ->where('cut_key', $cutKey)
-            ->orderByDesc('version')
-            ->first();
+        while (true) {
+            $attempts++;
 
-        return DailyCut::create([
-            'cut_key' => $cutKey,
-            'cut_date' => $cutDate,
-            'scope' => $scope,
-            'user_id' => $userId,
-            'version' => $version,
-            'totals' => $totals,
-            'generated_by' => $generatedBy->id,
-            'generated_at' => now(),
-            'reason' => '',
-            'cash_counted' => null,
-            'cash_counted_at' => null,
-            'difference' => null,
-            'is_reconciled' => false,
-            'previous_cut_id' => $previous?->id,
-            'notes' => $notes,
-        ]);
+            $cutKey = DailyCut::keyFor($cutDate, $scope, $userId);
+            $version = DailyCut::nextVersionFor($cutDate, $scope, $userId);
+
+            // Find previous latest version to link
+            $previous = DailyCut::query()
+                ->where('cut_key', $cutKey)
+                ->orderByDesc('version')
+                ->first();
+
+            try {
+                return DailyCut::create([
+                    'cut_key' => $cutKey,
+                    'cut_date' => $cutDate,
+                    'scope' => $scope,
+                    'user_id' => $userId,
+                    'version' => $version,
+                    'totals' => $totals,
+                    'generated_by' => $generatedBy->id,
+                    'generated_at' => now(),
+                    'reason' => '',
+                    'cash_counted' => null,
+                    'cash_counted_at' => null,
+                    'difference' => null,
+                    'is_reconciled' => false,
+                    'previous_cut_id' => $previous?->id,
+                    'notes' => $notes,
+                ]);
+            } catch (QueryException $e) {
+                if ($attempts >= $maxAttempts || ! $this->isUniqueVersionConflict($e)) {
+                    throw $e;
+                }
+
+                // Colisión de versión por corte concurrente: recalcular y reintentar.
+                continue;
+            }
+        }
+    }
+
+    private function isUniqueVersionConflict(QueryException $e): bool
+    {
+        $message = $e->getMessage();
+
+        return str_contains($message, 'unique')
+            && (str_contains($message, 'cut_key') || str_contains($message, 'Duplicate entry'));
     }
 
     /**
@@ -379,5 +450,128 @@ class DailyCutService
             ->where('type', $type)
             ->where('category', $category)
             ->sum(fn (CashMovement $movement): float => (float) $movement->amount), 2);
+    }
+
+    /**
+     * Devuelve los abonos de clientes de un día/empleado, con el empleado que los registró.
+     * Usado por el modal de detalle de "Pagos de Clientes".
+     *
+     * @return Collection<int, CustomerPayment>
+     */
+    public function customerPaymentsForCut(string $date, ?User $employee = null): Collection
+    {
+        $start = Carbon::parse($date)->startOfDay();
+        $end = $start->copy()->endOfDay();
+
+        return CustomerPayment::query()
+            ->with('user')
+            ->whereBetween('happened_at', [$start, $end])
+            ->when($employee, fn ($query) => $query->where('user_id', $employee->id))
+            ->orderByDesc('happened_at')
+            ->get();
+    }
+
+    /**
+     * Devuelve los pagos a proveedores de un día/empleado, con el empleado que los registró.
+     * Usado por el modal de detalle de "Pagos a Proveedores".
+     *
+     * @return Collection<int, SupplierPayment>
+     */
+    public function supplierPaymentsForCut(string $date, ?User $employee = null): Collection
+    {
+        $start = Carbon::parse($date)->startOfDay();
+        $end = $start->copy()->endOfDay();
+
+        return SupplierPayment::query()
+            ->with('user')
+            ->whereBetween('happened_at', [$start, $end])
+            ->when($employee, fn ($query) => $query->where('user_id', $employee->id))
+            ->orderByDesc('happened_at')
+            ->get();
+    }
+
+    /**
+     * Desglose del corte por empleado para el día indicado.
+     *
+     * Solo incluye empleados que tuvieron actividad ese día (ventas, movimientos
+     * de caja, devoluciones o un corte generado). Cada fila trae su estado de
+     * corte (done/pending) y el total global viene aparte para la sumatoria.
+     *
+     * @return array{employees: Collection<int, array>, total: array<string, mixed>}
+     */
+    public function employeeBreakdown(string $date): array
+    {
+        $start = Carbon::parse($date)->startOfDay();
+        $end = $start->copy()->endOfDay();
+        $cutDate = $start->toDateString();
+
+        $employeeIds = Sale::query()
+            ->paid()
+            ->whereBetween('paid_at', [$start, $end])
+            ->distinct()
+            ->pluck('user_id')
+            ->merge(
+                CashMovement::query()
+                    ->whereBetween('happened_at', [$start, $end])
+                    ->distinct()
+                    ->pluck('user_id')
+            )
+            ->merge(
+                SaleReturn::query()
+                    ->where('status', SaleReturn::STATUS_APPROVED)
+                    ->whereBetween('approved_at', [$start, $end])
+                    ->with('sale')
+                    ->get()
+                    ->pluck('sale.user_id')
+            )
+            ->merge(
+                DailyCut::query()
+                    ->whereDate('cut_date', $cutDate)
+                    ->whereNotNull('user_id')
+                    ->distinct()
+                    ->pluck('user_id')
+            )
+            ->filter()
+            ->unique()
+            ->values();
+
+        $employees = User::query()
+            ->whereKey($employeeIds)
+            ->whereNull('deleted_at')
+            ->orderBy('name')
+            ->get();
+
+        $rows = $employees->map(function (User $employee) use ($start, $cutDate): array {
+            $totals = $this->build($start, $employee);
+            $latest = $this->findLatestCut($cutDate, $employee);
+
+            return [
+                'id' => $employee->id,
+                'name' => $employee->name,
+                'status' => $latest ? 'done' : 'pending',
+                'latest_cut' => $latest,
+                'tickets' => (int) ($totals['sales']['count'] ?? 0),
+                'sales' => (float) ($totals['sales']['total'] ?? 0),
+                'cash' => (float) ($totals['sales']['total_cash'] ?? 0),
+                'refunds' => (float) ($totals['returns']['total'] ?? 0),
+                'cash_out' => (float) ($totals['cash_out']['total'] ?? 0),
+                'should_have' => (float) ($totals['computer_panel']['subtotal'] ?? 0),
+            ];
+        });
+
+        $global = $this->build($start);
+        $globalTotals = $global['totals'] ?? [];
+
+        return [
+            'employees' => $rows,
+            'total' => [
+                'tickets' => (int) ($globalTotals['tickets'] ?? 0),
+                'sales' => (float) ($globalTotals['sales'] ?? 0),
+                'cash' => (float) ($globalTotals['sales'] ?? 0),
+                'refunds' => (float) ($globalTotals['refunds'] ?? 0),
+                'net_sales' => (float) ($globalTotals['net_sales'] ?? 0),
+                'profit' => (float) ($globalTotals['profit'] ?? 0),
+            ],
+        ];
     }
 }

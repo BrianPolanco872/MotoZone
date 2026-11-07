@@ -5,13 +5,13 @@
 
 @section('content')
     <div class="border-b border-slate-200 bg-white">
-        <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        <div class="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
             <nav class="flex flex-wrap items-center gap-2 text-xs text-slate-500" aria-label="Ruta de navegación">
-                <a href="{{ route('home') }}" class="transition hover:text-brand-700">Inicio</a>
+                <a href="{{ route('home') }}" class="transition hover:text-mz-accent-primary">Inicio</a>
                 <span aria-hidden="true">/</span>
-                <a href="{{ route('catalog.index') }}" class="transition hover:text-brand-700">Catálogo</a>
+                <a href="{{ route('catalog.index') }}" class="transition hover:text-mz-accent-primary">Catálogo</a>
                 <span aria-hidden="true">/</span>
-                <a href="{{ route('catalog.index', ['categoria' => $product->category->slug]) }}" class="transition hover:text-brand-700">{{ $product->category->name }}</a>
+                <a href="{{ route('catalog.index', ['categoria' => $product->category->slug]) }}" class="transition hover:text-mz-accent-primary">{{ $product->category->name }}</a>
                 <span aria-hidden="true">/</span>
                 <span class="text-slate-700">{{ $product->name }}</span>
             </nav>
@@ -21,11 +21,26 @@
     <article class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
         <div class="grid gap-8 lg:grid-cols-2 lg:gap-14">
             <div class="group">
-                <x-product-visual :product="$product" class="aspect-square rounded-2xl" icon-class="size-28 sm:size-36" />
+                <x-product-visual :product="$product" class="aspect-square rounded-xl" icon-class="size-28 sm:size-36" />
+
+                <div class="mt-3 grid grid-cols-3 gap-2 text-center text-[11px] text-slate-500">
+                    <div class="rounded-lg border border-slate-200 bg-white px-2 py-2">
+                        <x-icon name="truck" class="mx-auto size-4 text-mz-accent-primary" />
+                        <p class="mt-1">Envío 24–48 h</p>
+                    </div>
+                    <div class="rounded-lg border border-slate-200 bg-white px-2 py-2">
+                        <x-icon name="shield" class="mx-auto size-4 text-mz-accent-primary" />
+                        <p class="mt-1">Garantía 30 días</p>
+                    </div>
+                    <div class="rounded-lg border border-slate-200 bg-white px-2 py-2">
+                        <x-icon name="wrench" class="mx-auto size-4 text-mz-accent-primary" />
+                        <p class="mt-1">Asesoría técnica</p>
+                    </div>
+                </div>
             </div>
 
             <div>
-                <a href="{{ route('catalog.index', ['categoria' => $product->category->slug]) }}" class="inline-flex items-center gap-1.5 font-display text-xs font-semibold uppercase tracking-[0.2em] text-brand-700 transition hover:text-brand-800">
+                <a href="{{ route('catalog.index', ['categoria' => $product->category->slug]) }}" class="inline-flex items-center gap-1.5 font-display text-xs font-semibold uppercase tracking-[0.2em] text-mz-accent-primary transition hover:text-mz-accent-hover">
                     <x-icon :name="$product->category->icon()" class="size-4" />
                     {{ $product->category->name }}
                 </a>
@@ -35,7 +50,7 @@
                 <div class="mt-3 flex flex-wrap items-center gap-3 text-sm">
                     <span class="font-display text-sm uppercase tracking-[0.16em] text-slate-500">{{ $product->brand }}</span>
                     <span class="h-4 w-px bg-slate-200" aria-hidden="true"></span>
-                    <span class="text-slate-500">SKU {{ $product->sku }}</span>
+                    <span class="font-mono text-xs text-slate-500">SKU {{ $product->sku }}</span>
                     <x-stock-badge :product="$product" />
                 </div>
 
@@ -48,17 +63,17 @@
 
                 <div class="mt-6 flex flex-col gap-3 sm:flex-row">
                     @if ($product->isInStock())
-                        <a href="https://wa.me/525512345678?text={{ urlencode("Hola, me interesa {$product->name} ({$product->sku})") }}" target="_blank" rel="noopener" class="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-lg bg-brand-700 px-6 text-sm font-semibold text-white transition hover:bg-brand-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2">
+                        <a href="https://wa.me/525512345678?text={{ urlencode("Hola, me interesa {$product->name} ({$product->sku})") }}" target="_blank" rel="noopener" class="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-lg bg-mz-accent-primary px-6 text-sm font-semibold text-white transition hover:bg-mz-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-mz-accent-primary focus-visible:ring-offset-2">
                             <x-icon name="chat" class="size-5" />
                             Consultar disponibilidad
                         </a>
                     @else
-                        <span class="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-lg bg-slate-200 px-6 text-sm font-semibold text-slate-500">
+                        <span class="inline-flex h-12 flex-1 cursor-not-allowed items-center justify-center gap-2 rounded-lg bg-slate-100 px-6 text-sm font-semibold text-slate-500">
                             <x-icon name="alert" class="size-5" />
                             Sin existencias
                         </span>
                     @endif
-                    <a href="{{ route('catalog.index', ['categoria' => $product->category->slug]) }}" class="inline-flex h-12 items-center justify-center gap-2 rounded-lg border border-slate-300 px-6 text-sm font-semibold text-ink-900 transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400">
+                    <a href="{{ route('catalog.index', ['categoria' => $product->category->slug]) }}" class="inline-flex h-12 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-6 text-sm font-semibold text-ink-900 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400">
                         Seguir comprando
                     </a>
                 </div>
@@ -70,7 +85,7 @@
                 <dl class="mt-8 grid grid-cols-2 gap-x-6 gap-y-4 rounded-xl border border-slate-200 bg-white p-5 text-sm">
                     <div>
                         <dt class="text-xs uppercase tracking-[0.12em] text-slate-500">Número de parte</dt>
-                        <dd class="mt-1 font-medium text-ink-900">{{ $product->sku }}</dd>
+                        <dd class="mt-1 font-mono font-medium text-ink-900">{{ $product->sku }}</dd>
                     </div>
                     <div>
                         <dt class="text-xs uppercase tracking-[0.12em] text-slate-500">Marca</dt>
@@ -88,15 +103,15 @@
 
                 <ul class="mt-6 space-y-2 text-xs text-slate-500">
                     <li class="flex items-center gap-2">
-                        <x-icon name="truck" class="size-4 text-brand-700" />
+                        <x-icon name="truck" class="size-4 text-mz-accent-primary" />
                         Envío asegurado en 24–48 h a todo México.
                     </li>
                     <li class="flex items-center gap-2">
-                        <x-icon name="shield" class="size-4 text-brand-700" />
+                        <x-icon name="shield" class="size-4 text-mz-accent-primary" />
                         Garantía de 30 días por defecto de fabricación.
                     </li>
                     <li class="flex items-center gap-2">
-                        <x-icon name="wrench" class="size-4 text-brand-700" />
+                        <x-icon name="wrench" class="size-4 text-mz-accent-primary" />
                         Si dudas de compatibilidad, verificamos tu modelo antes de enviar.
                     </li>
                 </ul>
@@ -105,14 +120,14 @@
     </article>
 
     @if ($relatedProducts->isNotEmpty())
-        <section class="border-t border-slate-200 bg-white">
+        <section class="border-t border-slate-200 bg-slate-50">
             <div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
                 <div class="flex flex-wrap items-end justify-between gap-4">
                     <div>
-                        <p class="font-display text-xs font-semibold uppercase tracking-[0.24em] text-brand-700">También te puede servir</p>
+                        <p class="font-display text-xs font-semibold uppercase tracking-[0.24em] text-mz-accent-primary">También te puede servir</p>
                         <h2 class="mt-2 font-display text-3xl font-bold uppercase tracking-tight text-ink-900 sm:text-4xl">Más de {{ $product->category->name }}</h2>
                     </div>
-                    <a href="{{ route('catalog.index', ['categoria' => $product->category->slug]) }}" class="inline-flex items-center gap-2 text-sm font-semibold text-ink-900 transition hover:text-brand-700">
+                    <a href="{{ route('catalog.index', ['categoria' => $product->category->slug]) }}" class="inline-flex items-center gap-2 text-sm font-semibold text-ink-900 transition hover:text-mz-accent-primary">
                         Ver categoría
                         <x-icon name="arrow-right" class="size-4" />
                     </a>

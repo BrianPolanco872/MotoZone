@@ -10,6 +10,7 @@ use App\Models\User;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\RedirectResponse;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
 class UserController extends Controller
@@ -45,6 +46,30 @@ class UserController extends Controller
 
         $user = User::create($data);
         $user->syncRoles([$role]);
+
+        // Los empleados reciben permisos individuales por módulo (punto de venta,
+        // corte del día y/o productos) marcados en el alta. El rol empleado no
+        // otorga permisos base y nunca se le asigna admin.users.manage desde aquí.
+        if ($role === 'empleado') {
+            $modules = array_filter((array) ($data['modules'] ?? []));
+            $finePermissions = array_filter((array) ($data['permissions'] ?? []));
+
+            $finalPermissions = array_unique(
+                array_merge(
+                    User::permissionsForModules($modules),
+                    array_intersect($finePermissions, User::assignablePermissions())
+                )
+            );
+
+            // Solo asignar permisos que ya existen en la base de datos (evita
+            // PermissionDoesNotExist si el seeder aún no se ha ejecutado).
+            $existingPermissions = Permission::query()
+                ->whereIn('name', $finalPermissions)
+                ->pluck('name')
+                ->all();
+
+            $user->syncPermissions(array_values($existingPermissions));
+        }
 
         return redirect()
             ->route('admin.users.index')

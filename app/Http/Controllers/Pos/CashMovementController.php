@@ -11,10 +11,14 @@ use App\Models\DailyCut;
 use App\Models\User;
 use App\Services\AuditLogService;
 use App\Services\CashMovementService;
+use App\Services\DailyCutService;
+use App\Services\PresenceService;
 use Illuminate\Contracts\View\View;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 
 class CashMovementController extends Controller
@@ -23,7 +27,7 @@ class CashMovementController extends Controller
         private readonly AuditLogService $audit,
     ) {}
 
-    public function index(Request $request): View
+    public function index(Request $request, DailyCutService $cutService, PresenceService $presence): View
     {
         $user = $request->user();
         $canSeeAny = $user->can('pos.sales.day.any');
@@ -55,7 +59,7 @@ class CashMovementController extends Controller
             ->when(! $canSeeAny, fn ($q) => $q->where('user_id', $user->id))
             ->orderByDesc('happened_at');
 
-        $movements = $query->paginate(20)->withQueryString();
+        $movements = $query->paginate(8)->withQueryString();
 
         // Totals for visible (non-archived) movements matching filters
         $totalsQuery = CashMovement::query()
@@ -90,6 +94,8 @@ class CashMovementController extends Controller
             'inTotal' => $inTotal,
             'outTotal' => $outTotal,
             'netTotal' => round($inTotal - $outTotal, 2),
+            'cutBoard' => $this->buildCutBoard($cutService, $presence, $user, $canSeeAny),
+            'cutBoardDate' => today('America/Mexico_City')->toDateString(),
             'filters' => [
                 'from' => $from?->toDateString() ?? '',
                 'to' => $to?->toDateString() ?? '',
@@ -98,6 +104,59 @@ class CashMovementController extends Controller
                 'search' => $search,
                 'show_archived' => $showArchived,
             ],
+        ]);
+    }
+
+    /**
+     * Datos del panel "Corte del día por empleado" (solo lectura).
+     *
+     * Un usuario sin `pos.sales.day.any` solo recibe su propia fila.
+     *
+     * @return array{breakdown: array{employees: Collection<int, array>, total: array<string, mixed>}, onlineUsers: Collection<int, array>, date: string}
+     */
+    private function buildCutBoard(
+        DailyCutService $cutService,
+        PresenceService $presence,
+        User $user,
+        bool $canSeeAny,
+        ?string $date = null,
+    ): array {
+        $date ??= today('America/Mexico_City')->toDateString();
+        $breakdown = $cutService->employeeBreakdown($date);
+
+        if (! $canSeeAny) {
+            $breakdown['employees'] = $breakdown['employees']
+                ->where('id', $user->id)
+                ->values();
+        }
+
+        return [
+            'breakdown' => $breakdown,
+            'onlineUsers' => $presence->onlineUsers(),
+            'date' => $date,
+        ];
+    }
+
+    /**
+     * Refresco del panel de corte por empleado (polling del POS).
+     */
+    public function cutBoard(Request $request, DailyCutService $cutService, PresenceService $presence): JsonResponse
+    {
+        $user = $request->user();
+        $canSeeAny = $user->can('pos.sales.day.any');
+        $date = $request->filled('date')
+            ? Carbon::parse($request->query('date'))->toDateString()
+            : today('America/Mexico_City')->toDateString();
+
+        $data = $this->buildCutBoard($cutService, $presence, $user, $canSeeAny, $date);
+
+        return response()->json([
+            'html' => view('pos.cash.partials.employee-cut-board', $data + [
+                'canSeeAny' => $canSeeAny,
+            ])->render(),
+            'date' => $date,
+            'generated_at' => now('America/Mexico_City')->format('H:i:s'),
+            'count' => $data['breakdown']['employees']->count(),
         ]);
     }
 

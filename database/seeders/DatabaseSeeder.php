@@ -11,6 +11,7 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $this->call(AdminUserSeeder::class);
+        $this->call(RolePermissionSeeder::class);
 
         $categories = [
             ['name' => 'Motor y partes', 'slug' => 'motor', 'description' => 'Cilindros, pistones, carburadores y todo lo que mueve tu motor.', 'sort_order' => 1],

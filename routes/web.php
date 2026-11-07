@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\CajaController as AdminCajaController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\ProductController as AdminProductController;
 use App\Http\Controllers\Admin\UserController as AdminUserController;
@@ -48,17 +49,6 @@ Route::middleware(['auth', 'active', 'permission:pos.access'])->prefix('pos')->n
     Route::get('/ventas/{sale}/ticket', [PosSaleController::class, 'ticket'])->name('sales.ticket');
     Route::get('/ventas/{sale}/ticket-data', [PosSaleController::class, 'ticketData'])->name('sales.ticketData');
 
-    Route::middleware('permission:pos.cash.manage')->group(function () {
-        Route::get('/caja', [PosCashMovementController::class, 'index'])->name('cash.index');
-        Route::post('/caja/movimientos', [PosCashMovementController::class, 'store'])->name('cash.store');
-        Route::post('/caja/{cashMovement}/archivar', [PosCashMovementController::class, 'archive'])->name('cash.archive');
-        Route::post('/caja/archivar-masivo', [PosCashMovementController::class, 'archiveMass'])->name('cash.archive-mass');
-        Route::post('/caja/{cashMovement}/restaurar', [PosCashMovementController::class, 'restore'])->name('cash.restore');
-        Route::delete('/caja/{cashMovement}', [PosCashMovementController::class, 'destroy'])->name('cash.destroy');
-        Route::get('/caja/exportar', [PosCashMovementController::class, 'export'])->name('cash.export');
-        Route::get('/caja/archivados', [PosCashMovementController::class, 'index'])->name('cash.archived');
-    });
-
     Route::middleware('permission:pos.returns.request')->group(function () {
         Route::get('/devoluciones', [PosSaleReturnController::class, 'index'])->name('returns.index');
         Route::get('/devoluciones/venta/{sale}', [PosSaleReturnController::class, 'create'])->name('returns.create');
@@ -77,7 +67,6 @@ Route::middleware(['auth', 'active', 'permission:pos.access'])->prefix('pos')->n
 
     Route::middleware('permission:pos.cut.manage')->group(function () {
         Route::get('/corte', [PosDailyCutController::class, 'index'])->name('cuts.index');
-        Route::post('/corte', [PosDailyCutController::class, 'store'])->name('cuts.store');
         Route::post('/corte/{dailyCut}/efectivo-contado', [PosDailyCutController::class, 'recordCashCounted'])->name('cuts.record-cash');
         Route::get('/corte/imprimir', [PosDailyCutController::class, 'print'])->name('cuts.print');
         Route::get('/corte/historial', [PosDailyCutController::class, 'history'])->name('cuts.history');
@@ -85,9 +74,46 @@ Route::middleware(['auth', 'active', 'permission:pos.access'])->prefix('pos')->n
         Route::delete('/corte/todos', [PosDailyCutController::class, 'destroyAll'])->name('cuts.destroyAll');
     });
 
+    Route::post('/corte', [PosDailyCutController::class, 'store'])
+        ->middleware(['auth', 'active', 'role_or_permission:pos.cut.manage|pos.cut.own'])
+        ->name('cuts.store');
+
+    Route::post('/corte/cerrar-dia', [PosDailyCutController::class, 'closeDay'])
+        ->middleware(['auth', 'active', 'permission:pos.cut.manage'])
+        ->name('cuts.close-day');
+
+    Route::post('/corte/cerrar-mi-dia', [PosDailyCutController::class, 'closeMyDay'])
+        ->middleware(['auth', 'active', 'role_or_permission:pos.cut.manage|pos.cut.own'])
+        ->name('cuts.close-my-day');
+
+    Route::get('/corte/detalle-abonos', [PosDailyCutController::class, 'customerPaymentsDetail'])
+        ->middleware(['auth', 'active', 'role_or_permission:pos.cut.manage|pos.cut.own'])
+        ->name('cuts.customer-payments-detail');
+
+    Route::get('/corte/detalle-proveedores', [PosDailyCutController::class, 'supplierPaymentsDetail'])
+        ->middleware(['auth', 'active', 'role_or_permission:pos.cut.manage|pos.cut.own'])
+        ->name('cuts.supplier-payments-detail');
+
     Route::get('/mi-corte', [PosDailyCutController::class, 'mine'])
-        ->middleware(['permission:pos.sales.day.own', 'permission:pos.cut.own'])
+        ->middleware(['auth', 'active', 'role_or_permission:pos.cut.manage|pos.cut.own'])
         ->name('cuts.mine');
+
+    Route::post('/corte/reabrir-mi-dia', [PosDailyCutController::class, 'reopenMyDay'])
+        ->middleware(['auth', 'active', 'role_or_permission:pos.cut.manage|pos.cut.own'])
+        ->name('cuts.reopen-my-day');
+});
+
+// Caja: accesible con el permiso de caja aunque el usuario no tenga acceso al POS.
+Route::middleware(['auth', 'active', 'permission:pos.cash.manage'])->prefix('pos')->name('pos.')->group(function () {
+    Route::get('/caja', [PosCashMovementController::class, 'index'])->name('cash.index');
+    Route::get('/caja/corte-empleados', [PosCashMovementController::class, 'cutBoard'])->name('cash.cut-board');
+    Route::post('/caja/movimientos', [PosCashMovementController::class, 'store'])->name('cash.store');
+    Route::post('/caja/{cashMovement}/archivar', [PosCashMovementController::class, 'archive'])->name('cash.archive');
+    Route::post('/caja/archivar-masivo', [PosCashMovementController::class, 'archiveMass'])->name('cash.archive-mass');
+    Route::post('/caja/{cashMovement}/restaurar', [PosCashMovementController::class, 'restore'])->name('cash.restore');
+    Route::delete('/caja/{cashMovement}', [PosCashMovementController::class, 'destroy'])->name('cash.destroy');
+    Route::get('/caja/exportar', [PosCashMovementController::class, 'export'])->name('cash.export');
+    Route::get('/caja/archivados', [PosCashMovementController::class, 'index'])->name('cash.archived');
 });
 
 Route::prefix('admin')->name('admin.')->middleware(['auth', 'active'])->group(function () {
@@ -124,5 +150,15 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'active'])->group(fu
         Route::get('/usuarios/{user}/editar', [AdminUserController::class, 'edit'])->name('users.edit');
         Route::put('/usuarios/{user}', [AdminUserController::class, 'update'])->name('users.update');
         Route::delete('/usuarios/{user}', [AdminUserController::class, 'destroy'])->name('users.destroy');
+    });
+
+    Route::middleware('permission:pos.cash.manage')->name('caja.')->prefix('caja')->group(function () {
+        // La caja se administra desde una sola pantalla (POS). Se conserva la URL por compatibilidad.
+        Route::get('/', [AdminCajaController::class, 'index'])->name('index');
+        Route::post('/movimientos', [AdminCajaController::class, 'store'])->name('movimientos.store');
+        Route::delete('/{cashMovement}', [AdminCajaController::class, 'destroy'])->name('destroy');
+        Route::match(['get', 'post'], '/archive/{cashMovement}', [AdminCajaController::class, 'archive'])->name('archive');
+        Route::get('/corte', [AdminCajaController::class, 'corte'])->name('corte');
+        Route::get('/exportar', [AdminCajaController::class, 'export'])->name('export');
     });
 });
