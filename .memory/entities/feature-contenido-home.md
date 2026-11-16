@@ -1,0 +1,31 @@
+---
+entity: feature-contenido-home
+type: feature
+---
+
+- Objetivo: Organizar los productos por categorías y administrar una home limpia e independiente del catálogo completo y del POS de MotoZone.
+- Alcance confirmado por usuario: sustituir stock por existencias en interfaz; clasificar productos actuales; apartado Contenido de la home en sidebar para textos, títulos, descripciones, botones, productos de portada seleccionados/ordenados, categorías de portada seleccionadas/ordenadas y publicaciones; mantener catálogo público completo y un único inventario físico.
+- Fuera de alcance confirmado: alterar cobro del POS, precios, existencias físicas, compras en línea y duplicar inventario.
+- Criterios de aceptación confirmados: editar textos desde admin, publicar/ocultar/ordenar contenido, elegir productos/categorías de home, conservar catálogo completo y asignar a cada producto una categoría adecuada.
+- Archivos/módulos: usuario aprobó por confirmar mediante revisión; superficie mapeada: modelos Product/Category, nuevos HomePage/HomePublication propuestos, controladores Home/Admin contenido/categorías/clasificación, HomeController, AdminDashboardController, rutas, layouts admin/site, vistas home/productos/categorías/publicaciones, componente product-visual, traducciones UI y pruebas.
+- Solicitada por: usuario.
+- Estado: PLANIFICADA mediante plan-contenido-home; código pendiente de implementación.
+- Decisión arquitectónica confirmada por usuario: A, tarjetas de portada con título/texto/imagen/enlace interno/visible/orden; sin artículos ni páginas propias. Edición inicial del cuerpo de home solo por admin, sin CMS genérico.
+- Diseño cerrado para A: hasta 4 categorías, 8 productos y 3 publicaciones visibles; secciones ocultables sin espacios vacíos, marca MotoZone y accesibilidad responsive; conservar búsqueda al catálogo y navegación completa de categorías en menú desplegable.
+- Hallazgo: HomeController consulta todas las categorías y active()->featured()->latest()->take(8). Category.sort_order también ordena catálogo, navegación y selectores. Product.featured también sirve al fallback de frecuentes en PosController::frequentProducts. NO reutilizar esos campos para selección/orden independiente de home.
+- Datos planificados: campos editoriales independientes de visibilidad/orden de home en Product/Category; HomePage singleton de textos de secciones fijas y HomePublication para tarjetas. No copiar precio, existencias ni SKU a otro inventario. No crear CMS genérico ni nuevas dependencias.
+- Clasificación segura: no se consultaron productos reales. Leer/exportar ID/SKU y categoría actual, revisar correspondencia aprobada, previsualizar y actualizar únicamente category_id por transacción. Ambiguos requieren decisión humana; no declarar clasificación completa antes de revisarlos. No usar DatabaseSeeder/updateOrCreate ni reimportar para reclasificar, pues pueden sobrescribir datos comerciales. No borrar categorías: FK products.category_id tiene cascadeOnDelete. Preservar IDs/slugs y snapshots de categorías de ventas históricas.
+- Integración obligatoria: dashboard actual debe mostrar la nueva selección editorial real de home y sus alertas. PosController y Product.featured mantienen comportamiento. Catálogo continúa con activos sin filtro de portada.
+- Imágenes: carga de producto ya existe en public/products con máximo 2MB, pero product-visual actualmente dibuja iconos y no muestra image_path. Planear imagen real con fallback sin alterar inventario; imágenes nuevas validadas, textos escapados y enlaces internos seguros.
+- Traducción: sustituir literales visibles en home, metadatos de layouts.site, dashboard, productos, devoluciones y mensajes JS/PHP. Mantener nombres técnicos stock/min_stock y contratos JSON/consultas/CSV existentes; ayuda de importación en español sin prometer claves incompatibles.
+- Pruebas previstas: contenido persistido, permisos admin, publicación/orden/límites, catálogo no reducido, POS/frecuentes sin cambios, categoría actualizada sin mutar datos comerciales ni historia, imágenes seguras, escape HTML, enlaces, estados vacíos y vocabulario. No ejecutar Testing sin petición explícita.
+- Rollback aprobado en conversación: respaldo previo a migraciones/reclasificación; restaurar presentación/navegación anteriores y mantener productos/precios/existencias POS. Propuesta técnica: cambios aditivos, exportar contenido nuevo antes de revertir esquema; revertir category_id con mapa antes/después verificado sin sobrescribir cambios posteriores; no restaurar DB completa sobre ventas nuevas ni borrar contenido sin respaldo.
+- Trabajo previo integrado: plan-dashboard-pos-catalogo y feature-dashboard-pos-catalogo implementados, feature-pos y feature-acceso-paneles. bug-corte-reabrir-dia-01 tiene fix-corte-reabrir-dia-01 implementado; no cambiar cierre/reapertura.
+- Riesgos: cascada de categorías, acoplamientos actuales de featured/sort_order, datos ambiguos sin inspección, permisos editoriales, almacenamiento de imágenes y conservación de ventas concurrentes al revertir.
+- Herramientas y skills: memoria MCP/codesearch no disponibles en catálogo accesible, fallback .memory y read/glob/grep/explore. Laravel 13.38.0, Spatie Permission 8.3.2, PHPUnit 12.5.40, Tailwind declarado ^4.3.3. Skills aplicables Laravel, Tailwind, pruebas y Ponytail ya cargadas en sesión; resto no aplica. No existe .ai/rules.
+- No se modificó código/configuración/migraciones ni se ejecutaron tests/builds.
+- Última actualización: 2026-11-10.
+- Estado: IMPLEMENTADO
+- Implementada en: fix-contenido-home.
+- Alcance de estado IMPLEMENTADO: módulos editoriales y herramientas de clasificación; pendiente de aceptación de datos, pues los 5367 productos reales continúan Sin categoría hasta revisión de correspondencia y confirmación humana. Selección inicial de home vacía, no se publicó contenido automático.
+- Verificación: sintaxis/Pint/Blade/rutas y conservación del mapa original correctos. Testing, navegador y build pendientes; no se declara clasificación de productos terminada.

@@ -16,7 +16,7 @@
                 <span class="font-display text-3xl font-bold uppercase leading-none tracking-tight text-white">Moto<span class="text-brand-500">Zone</span></span>
             </a>
             <h1 class="mt-6 font-display text-2xl font-semibold uppercase tracking-tight text-white">Acceso al panel</h1>
-            <p class="mt-2 text-sm text-slate-400">Inicia sesión para administrar el catálogo o abrir el punto de venta.</p>
+            <p class="mt-2 text-sm text-slate-400">Inicia sesión para administrar los productos o abrir el punto de venta.</p>
         </div>
 
         <div class="mt-8 rounded-2xl border border-white/10 bg-white p-6 shadow-2xl shadow-black/30 sm:p-8">

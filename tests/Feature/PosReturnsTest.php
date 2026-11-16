@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\CashMovement;
 use App\Models\Product;
 use App\Models\Sale;
+use App\Models\SaleItem;
 use App\Models\SaleReturn;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
@@ -25,7 +26,7 @@ class PosReturnsTest extends TestCase
     private function employee(array $permissions = []): User
     {
         $user = User::factory()->create()->assignRole('empleado');
-        $user->givePermissionTo(array_merge(['pos.access', 'pos.sell', 'pos.returns.request'], $permissions));
+        $user->givePermissionTo(array_merge(['pos.access', 'pos.sell', 'pos.returns.request', 'pos.return.do'], $permissions));
 
         return $user;
     }
@@ -87,8 +88,7 @@ class PosReturnsTest extends TestCase
         return ['sale' => $sale, 'saleItem' => $saleItem, 'product' => $product];
     }
 
-    /** @test */
-    public function employee_can_request_return_for_paid_sale(): void
+    public function test_employee_can_request_return_for_paid_sale(): void
     {
         $employee = $this->employee();
         $data = $this->paidSaleWithProduct($employee);
@@ -110,11 +110,11 @@ class PosReturnsTest extends TestCase
         $this->assertNotNull($return);
         $this->assertEquals('pending', $return->status);
         $this->assertEquals(100.00, (float) $return->total);
-        $this->assertEquals(1, $data['saleItem']->refresh()->returned_quantity);
+        // returned_quantity se incrementa al aprobar la devolución, no al solicitarla.
+        $this->assertEquals(0, $data['saleItem']->refresh()->returned_quantity);
     }
 
-    /** @test */
-    public function cannot_return_more_than_available_quantity(): void
+    public function test_cannot_return_more_than_available_quantity(): void
     {
         $employee = $this->employee();
         $data = $this->paidSaleWithProduct($employee, 1);
@@ -133,8 +133,7 @@ class PosReturnsTest extends TestCase
         $response->assertUnprocessable();
     }
 
-    /** @test */
-    public function admin_can_approve_return_and_update_stock_and_cash(): void
+    public function test_admin_can_approve_return_and_update_stock_and_cash(): void
     {
         $admin = User::factory()->create()->assignRole('admin');
         $admin->givePermissionTo(['pos.access', 'pos.sell', 'pos.returns.request', 'pos.returns.approve']);
@@ -155,7 +154,7 @@ class PosReturnsTest extends TestCase
 
         $return = SaleReturn::first();
 
-        $response = $this->actingAs($admin)->postJson(route('pos.returns.approve', $return));
+        $response = $this->actingAs($admin)->putJson(route('pos.returns.approve', ['saleReturn' => $return]));
 
         $response->assertRedirect();
 
@@ -164,6 +163,7 @@ class PosReturnsTest extends TestCase
 
         $data['product']->refresh();
         $this->assertEquals(11, $data['product']->stock); // Se reabasteció 1
+        $this->assertEquals(1, $data['saleItem']->refresh()->returned_quantity);
 
         $this->assertDatabaseHas('cash_movements', [
             'category' => 'refund',

@@ -52,6 +52,10 @@ class User extends Authenticatable
             ],
         ],
         'Caja y corte' => [
+            'pos.caja.view' => [
+                'label' => 'Ver módulo de caja',
+                'description' => 'Permite acceder al módulo de caja. Si no está marcado, el empleado no podrá entrar a este módulo.',
+            ],
             'pos.cash.manage' => [
                 'label' => 'Registrar entradas y salidas de efectivo',
                 'description' => 'Anotar dinero inicial, cambio, pagos a proveedores, gastos y retiros.',

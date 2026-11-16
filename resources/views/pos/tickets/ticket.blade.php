@@ -61,6 +61,11 @@
         th.num, td.num { text-align: right; white-space: nowrap; }
         td { padding: 3px 0; vertical-align: top; }
         .item-name { font-weight: 700; }
+        .ticket p { margin: 4px 0; overflow-wrap: anywhere; }
+        .ticket td:first-child { overflow-wrap: anywhere; }
+        .ticket table { table-layout: fixed; }
+        .ticket th:first-child { width: 52%; }
+        .ticket td.num { font-size: 10px; }
         .totals td { padding: 2px 0; }
         .totals .label { color: #475569; }
         .total-row td { padding-top: 6px; font-size: 14px; font-weight: 700; }
@@ -80,92 +85,6 @@
         <a href="{{ route('pos.index') }}">Nueva venta</a>
     </div>
 
-    <div class="ticket">
-        <div class="center">
-            <p class="business">{{ $settings['business']['name'] ?? config('app.name') }}</p>
-            @if (! empty($settings['business']['address']))
-                <p class="muted">{{ $settings['business']['address'] }}</p>
-            @endif
-            @if (! empty($settings['business']['phone']))
-                <p class="muted">Tel. {{ $settings['business']['phone'] }}</p>
-            @endif
-            @if (! empty($settings['business']['tax_id']))
-                <p class="muted">RFC {{ $settings['business']['tax_id'] }}</p>
-            @endif
-        </div>
-
-        <hr class="divider">
-
-        <div class="center">
-            <p class="folio">{{ $sale->folio }}</p>
-            <p class="muted">{{ $sale->paid_at?->format('d/m/Y H:i') ?? $sale->created_at->format('d/m/Y H:i') }}</p>
-            <p class="muted">Atendió: {{ $sale->user?->name }}</p>
-        </div>
-
-        <hr class="divider">
-
-        <table>
-            <thead>
-                <tr>
-                    <th>Producto</th>
-                    <th class="num">Cant.</th>
-                    <th class="num">Importe</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach ($sale->items as $item)
-                    <tr>
-                        <td>
-                            <span class="item-name">{{ $item->product_name }}</span>
-                            <span class="muted" style="display:block">
-                                {{ $item->sku ?: $item->barcode }}
-                                · ${{ number_format((float) $item->unit_price, 2) }} c/u
-                            </span>
-                        </td>
-                        <td class="num">{{ $item->quantity }}</td>
-                        <td class="num">${{ number_format((float) $item->line_total, 2) }}</td>
-                    </tr>
-                    @if ((int) $item->returned_quantity > 0)
-                        <tr>
-                            <td colspan="3" class="muted">Devueltas: {{ $item->returned_quantity }} pieza(s)</td>
-                        </tr>
-                    @endif
-                @endforeach
-            </tbody>
-        </table>
-
-        <hr class="divider">
-
-        <table class="totals">
-            <tr>
-                <td class="label">Subtotal</td>
-                <td class="num">${{ number_format((float) $sale->subtotal, 2) }}</td>
-            </tr>
-            <tr>
-                <td class="label">IVA incluido</td>
-                <td class="num">${{ number_format((float) $sale->tax_total, 2) }}</td>
-            </tr>
-            <tr class="total-row">
-                <td>Total</td>
-                <td class="num">${{ number_format((float) $sale->total, 2) }}</td>
-            </tr>
-            <tr>
-                <td class="label">Pago con</td>
-                <td class="num">${{ number_format((float) $sale->amount_paid, 2) }}</td>
-            </tr>
-            <tr>
-                <td class="label">Cambio</td>
-                <td class="num">${{ number_format((float) $sale->change_amount, 2) }}</td>
-            </tr>
-        </table>
-
-        <hr class="divider">
-
-        <div class="center">
-            <p class="muted">Método de pago: {{ config('pos.payment_methods.' . ($sale->payment_method ?? 'cash') . '.label', ucfirst($sale->payment_method ?? 'efectivo')) }}</p>
-            <p class="footer">{{ $settings['ticket']['footer'] ?? 'Gracias por su compra.' }}</p>
-            <p class="muted">Conserve este ticket para cambios y devoluciones.</p>
-        </div>
-    </div>
+    @include('pos.tickets.receipt')
 </body>
 </html>

@@ -6,6 +6,7 @@ use App\Models\CashMovement;
 use App\Models\DailyCut;
 use App\Models\Product;
 use App\Models\Sale;
+use App\Models\SaleItem;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -28,6 +29,36 @@ class PosCutTest extends TestCase
         $user->givePermissionTo(array_merge(['pos.access', 'pos.sell', 'pos.cut.manage'], $permissions));
 
         return $user;
+    }
+
+    private function saleProduct(array $overrides = []): Product
+    {
+        return Product::factory()->create(array_merge([
+            'name' => 'Producto turno',
+            'sku' => 'TURNO-'.random_int(1000, 9999),
+            'barcode' => '750'.random_int(1000000000, 9999999999),
+            'price' => 100.00,
+            'cost' => 60.00,
+            'stock' => 10,
+            'min_stock' => 2,
+            'track_inventory' => true,
+            'tax_rate' => 0.16,
+        ], $overrides));
+    }
+
+    private function salePayload(Product $product, string $key): array
+    {
+        return [
+            'idempotency_key' => $key,
+            'status' => 'paid',
+            'amount_paid' => 100.00,
+            'items' => [
+                [
+                    'product_id' => $product->id,
+                    'quantity' => 1,
+                ],
+            ],
+        ];
     }
 
     private function makePaidSale(User $user, float $total, string $key): Sale
@@ -56,10 +87,10 @@ class PosCutTest extends TestCase
         ]);
     }
 
-    /** @test */
-    public function global_cut_includes_all_employees_sales(): void
+    public function test_global_cut_includes_all_employees_sales(): void
     {
         $admin = $this->employeeWithCut();
+        $admin->givePermissionTo('pos.sales.day.any');
         $employeeA = User::factory()->create()->assignRole('empleado');
         $employeeA->givePermissionTo(['pos.access', 'pos.sell']);
         $employeeB = User::factory()->create()->assignRole('empleado');
@@ -84,32 +115,31 @@ class PosCutTest extends TestCase
         $response->assertSee('$500.00'); // Dinero inicial
     }
 
-    /** @test */
-    public function cut_can_be_generated_and_persisted(): void
+    public function test_cut_can_be_generated_and_persisted(): void
     {
-        $admin = $this->employeeWithCut();
+        $employee = User::factory()->create()->assignRole('empleado');
+        $employee->givePermissionTo(['pos.access', 'pos.sell', 'pos.cut.own']);
 
-        $this->makePaidSale($admin, 200.00, 'cut-gen-1');
+        $this->makePaidSale($employee, 200.00, 'cut-gen-1');
 
-        $response = $this->actingAs($admin)->post(route('pos.cuts.store'), [
+        $response = $this->actingAs($employee)->post(route('pos.cuts.store'), [
             'date' => now()->toDateString(),
             'notes' => 'Corte de prueba',
         ]);
 
         $response->assertRedirect();
 
-        $this->assertDatabaseHas('daily_cuts', [
-            'scope' => 'global',
-            'cut_date' => now()->toDateString(),
-        ]);
+        $cut = DailyCut::query()
+            ->where('scope', DailyCut::SCOPE_EMPLOYEE)
+            ->where('user_id', $employee->id)
+            ->whereDate('cut_date', now()->toDateString())
+            ->first();
 
-        $cut = DailyCut::where('scope', 'global')->where('cut_date', now()->toDateString())->first();
         $this->assertNotNull($cut);
-        $this->assertEquals('Corte de prueba', $cut->notes);
+        $this->assertSame('Corte de prueba', $cut->notes);
     }
 
-    /** @test */
-    public function employee_can_see_own_cut(): void
+    public function test_employee_can_see_own_cut(): void
     {
         $employee = $this->employeeWithCut(['pos.sales.day.own']);
 
@@ -122,8 +152,7 @@ class PosCutTest extends TestCase
         $response->assertSee('$100.00');
     }
 
-    /** @test */
-    public function product_with_cost_is_reflected_in_cut_profit(): void
+    public function test_product_with_cost_is_reflected_in_cut_profit(): void
     {
         $admin = $this->employeeWithCut();
 
@@ -163,6 +192,137 @@ class PosCutTest extends TestCase
 
         $response->assertOk();
         $response->assertSee('$100.00'); // Ventas
-        $response->assertSee('$40.00'); // Ganancia aproximada (100 - 60 - IVA...)
+        $response->assertSee('$26.21'); // Ganancia = total 100 - IVA 13.79 - costo 60
+    }
+
+    public function test_own_cut_shows_finalize_day_button(): void
+    {
+        $employee = User::factory()->create()->assignRole('empleado');
+        $employee->givePermissionTo(['pos.access', 'pos.sell', 'pos.cut.own']);
+
+        $response = $this->actingAs($employee)->get(route('pos.cuts.mine'));
+
+        $response->assertOk();
+        $response->assertSee(route('pos.cuts.close-my-day'));
+        $response->assertDontSee(route('pos.cuts.reopen-my-day'));
+    }
+
+    public function test_closed_own_cut_shows_reopen_sale_button(): void
+    {
+        $employee = User::factory()->create()->assignRole('empleado');
+        $employee->givePermissionTo(['pos.access', 'pos.sell', 'pos.cut.own']);
+
+        $this->actingAs($employee)
+            ->post(route('pos.cuts.close-my-day'), ['date' => now()->toDateString()])
+            ->assertRedirect();
+
+        $response = $this->actingAs($employee)->get(route('pos.cuts.mine'));
+
+        $response->assertOk();
+        $response->assertSee(route('pos.cuts.reopen-my-day'));
+        $response->assertDontSee(route('pos.cuts.close-my-day'));
+    }
+
+    public function test_reopen_sale_allows_sale_and_final_cut_keeps_updated_totals(): void
+    {
+        $employee = User::factory()->create()->assignRole('empleado');
+        $employee->givePermissionTo(['pos.access', 'pos.sell', 'pos.cut.own']);
+        $product = $this->saleProduct();
+
+        $this->actingAs($employee)
+            ->post(route('pos.cuts.close-my-day'), ['date' => now()->toDateString()])
+            ->assertRedirect();
+
+        $blocked = $this->actingAs($employee)
+            ->postJson(route('pos.sales.store'), $this->salePayload($product, 'turno-blocked-1'));
+
+        $blocked->assertUnprocessable();
+        $blocked->assertJsonPath('day_closed_for_user', true);
+
+        $this->actingAs($employee)
+            ->post(route('pos.cuts.reopen-my-day'))
+            ->assertRedirect();
+
+        $saleResponse = $this->actingAs($employee)
+            ->postJson(route('pos.sales.store'), $this->salePayload($product, 'turno-after-reopen-1'));
+
+        $saleResponse->assertOk();
+
+        $this->actingAs($employee)
+            ->post(route('pos.cuts.close-my-day'), ['date' => now()->toDateString()])
+            ->assertRedirect();
+
+        $latest = DailyCut::latestVersion(now()->toDateString(), $employee);
+
+        $this->assertNotNull($latest);
+        $this->assertTrue($latest->isClosed());
+        $this->assertSame(2, $latest->version);
+        $this->assertEquals(100.00, (float) ($latest->totals['sales']['total'] ?? 0));
+    }
+
+    public function test_reopen_sale_button_is_not_shown_to_another_employee(): void
+    {
+        $employeeA = User::factory()->create()->assignRole('empleado');
+        $employeeA->givePermissionTo(['pos.access', 'pos.sell', 'pos.cut.own']);
+
+        $employeeB = User::factory()->create()->assignRole('empleado');
+        $employeeB->givePermissionTo(['pos.access', 'pos.sell', 'pos.cut.own']);
+
+        $this->actingAs($employeeA)
+            ->post(route('pos.cuts.close-my-day'), ['date' => now()->toDateString()])
+            ->assertRedirect();
+
+        $response = $this->actingAs($employeeB)->get(route('pos.cuts.mine'));
+
+        $response->assertOk();
+        $response->assertDontSee(route('pos.cuts.reopen-my-day'));
+    }
+
+    public function test_reopen_sale_button_hides_when_global_day_is_closed(): void
+    {
+        $employee = User::factory()->create()->assignRole('empleado');
+        $employee->givePermissionTo(['pos.access', 'pos.sell', 'pos.cut.own']);
+
+        $this->actingAs($employee)
+            ->post(route('pos.cuts.close-my-day'), ['date' => now()->toDateString()])
+            ->assertRedirect();
+
+        DailyCut::create([
+            'cut_key' => DailyCut::keyFor(now()->toDateString(), DailyCut::SCOPE_GLOBAL),
+            'cut_date' => now()->toDateString(),
+            'scope' => DailyCut::SCOPE_GLOBAL,
+            'user_id' => null,
+            'version' => 1,
+            'totals' => [],
+            'generated_by' => $employee->id,
+            'generated_at' => now(),
+            'closed_at' => now(),
+        ]);
+
+        $response = $this->actingAs($employee)->get(route('pos.cuts.mine'));
+
+        $response->assertOk();
+        $response->assertDontSee(route('pos.cuts.reopen-my-day'));
+    }
+
+    public function test_admin_does_not_see_reopen_sale_on_employee_cut(): void
+    {
+        $employee = User::factory()->create()->assignRole('empleado');
+        $employee->givePermissionTo(['pos.access', 'pos.sell', 'pos.cut.own']);
+
+        $admin = $this->employeeWithCut(['pos.sales.day.any']);
+
+        $this->actingAs($employee)
+            ->post(route('pos.cuts.close-my-day'), ['date' => now()->toDateString()])
+            ->assertRedirect();
+
+        $response = $this->actingAs($admin)->get(route('pos.cuts.index', [
+            'date' => now()->toDateString(),
+            'employee' => $employee->id,
+        ]));
+
+        $response->assertOk();
+        $response->assertDontSee(route('pos.cuts.reopen-my-day'));
+        $response->assertDontSee(route('pos.cuts.close-my-day'));
     }
 }

@@ -472,22 +472,52 @@ class DailyCutService
     }
 
     /**
-     * Devuelve los pagos a proveedores de un día/empleado, con el empleado que los registró.
-     * Usado por el modal de detalle de "Pagos a Proveedores".
+     * Devuelve las salidas de efectivo del día/empleado (pagos a proveedores,
+     * gastos, retiros y otros), combinando la tabla de pagos a proveedores con
+     * los movimientos de caja de tipo salida. Usado por el modal de detalle de
+     * "Pagos a Proveedores / Salidas".
      *
-     * @return Collection<int, SupplierPayment>
+     * @return Collection<int, array{happened_at: ?Carbon, description: string, category: string, amount: float, method: ?string, employee: string}>
      */
-    public function supplierPaymentsForCut(string $date, ?User $employee = null): Collection
+    public function cashOutsForCut(string $date, ?User $employee = null): Collection
     {
         $start = Carbon::parse($date)->startOfDay();
         $end = $start->copy()->endOfDay();
 
-        return SupplierPayment::query()
+        $supplierPayments = SupplierPayment::query()
             ->with('user')
             ->whereBetween('happened_at', [$start, $end])
             ->when($employee, fn ($query) => $query->where('user_id', $employee->id))
-            ->orderByDesc('happened_at')
-            ->get();
+            ->get()
+            ->map(fn (SupplierPayment $payment): array => [
+                'happened_at' => $payment->happened_at,
+                'description' => $payment->supplier_name ?: ($payment->reason ?: 'Pago a proveedor'),
+                'category' => 'Pago a proveedor',
+                'amount' => (float) $payment->amount,
+                'method' => $payment->method,
+                'employee' => $payment->user?->name ?? '—',
+            ]);
+
+        $cashMovementOuts = CashMovement::query()
+            ->with('user')
+            ->where('type', CashMovement::TYPE_OUT)
+            ->whereIn('category', ['expense', 'withdrawal', 'other'])
+            ->whereBetween('happened_at', [$start, $end])
+            ->when($employee, fn ($query) => $query->where('user_id', $employee->id))
+            ->get()
+            ->map(fn (CashMovement $movement): array => [
+                'happened_at' => $movement->happened_at,
+                'description' => $movement->concept ?: $movement->categoryLabel(),
+                'category' => $movement->categoryLabel(),
+                'amount' => (float) $movement->amount,
+                'method' => null,
+                'employee' => $movement->user?->name ?? '—',
+            ]);
+
+        return $supplierPayments
+            ->concat($cashMovementOuts)
+            ->sortByDesc(fn (array $item) => $item['happened_at']?->getTimestamp() ?? 0)
+            ->values();
     }
 
     /**
@@ -504,6 +534,12 @@ class DailyCutService
         $start = Carbon::parse($date)->startOfDay();
         $end = $start->copy()->endOfDay();
         $cutDate = $start->toDateString();
+
+        // Para reportes históricos, incluimos TODOS los empleados (activos, inactivos y soft-deleteados)
+        // para que las ventas de empleados eliminados sigan apareciendo en el desglose.
+        $allRoles = User::query()
+            ->whereHas('roles', fn ($q) => $q->whereIn('name', ['empleado', 'admin']))
+            ->pluck('id');
 
         $employeeIds = Sale::query()
             ->paid()
@@ -531,29 +567,41 @@ class DailyCutService
                     ->distinct()
                     ->pluck('user_id')
             )
+            ->merge($allRoles)
             ->filter()
             ->unique()
             ->values();
 
-        $employees = User::query()
+        // Usamos withTrashed() para incluir empleados soft-deleteados,
+        // y no filtramos por is_active para incluir inactivos también.
+        $employees = User::withTrashed()
             ->whereKey($employeeIds)
-            ->whereNull('deleted_at')
             ->orderBy('name')
             ->get();
 
         $rows = $employees->map(function (User $employee) use ($start, $cutDate): array {
             $totals = $this->build($start, $employee);
             $latest = $this->findLatestCut($cutDate, $employee);
+            $isClosed = $latest ? $latest->isClosed() : false;
+
+            $totalSales = (float) ($totals['sales']['total'] ?? 0);
+            $cashSales = (float) ($totals['sales']['total_cash'] ?? 0);
+            $otherPayments = max(0, round($totalSales - $cashSales, 2));
 
             return [
                 'id' => $employee->id,
                 'name' => $employee->name,
-                'status' => $latest ? 'done' : 'pending',
+                'email' => $employee->email,
+                'status' => $isClosed ? 'closed' : ($latest ? 'done' : 'pending'),
+                'is_day_closed' => $isClosed,
+                'closed_at' => $latest?->closed_at,
                 'latest_cut' => $latest,
                 'tickets' => (int) ($totals['sales']['count'] ?? 0),
-                'sales' => (float) ($totals['sales']['total'] ?? 0),
-                'cash' => (float) ($totals['sales']['total_cash'] ?? 0),
+                'sales' => $totalSales,
+                'cash' => $cashSales,
+                'other_payments' => $otherPayments,
                 'refunds' => (float) ($totals['returns']['total'] ?? 0),
+                'cash_in' => (float) ($totals['computer_panel']['cash_in_total'] ?? 0),
                 'cash_out' => (float) ($totals['cash_out']['total'] ?? 0),
                 'should_have' => (float) ($totals['computer_panel']['subtotal'] ?? 0),
             ];
@@ -561,16 +609,26 @@ class DailyCutService
 
         $global = $this->build($start);
         $globalTotals = $global['totals'] ?? [];
+        $globalSales = $global['sales'] ?? [];
+        $globalComputer = $global['computer_panel'] ?? [];
+
+        $globalSalesTotal = (float) ($globalSales['total'] ?? ($globalTotals['sales'] ?? 0));
+        $globalCashSales = (float) ($globalSales['total_cash'] ?? 0);
+        $globalOtherPayments = max(0, round($globalSalesTotal - $globalCashSales, 2));
 
         return [
             'employees' => $rows,
             'total' => [
-                'tickets' => (int) ($globalTotals['tickets'] ?? 0),
-                'sales' => (float) ($globalTotals['sales'] ?? 0),
-                'cash' => (float) ($globalTotals['sales'] ?? 0),
+                'tickets' => (int) ($globalSales['count'] ?? ($globalTotals['tickets'] ?? 0)),
+                'sales' => $globalSalesTotal,
+                'cash' => $globalCashSales,
+                'other_payments' => $globalOtherPayments,
                 'refunds' => (float) ($globalTotals['refunds'] ?? 0),
                 'net_sales' => (float) ($globalTotals['net_sales'] ?? 0),
                 'profit' => (float) ($globalTotals['profit'] ?? 0),
+                'cash_in' => (float) ($globalComputer['cash_in_total'] ?? 0),
+                'cash_out' => (float) ($globalComputer['cash_out'] ?? 0),
+                'should_have' => (float) ($globalComputer['subtotal'] ?? 0),
             ],
         ];
     }

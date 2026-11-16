@@ -70,14 +70,33 @@ class PosCashArchiveTest extends TestCase
         $response->assertSessionHasErrors('amount');
     }
 
-    public function test_cash_movement_requires_concept(): void
+    public function test_concept_is_required_for_cash_movement(): void
     {
         $employee = $this->employee();
 
         $response = $this->actingAs($employee)->post(route('pos.cash.store'), [
             'category' => 'initial',
             'amount' => 100.00,
-            'concept' => '',
+            'concept' => 'Movimiento de prueba',
+        ]);
+
+        $response->assertRedirect();
+
+        $this->assertDatabaseHas('cash_movements', [
+            'user_id' => $employee->id,
+            'category' => 'initial',
+            'amount' => 100.00,
+            'concept' => 'Movimiento de prueba',
+        ]);
+    }
+
+    public function test_concept_is_required_for_cash_movement_validation(): void
+    {
+        $employee = $this->employee();
+
+        $response = $this->actingAs($employee)->post(route('pos.cash.store'), [
+            'category' => 'initial',
+            'amount' => 100.00,
         ]);
 
         $response->assertSessionHasErrors('concept');
@@ -114,7 +133,7 @@ class PosCashArchiveTest extends TestCase
             'type' => 'in',
             'category' => 'initial',
             'amount' => 500.00,
-            'concept' => 'Dinero inicial',
+            'concept' => 'Concepto no visible en la vista principal',
             'happened_at' => now(),
         ]);
 
@@ -124,8 +143,8 @@ class PosCashArchiveTest extends TestCase
 
         $response->assertOk();
         // El movimiento archivado no debe aparecer en la vista principal
-        $response->assertDontSee('$500.00');
-        $response->assertSee('0 movimiento(s)');
+        $response->assertDontSee('Concepto no visible en la vista principal');
+        $response->assertSee('0 movimientos');
     }
 
     public function test_archived_movement_in_archived_view(): void
@@ -136,7 +155,7 @@ class PosCashArchiveTest extends TestCase
             'type' => 'in',
             'category' => 'initial',
             'amount' => 500.00,
-            'concept' => 'Dinero inicial',
+            'concept' => 'Concepto archivado visible',
             'happened_at' => now(),
         ]);
 
@@ -145,7 +164,7 @@ class PosCashArchiveTest extends TestCase
         $response = $this->actingAs($admin)->get(route('pos.cash.index', ['show_archived' => true]));
 
         $response->assertOk();
-        $response->assertSee('Dinero inicial');
+        $response->assertSee('Concepto archivado visible');
     }
 
     public function test_admin_can_restore_archived_movement(): void

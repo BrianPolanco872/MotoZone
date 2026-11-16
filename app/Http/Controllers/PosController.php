@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CashMovement;
 use App\Models\DailyCut;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleItem;
+use App\Services\TicketSettings;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,12 +15,19 @@ use Illuminate\Support\Facades\DB;
 
 class PosController extends Controller
 {
-    public function index(): View
+    public function index(TicketSettings $tickets): View
     {
         $user = auth()->user();
 
+        $hasInitialCash = CashMovement::query()
+            ->where('user_id', $user?->id)
+            ->where('category', 'initial')
+            ->where('type', CashMovement::TYPE_IN)
+            ->whereBetween('happened_at', [today()->startOfDay(), today()->endOfDay()])
+            ->exists();
+
         return view('pos.index', [
-            'settings' => config('pos'),
+            'settings' => $tickets->current(),
             'permissions' => [
                 'sell' => $user?->can('pos.sell') ?? false,
                 'price_edit' => $user?->can('pos.price.edit') ?? false,
@@ -26,6 +35,7 @@ class PosController extends Controller
                 'cancel_sale' => $user?->can('pos.cancel.sale') ?? false,
                 'wholesale' => $user?->can('pos.wholesale') ?? false,
                 'cash' => $user?->can('pos.cash.manage') ?? false,
+                'cash_view' => ($user?->can('pos.caja.view') || $user?->can('pos.cash.manage')) ?? false,
                 'returns_request' => $user?->can('pos.returns.request') ?? false,
                 'return_do' => $user?->can('pos.return.do') ?? false,
                 'sales_day_any' => $user?->can('pos.sales.day.any') ?? false,
@@ -36,6 +46,7 @@ class PosController extends Controller
                 'products_edit' => $user?->can('pos.products.edit') ?? false,
                 'day_closed' => DailyCut::isDayClosed(today()->toDateString()),
             ],
+            'initial_cash_registered' => $hasInitialCash,
             'frequentProducts' => $this->frequentProducts(),
             'today' => [
                 'sales' => Sale::query()
@@ -62,14 +73,13 @@ class PosController extends Controller
 
         $products = Product::query()
             ->active()
-            ->with('category')
             ->where(function ($query) use ($term): void {
                 $query->where('barcode', $term)
-                    ->orWhere('sku', $term)
+                    ->orWhere('barcode2', $term)
                     ->orWhere('name', 'like', "%{$term}%")
                     ->orWhere('brand', 'like', "%{$term}%");
             })
-            ->orderByRaw('CASE WHEN barcode = ? OR sku = ? THEN 0 ELSE 1 END', [$term, $term])
+            ->orderByRaw('CASE WHEN barcode = ? OR barcode2 = ? THEN 0 ELSE 1 END', [$term, $term])
             ->orderBy('name')
             ->limit(12)
             ->get();
@@ -113,7 +123,6 @@ class PosController extends Controller
                     'stock' => null,
                     'track_inventory' => false,
                     'wholesale_price' => null,
-                    'category' => $item->category_name,
                 ])->all(),
             ],
         ]);
@@ -135,7 +144,6 @@ class PosController extends Controller
 
         $products = Product::query()
             ->active()
-            ->with('category')
             ->whereIn('id', $ids)
             ->get()
             ->keyBy('id');
@@ -143,7 +151,7 @@ class PosController extends Controller
         $ordered = $ids->map(fn ($id) => $products->get($id))->filter()->values();
 
         if ($ordered->isEmpty()) {
-            $ordered = Product::query()->active()->with('category')->featured()->orderBy('name')->limit(8)->get();
+            $ordered = Product::query()->active()->featured()->orderBy('name')->limit(8)->get();
         }
 
         return $ordered->map(fn (Product $product): array => $this->productPayload($product))->all();
@@ -159,13 +167,13 @@ class PosController extends Controller
             'name' => $product->name,
             'sku' => $product->sku,
             'barcode' => $product->barcode,
+            'barcode2' => $product->barcode2,
             'price' => (float) $product->price,
             'wholesale_price' => $product->wholesalePrice(),
             'tax_rate' => (float) $product->tax_rate,
             'stock' => $product->stock,
             'min_stock' => $product->min_stock,
             'track_inventory' => $product->track_inventory,
-            'category' => $product->category?->name,
             'brand' => $product->brand,
             'image_path' => $product->image_path,
             'in_stock' => $product->isInStock(),

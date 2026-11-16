@@ -15,6 +15,9 @@ class SaleItem extends Model
         'sale_id',
         'product_id',
         'category_id',
+        'is_custom',
+        'custom_name',
+        'custom_price',
         'product_name',
         'sku',
         'barcode',
@@ -44,6 +47,8 @@ class SaleItem extends Model
             'line_cost' => 'decimal:2',
             'returned_quantity' => 'integer',
             'price_overridden' => 'boolean',
+            'is_custom' => 'boolean',
+            'custom_price' => 'decimal:2',
         ];
     }
 

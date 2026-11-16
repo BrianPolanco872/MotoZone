@@ -3,69 +3,81 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\Category;
+use App\Models\HomeCard;
+use App\Models\HomePage;
 use App\Models\Product;
+use App\Models\Sale;
+use App\Models\SaleReturn;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 
 class DashboardController extends Controller
 {
     public function __invoke(): View
     {
-        $activeProducts = Product::query()->active();
-        $totalProducts = Product::query()->count();
+        $generatedAt = now();
+        $startOfDay = $generatedAt->copy()->startOfDay();
+        $rankingStart = $startOfDay->copy()->subDays(29);
 
-        $categories = Category::query()
-            ->withCount(['products' => fn (Builder $query) => $query->where('is_active', true)])
-            ->orderByDesc('products_count')
-            ->get();
+        $sales = Sale::query()->paid()->whereBetween('paid_at', [$startOfDay, $generatedAt]);
+        $returns = SaleReturn::query()
+            ->where('status', SaleReturn::STATUS_APPROVED)
+            ->whereBetween('approved_at', [$startOfDay, $generatedAt]);
 
-        $metrics = [
-            [
-                'label' => 'Productos activos',
-                'value' => $activeProducts->count(),
-                'note' => "{$totalProducts} registrados en total",
-                'icon' => 'inventory',
-            ],
-            [
-                'label' => 'Valor del inventario',
-                'value' => '$'.number_format((float) Product::query()->active()->selectRaw('COALESCE(SUM(price * stock), 0) as total')->value('total'), 2),
-                'note' => 'Precio de lista por existencia',
-                'icon' => 'chart',
-            ],
-            [
-                'label' => 'Stock bajo',
-                'value' => Product::query()->active()->whereBetween('stock', [1, Product::LOW_STOCK_THRESHOLD])->count(),
-                'note' => 'Con 5 piezas o menos',
-                'icon' => 'alert',
-            ],
-            [
-                'label' => 'Agotados',
-                'value' => Product::query()->active()->where('stock', 0)->count(),
-                'note' => 'Requieren reposición',
-                'icon' => 'x',
-            ],
+        $salesSummary = [
+            'paid_total' => (clone $sales)->sum('total'),
+            'tickets' => (clone $sales)->count(),
+            'refunds_total' => (clone $returns)->sum('total'),
+            'refunds_count' => (clone $returns)->count(),
+        ];
+
+        $inventoryCounts = [
+            'low_stock' => Product::query()->active()->lowStock()->count(),
+            'out_of_stock' => Product::query()->active()->outOfStock()->count(),
+        ];
+
+        $catalogCounts = [
+            'active' => Product::query()->active()->count(),
+            'missing_photo' => Product::query()->active()->missingPhoto()->count(),
+            'missing_price' => Product::query()->active()->missingPrice()->count(),
         ];
 
         $lowStockProducts = Product::query()
             ->active()
-            ->where('stock', '<=', Product::LOW_STOCK_THRESHOLD)
-            ->with('category')
+            ->where(fn (Builder $query) => $query->outOfStock()->orWhere(fn (Builder $query) => $query->lowStock()))
             ->orderBy('stock')
-            ->take(5)
+            ->orderBy('name')
+            ->limit(6)
             ->get();
 
-        $recentProducts = Product::query()
-            ->with('category')
-            ->latest()
-            ->take(5)
+        $homePage = HomePage::current();
+        $homeCards = $homePage->enabled('products')
+            ? HomeCard::query()->section('products')->active()->ordered()->limit(5)->get()
+            : new Collection;
+
+        $paidItems = fn (Builder $query) => $query->where('is_custom', false)
+            ->whereHas('sale', fn (Builder $query) => $query
+                ->paid()->whereBetween('paid_at', [$rankingStart, $generatedAt]));
+
+        $topProducts = Product::query()
+            ->active()
+            ->whereHas('saleItems', $paidItems)
+            ->withSum(['saleItems as units_sold' => $paidItems], 'quantity')
+            ->orderByDesc('units_sold')
+            ->orderBy('name')
+            ->limit(5)
             ->get();
 
-        return view('admin.dashboard', [
-            'metrics' => $metrics,
-            'categories' => $categories,
-            'lowStockProducts' => $lowStockProducts,
-            'recentProducts' => $recentProducts,
-        ]);
+        return view('admin.dashboard', compact(
+            'generatedAt',
+            'rankingStart',
+            'salesSummary',
+            'inventoryCounts',
+            'catalogCounts',
+            'lowStockProducts',
+            'homeCards',
+            'topProducts',
+        ));
     }
 }

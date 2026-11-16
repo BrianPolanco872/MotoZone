@@ -35,6 +35,7 @@ class CashMovementController extends Controller
         $request->validate([
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date'],
+            'day' => ['nullable', 'date'],
             'employee' => ['nullable', 'integer', 'exists:users,id'],
             'type' => ['nullable', 'in:in,out'],
             'search' => ['nullable', 'string', 'max:255'],
@@ -43,16 +44,27 @@ class CashMovementController extends Controller
 
         $from = $request->filled('from') ? Carbon::parse($request->query('from'))->startOfDay() : null;
         $to = $request->filled('to') ? Carbon::parse($request->query('to'))->endOfDay() : null;
+        $requestedDay = $request->filled('day') ? Carbon::parse($request->query('day'))->toDateString() : null;
         $employee = $request->filled('employee') ? (int) $request->query('employee') : null;
         $type = $request->query('type');
         $search = trim((string) $request->query('search', ''));
         $showArchived = $request->boolean('show_archived', false);
 
+        // La vista principal solo muestra el día en curso: los días anteriores quedan en archivados.
+        $day = $showArchived
+            ? $requestedDay
+            : today('America/Mexico_City')->toDateString();
+
         $query = CashMovement::query()
             ->with('user', 'archivedBy', 'deletedBy')
-            ->when(! $showArchived, fn ($q) => $q->whereNull('archivado_at'))
+            ->when(
+                $showArchived,
+                fn ($q) => $q->whereNotNull('archivado_at'),
+                fn ($q) => $q->whereNull('archivado_at'),
+            )
             ->when($from, fn ($q) => $q->where('happened_at', '>=', $from))
             ->when($to, fn ($q) => $q->where('happened_at', '<=', $to))
+            ->when($day !== null, fn ($q) => $q->whereDate('happened_at', $day))
             ->when($employee !== null, fn ($q) => $q->where('user_id', $employee))
             ->when($type !== null, fn ($q) => $q->where('type', $type))
             ->when($search !== '', fn ($q) => $q->where('concept', 'like', "%{$search}%"))
@@ -60,19 +72,6 @@ class CashMovementController extends Controller
             ->orderByDesc('happened_at');
 
         $movements = $query->paginate(8)->withQueryString();
-
-        // Totals for visible (non-archived) movements matching filters
-        $totalsQuery = CashMovement::query()
-            ->when(! $showArchived, fn ($q) => $q->whereNull('archivado_at'))
-            ->when($from, fn ($q) => $q->where('happened_at', '>=', $from))
-            ->when($to, fn ($q) => $q->where('happened_at', '<=', $to))
-            ->when($employee !== null, fn ($q) => $q->where('user_id', $employee))
-            ->when($type !== null, fn ($q) => $q->where('type', $type))
-            ->when($search !== '', fn ($q) => $q->where('concept', 'like', "%{$search}%"))
-            ->when(! $canSeeAny, fn ($q) => $q->where('user_id', $user->id));
-
-        $inTotal = round((float) $totalsQuery->where('type', CashMovement::TYPE_IN)->sum('amount'), 2);
-        $outTotal = round((float) $totalsQuery->where('type', CashMovement::TYPE_OUT)->sum('amount'), 2);
 
         $categories = CashMovement::manualCategories();
 
@@ -84,6 +83,15 @@ class CashMovementController extends Controller
                 ->get(['id', 'name']);
         }
 
+        // Today's movement count for the summary badge
+        $todayStart = today('America/Mexico_City')->startOfDay();
+        $todayEnd = $todayStart->copy()->endOfDay();
+        $todayMovementsCount = CashMovement::query()
+            ->whereNull('archivado_at')
+            ->whereBetween('happened_at', [$todayStart, $todayEnd])
+            ->when(! $canSeeAny, fn ($q) => $q->where('user_id', $user->id))
+            ->count();
+
         return view('pos.cash.index', [
             'movements' => $movements,
             'canSeeAny' => $canSeeAny,
@@ -91,14 +99,14 @@ class CashMovementController extends Controller
             'categories' => $categories,
             'inCategories' => array_filter($categories, fn ($c) => $c['type'] === CashMovement::TYPE_IN),
             'outCategories' => array_filter($categories, fn ($c) => $c['type'] === CashMovement::TYPE_OUT),
-            'inTotal' => $inTotal,
-            'outTotal' => $outTotal,
-            'netTotal' => round($inTotal - $outTotal, 2),
+            'todayMovementsCount' => $todayMovementsCount,
             'cutBoard' => $this->buildCutBoard($cutService, $presence, $user, $canSeeAny),
             'cutBoardDate' => today('America/Mexico_City')->toDateString(),
             'filters' => [
                 'from' => $from?->toDateString() ?? '',
                 'to' => $to?->toDateString() ?? '',
+                'day' => $day ?? '',
+                'day_requested' => $showArchived && $requestedDay !== null,
                 'employee' => $employee,
                 'type' => $type,
                 'search' => $search,
@@ -166,7 +174,23 @@ class CashMovementController extends Controller
             throw ValidationException::withMessages(['cash_movement' => 'Este día ya está cerrado. No se pueden registrar movimientos de caja.']);
         }
 
-        $movement = $service->create($request->user(), $request->validated());
+        $data = $request->validated();
+
+        $alreadyHasInitialCash = $data['category'] === 'initial'
+            && CashMovement::query()
+                ->where('user_id', $request->user()->id)
+                ->where('category', 'initial')
+                ->where('type', CashMovement::TYPE_IN)
+                ->whereBetween('happened_at', [today()->startOfDay(), today()->endOfDay()])
+                ->exists();
+
+        if ($alreadyHasInitialCash) {
+            throw ValidationException::withMessages([
+                'amount' => 'Ya registraste tu efectivo inicial de hoy.',
+            ]);
+        }
+
+        $movement = $service->create($request->user(), $data);
 
         return redirect()
             ->route('pos.cash.index')
@@ -248,6 +272,7 @@ class CashMovementController extends Controller
         $request->validate([
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date'],
+            'day' => ['nullable', 'date'],
             'employee' => ['nullable', 'integer', 'exists:users,id'],
             'type' => ['nullable', 'in:in,out'],
             'search' => ['nullable', 'string', 'max:255'],
@@ -256,16 +281,27 @@ class CashMovementController extends Controller
 
         $from = $request->filled('from') ? Carbon::parse($request->query('from'))->startOfDay() : null;
         $to = $request->filled('to') ? Carbon::parse($request->query('to'))->endOfDay() : null;
+        $requestedDay = $request->filled('day') ? Carbon::parse($request->query('day'))->toDateString() : null;
         $employee = $request->filled('employee') ? (int) $request->query('employee') : null;
         $type = $request->query('type');
         $search = trim((string) $request->query('search', ''));
         $showArchived = $request->boolean('show_archived', false);
 
+        // Mismo criterio que index(): sin archivados solo se exporta el día en curso.
+        $day = $showArchived
+            ? $requestedDay
+            : today('America/Mexico_City')->toDateString();
+
         $movements = CashMovement::query()
             ->with('user')
-            ->when(! $showArchived, fn ($q) => $q->whereNull('archivado_at'))
+            ->when(
+                $showArchived,
+                fn ($q) => $q->whereNotNull('archivado_at'),
+                fn ($q) => $q->whereNull('archivado_at'),
+            )
             ->when($from, fn ($q) => $q->where('happened_at', '>=', $from))
             ->when($to, fn ($q) => $q->where('happened_at', '<=', $to))
+            ->when($day !== null, fn ($q) => $q->whereDate('happened_at', $day))
             ->when($employee !== null, fn ($q) => $q->where('user_id', $employee))
             ->when($type !== null, fn ($q) => $q->where('type', $type))
             ->when($search !== '', fn ($q) => $q->where('concept', 'like', "%{$search}%"))

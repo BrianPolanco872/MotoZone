@@ -1,0 +1,31 @@
+---
+entity: plan-home-hero-contacto-01
+type: plan
+---
+
+- Tipo: feature.
+- Feature: feature-home-hero-contacto-01.
+- Estado: IMPLEMENTADO.
+- Aprobación: usuario solicitó «aplicalo» en esta conversación.
+- Objetivo: Ajustar la presentación pública de la home quitando el buscador y la llamada a explorar catálogo, incorporando los accesos de WhatsApp y Gmail, y retirando la franja superior roja/amarilla sin alterar el resto.
+- Alcance: En el hero público, quitar “Explorar catálogo”, mostrar por separado WhatsApp y Gmail usando los datos de contacto configurados, y eliminar la franja decorativa superior. Mantener el resto de la home y las demás páginas sin cambios.
+- Fuera de alcance: Editor CMS, catálogo/POS/admin y otras páginas; buscadores de módulos administrativos/transaccionales; datos, fotos, categorías, tarjetas, ubicación, pie, cabecera funcional y enlaces mailto existentes fuera del hero. No añadir dependencias ni migraciones.
+- Criterios de aceptación: 1) El hero público no presenta buscador (ya está ausente en el código actual) ni CTA “Explorar catálogo”. 2) Si hay datos configurados válidos, aparecen dos botones independientes: WhatsApp con el wa.me existente y Gmail que abre Gmail web para redactar al correo configurado del administrador. 3) El Gmail no envía automáticamente; el visitante confirma el envío desde su cuenta. 4) La franja hazard roja/amarilla superior no se renderiza. 5) El resto de la home y otras páginas mantiene contenido y comportamiento.
+- Pasos: 1) Añadir a HomePage un generador Gmail web de redacción que valide el correo configurado y codifique destinatario/asunto, sin cambiar emailUrl() ni sus consumidores mailto. 2) En home.blade.php, retirar el CTA “Explorar catálogo” y renderizar WhatsApp y Gmail de forma independiente dentro del hero, solo cuando el destino correspondiente sea válido. 3) Retirar el marcado home-hazard-strip y su regla CSS exclusiva de home; conservar otras decoraciones estacionales. 4) Añadir regresiones de HomeTest para ausencia del CTA/franja, ambos destinos, codificación y ocultación ante datos inválidos o vacíos.
+- Archivos afectados: app/Models/HomePage.php (URL Gmail usando el email ya configurado, sin alterar mailto); resources/views/home.blade.php (botones del hero y franja superior; no hay buscador público que retirar); resources/css/app.css (regla de la franja hazard exclusiva de home); tests/Feature/HomeTest.php (regresiones de render y URLs).
+- Plan de rollback: revertir únicamente los fragmentos de estos cuatro archivos; conservar los enlaces mailto existentes y cualquier otro cambio posterior/ajeno. No hay cambios de datos ni esquema.
+- Riesgos y dependencias externas: Gmail web requiere conexión y que el visitante pueda iniciar sesión; el borrador no se envía automáticamente. Se asume que el correo existente en Contacto/Mostrador es la dirección del administrador. Sin correo o WhatsApp válido no se debe emitir un enlace roto ni usar datos ficticios. El buscador público ya está ausente; no modificar búsquedas de CMS/POS/admin. No hay bug activo de memoria en estos archivos; bug-corte-reabrir-dia-01 afecta componentes POS distintos.
+- Alternativas consideradas: mailto fue descartado para el botón solicitado porque no asegura abrir Gmail; se conserva en los demás enlaces. No se toca layouts/site.blade.php porque la franja y el CTA se controlan en el marcado/estilos específicos de la home.
+- Skills aplicables: ponytail, tailwindcss-development, laravel-best-practices y testing-best-practices.
+- Verificación técnica: no se expone MCP codesearch_*; se mapearon los archivos con búsqueda local. No se encontraron reglas .ai/rules.
+- Última actualización: 2026-11-15.
+- Cambios aplicados: Gmail web de redacción al correo de contacto configurado; botones independientes WhatsApp/Gmail; retirados CTA “Explorar catálogo” y franja hazard. El buscador público ya estaba ausente y no requirió cambio. Archivos en fix-home-hero-contacto-01.
+- Desviaciones: ninguna fuera del alcance; la eliminación del buscador fue innecesaria porque ya no existe en la home pública.
+- Verificación básica: Pint, sintaxis PHP, compilación de vistas y diff check correctos. No Testing.
+- Ampliación aprobada por el usuario: ocultar también el recuadro público `hero_description` (texto «Descubre las piezas y accesorios de MotoZone.»); conservar el dato guardado, metadata SEO y vista previa del editor. Aprobación explícita: «Sí, quitar recuadro».
+- Alcance de la ampliación: solo presentación pública del hero; no cambiar el editor ni borrar datos. Criterio: el recuadro no se renderiza en la home pública y sí se mantiene en `admin.home.preview`.
+- Archivos de la ampliación: resources/views/home.blade.php; tests/Feature/HomeTest.php.
+- Rollback de la ampliación: restaurar la condición de render del párrafo público únicamente; preservar texto guardado y preview.
+- Estado de la ampliación: IMPLEMENTADA.
+- Cambios aplicados a la ampliación: la home pública oculta el párrafo visual `hero_description`; el texto se conserva en contenido/SEO y en la vista previa del editor. Regresión añadida para público vs. preview.
+- Verificación de la ampliación: Blade compiló; HTTP local 200 confirma ausencia del recuadro, CTA, franja y buscador; `php -l` y diff check correctos. No Testing.

@@ -20,6 +20,7 @@ class Product extends Model
         'slug',
         'sku',
         'barcode',
+        'barcode2',
         'image_path',
         'brand',
         'description',
@@ -32,6 +33,8 @@ class Product extends Model
         'track_inventory',
         'featured',
         'is_active',
+        'home_visible',
+        'home_position',
     ];
 
     protected function casts(): array
@@ -46,6 +49,8 @@ class Product extends Model
             'track_inventory' => 'boolean',
             'featured' => 'boolean',
             'is_active' => 'boolean',
+            'home_visible' => 'boolean',
+            'home_position' => 'integer',
         ];
     }
 
@@ -69,6 +74,28 @@ class Product extends Model
         $query->where('featured', true);
     }
 
+    public function scopeLowStock(Builder $query): void
+    {
+        $query->where('track_inventory', true)
+            ->where('stock', '>', 0)
+            ->whereRaw('stock <= CASE WHEN min_stock > 0 THEN min_stock ELSE ? END', [self::LOW_STOCK_THRESHOLD]);
+    }
+
+    public function scopeOutOfStock(Builder $query): void
+    {
+        $query->where('track_inventory', true)->where('stock', '<=', 0);
+    }
+
+    public function scopeMissingPhoto(Builder $query): void
+    {
+        $query->where(fn (Builder $query) => $query->whereNull('image_path')->orWhereRaw("TRIM(image_path) = ''"));
+    }
+
+    public function scopeMissingPrice(Builder $query): void
+    {
+        $query->where('price', '<=', 0);
+    }
+
     public function scopeSearch(Builder $query, ?string $term): void
     {
         $term = trim((string) $term);
@@ -81,6 +108,7 @@ class Product extends Model
             $query->where('name', 'like', "%{$term}%")
                 ->orWhere('sku', 'like', "%{$term}%")
                 ->orWhere('barcode', 'like', "%{$term}%")
+                ->orWhere('barcode2', 'like', "%{$term}%")
                 ->orWhere('brand', 'like', "%{$term}%");
         });
     }

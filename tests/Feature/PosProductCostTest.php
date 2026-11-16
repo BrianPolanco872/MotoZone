@@ -20,8 +20,7 @@ class PosProductCostTest extends TestCase
         $this->seed(RolePermissionSeeder::class);
     }
 
-    /** @test */
-    public function product_can_be_created_with_cost_wholesale_and_min_stock(): void
+    public function test_product_can_be_created_with_cost_wholesale_and_min_stock(): void
     {
         $admin = User::factory()->create()->assignRole('admin');
         $admin->givePermissionTo(['admin.products.manage']);
@@ -60,8 +59,7 @@ class PosProductCostTest extends TestCase
         $this->assertEquals(100.00, $product->marginPercentage());
     }
 
-    /** @test */
-    public function product_without_cost_shows_no_cost_in_index(): void
+    public function test_product_without_cost_shows_no_cost_in_index(): void
     {
         $admin = User::factory()->create()->assignRole('admin');
         $admin->givePermissionTo(['admin.products.manage']);

@@ -19,18 +19,30 @@
         $adminNavigation[] = ['label' => 'Productos', 'icon' => 'inventory', 'route' => 'admin.products.index'];
     }
 
+    if ($isAdmin) {
+        $adminNavigation[] = ['label' => 'Editar inicio', 'icon' => 'home', 'route' => 'admin.home.edit', 'active' => 'admin.home.*'];
+        $adminNavigation[] = ['label' => 'Operación', 'section' => true];
+    }
+
     if ($user?->can('pos.access')) {
         $adminNavigation[] = ['label' => 'Punto de venta', 'icon' => 'cart', 'route' => 'pos.index'];
     }
 
-    if ($user?->can('pos.cash.manage')) {
+    if ($user?->can('pos.caja.view') || $user?->can('pos.cash.manage')) {
         $adminNavigation[] = ['label' => 'Caja', 'icon' => 'banknotes', 'route' => 'pos.cash.index'];
     }
 
     if ($user?->can('pos.cut.manage')) {
         $adminNavigation[] = ['label' => 'Corte del día', 'icon' => 'report', 'route' => 'pos.cuts.index'];
+        if ($user?->can('pos.access')) {
+            $adminNavigation[] = ['label' => 'Bitácora', 'icon' => 'report', 'route' => 'pos.bitacora.index', 'active' => 'pos.bitacora.*'];
+        }
     } elseif ($user?->can('pos.cut.own')) {
         $adminNavigation[] = ['label' => 'Mi corte', 'icon' => 'chart', 'route' => 'pos.cuts.mine'];
+    }
+
+    if ($isAdmin && $user?->can('pos.access')) {
+        $adminNavigation[] = ['label' => 'Tickets', 'icon' => 'report', 'route' => 'pos.tickets.edit'];
     }
 
     if ($user?->can('admin.users.manage')) {
@@ -63,8 +75,12 @@
 
             <nav class="mt-4 flex-1 space-y-0.5 overflow-y-auto px-3" aria-label="Navegación del panel">
                 @foreach ($adminNavigation as $item)
+                    @if (isset($item['section']))
+                        <p class="px-3 pb-2 pt-5 text-[10px] font-semibold uppercase tracking-widest text-mz-text-muted">{{ $item['label'] }}</p>
+                        @continue
+                    @endif
                     @php
-                        $isActive = isset($item['route']) && request()->routeIs($item['route']);
+                        $isActive = isset($item['route']) && request()->routeIs($item['active'] ?? $item['route']);
                     @endphp
                     @if (isset($item['route']))
                         <a href="{{ route($item['route']) }}"
@@ -149,13 +165,17 @@
                             <summary class="flex size-9 cursor-pointer list-none items-center justify-center rounded-md border border-mz-border-light text-mz-text-secondary transition-colors hover:bg-mz-bg-surface-2 [&::-webkit-details-marker]:hidden" aria-label="Abrir menú del panel">
                                 <x-icon name="menu" class="size-5" />
                             </summary>
-                            <div class="absolute right-0 mt-2 w-56 rounded-lg border border-mz-border-light bg-mz-bg-surface p-2 shadow-xl shadow-black/40">
+                            <div class="absolute right-0 mt-2 max-h-[calc(100dvh-6rem)] w-64 overflow-y-auto rounded-lg border border-mz-border-light bg-mz-bg-surface p-2 shadow-xl shadow-black/40">
                                 @foreach ($adminNavigation as $item)
+                                    @if (isset($item['section']))
+                                        <p class="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-widest text-mz-text-muted">{{ $item['label'] }}</p>
+                                        @continue
+                                    @endif
                                     @if (isset($item['route']))
                                         <a href="{{ route($item['route']) }}" @class([
                                             'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                                            'bg-mz-bg-surface-2 text-mz-text-primary' => request()->routeIs($item['route']),
-                                            'text-mz-text-muted hover:bg-mz-bg-surface-2' => ! request()->routeIs($item['route']),
+                                            'bg-mz-bg-surface-2 text-mz-text-primary' => request()->routeIs($item['active'] ?? $item['route']),
+                                            'text-mz-text-muted hover:bg-mz-bg-surface-2' => ! request()->routeIs($item['active'] ?? $item['route']),
                                         ])>
                                             <x-icon :name="$item['icon']" class="size-4 text-mz-text-muted" />
                                             {{ $item['label'] }}

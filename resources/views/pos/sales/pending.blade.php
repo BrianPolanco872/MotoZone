@@ -4,61 +4,78 @@
 @section('subtitle', 'Tickets guardados sin cobrar')
 
 @section('content')
-    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-            <p class="text-sm text-mz-text-secondary">Las ventas pendientes no descuentan inventario ni mueven caja hasta que se cobran.</p>
-        </div>
-        <div class="flex flex-wrap gap-2">
-            <a href="{{ route('pos.index') }}" class="x-button x-button-secondary size-sm">
+    {{-- Barra superior --}}
+    <div class="rounded-2xl border border-mz-border bg-gradient-to-r from-mz-bg-surface via-mz-bg-surface/95 to-mz-bg-surface p-4 sm:p-5 shadow-xl shadow-black/25">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div class="flex items-center gap-3">
+                <div class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-mz-warning/15 text-mz-warning border border-mz-warning/25">
+                    <x-icon name="pause" class="size-5" />
+                </div>
+                <div>
+                    <h2 class="text-sm font-bold text-white">Tickets en espera</h2>
+                    <p class="text-xs text-mz-text-muted mt-0.5">No descuentan inventario ni afectan caja hasta que se realiza el cobro.</p>
+                </div>
+            </div>
+
+            <a href="{{ route('pos.index') }}" class="inline-flex h-10 items-center gap-2 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 hover:bg-mz-bg-surface-2 px-4 text-xs font-bold text-mz-text-secondary hover:text-white transition-all shadow-xs active:scale-95">
                 <x-icon name="arrow-uturn-left" class="size-4" />
                 Volver al POS
             </a>
         </div>
     </div>
 
-    <section class="mt-4 mz-card mz-card-padded overflow-hidden">
-        <div class="border-b border-mz-border px-4 py-3">
-            <h2 class="text-sm font-semibold text-mz-text-primary">Pendientes de cobro</h2>
-            <p class="text-xs text-mz-text-muted">{{ $sales->total() }} {{ $sales->total() === 1 ? 'venta' : 'ventas' }} en espera.</p>
+    {{-- Tabla de ventas pendientes --}}
+    <section class="mt-5 rounded-2xl border border-mz-border bg-mz-bg-surface shadow-xl shadow-black/20 overflow-hidden">
+        <div class="flex items-center justify-between border-b border-mz-border px-5 py-3.5 bg-mz-bg-surface-2/30">
+            <div class="flex items-center gap-2">
+                <span class="size-2 rounded-full bg-mz-warning animate-pulse"></span>
+                <h3 class="text-xs font-bold uppercase tracking-wider text-mz-text-primary">Pendientes por liquidar</h3>
+            </div>
+            <span class="rounded-full bg-mz-warning/15 border border-mz-warning/30 px-3 py-0.5 text-xs font-bold text-mz-warning">
+                {{ $sales->total() }} {{ $sales->total() === 1 ? 'ticket' : 'tickets' }}
+            </span>
         </div>
 
-        <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-mz-border-light text-sm">
-                <thead class="bg-mz-bg-surface">
-                    <tr class="text-left text-xs uppercase tracking-wide text-mz-text-muted">
-                        <th class="px-4 py-3 font-medium">Folio</th>
-                        <th class="px-4 py-3 font-medium">Guardada</th>
+        <div class="overflow-x-auto pos-scrollbar">
+            <table class="min-w-full divide-y divide-mz-border text-sm">
+                <thead class="bg-mz-bg-surface-2/40">
+                    <tr class="text-left text-xs uppercase tracking-wider text-mz-text-muted">
+                        <th class="px-5 py-3.5 font-semibold">Folio</th>
+                        <th class="px-5 py-3.5 font-semibold">Hora de guardado</th>
                         @if ($canSeeAny)
-                            <th class="px-4 py-3 font-medium">Cajero</th>
+                            <th class="px-5 py-3.5 font-semibold">Cajero</th>
                         @endif
-                        <th class="px-4 py-3 font-medium">Artículos</th>
-                        <th class="px-4 py-3 text-right font-medium">Total</th>
-                        <th class="px-4 py-3 text-right font-medium">Acciones</th>
+                        <th class="px-5 py-3.5 font-semibold">Artículos</th>
+                        <th class="px-5 py-3.5 text-right font-semibold">Total a cobrar</th>
+                        <th class="px-5 py-3.5 text-right font-semibold">Acciones</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-mz-border-light">
+                <tbody class="divide-y divide-mz-border-light/40">
                     @forelse ($sales as $sale)
-                        <tr class="transition hover:bg-mz-bg-surface-2">
-                            <td class="whitespace-nowrap px-4 py-3 font-mono text-xs font-semibold text-mz-text-primary">{{ $sale->folio }}</td>
-                            <td class="whitespace-nowrap px-4 py-3 text-mz-text-secondary">{{ $sale->created_at->format('d/m/Y H:i') }}</td>
-                            @if ($canSeeAny)
-                                <td class="whitespace-nowrap px-4 py-3 text-mz-text-secondary">{{ $sale->user?->name }}</td>
-                            @endif
-                            <td class="px-4 py-3 text-mz-text-secondary">
-                                {{ $sale->items->sum('quantity') }} piezas
-                                <span class="block text-xs text-mz-text-muted">{{ $sale->items->count() }} productos</span>
+                        <tr class="group transition-colors duration-150 hover:bg-mz-bg-surface-2/40">
+                            <td class="whitespace-nowrap px-5 py-3.5 font-mono text-xs font-bold text-white">
+                                <span class="rounded-md bg-mz-bg-surface-2 px-2 py-1 border border-mz-border-light">{{ $sale->folio }}</span>
                             </td>
-                            <td class="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums text-mz-text-primary">${{ number_format((float) $sale->total, 2) }}</td>
-                            <td class="whitespace-nowrap px-4 py-3 text-right">
+                            <td class="whitespace-nowrap px-5 py-3.5 text-xs text-mz-text-muted font-mono">{{ $sale->created_at->format('d/m/Y H:i') }}</td>
+                            @if ($canSeeAny)
+                                <td class="whitespace-nowrap px-5 py-3.5 text-sm font-medium text-mz-text-secondary">{{ $sale->user?->name }}</td>
+                            @endif
+                            <td class="px-5 py-3.5 text-sm text-mz-text-secondary">
+                                <span class="font-semibold">{{ $sale->items->sum('quantity') }} pza(s)</span>
+                                <span class="block text-xs text-mz-text-muted">({{ $sale->items->count() }} producto{{ $sale->items->count() === 1 ? '' : 's' }})</span>
+                            </td>
+                            <td class="whitespace-nowrap px-5 py-3.5 text-right font-display text-base font-extrabold tabular-nums text-mz-accent-primary">${{ number_format((float) $sale->total, 2) }}</td>
+                            <td class="whitespace-nowrap px-5 py-3.5 text-right">
                                 <div class="flex items-center justify-end gap-2">
-                                    <a href="{{ route('pos.index', ['pending' => $sale->id]) }}" class="x-button x-button-secondary size-xs">
+                                    <a href="{{ route('pos.index', ['pending' => $sale->id]) }}"
+                                       class="inline-flex items-center gap-1.5 rounded-lg bg-mz-accent-primary hover:bg-mz-accent-hover text-white px-3 py-1.5 text-xs font-bold transition-all shadow-md shadow-mz-accent-primary/20 active:scale-95">
                                         <x-icon name="banknotes" class="size-3.5" />
-                                        Cobrar
+                                        Cobrar ahora
                                     </a>
-                                    <form action="{{ route('pos.sales.cancel', $sale) }}" method="POST" onsubmit="return confirm('¿Cancelar esta venta pendiente?')">
+                                    <form action="{{ route('pos.sales.cancel', $sale) }}" method="POST" onsubmit="return confirm('¿Seguro que deseas cancelar esta venta pendiente?')">
                                         @csrf
                                         @method('DELETE')
-                                        <button type="submit" class="x-button x-button-ghost size-xs text-mz-error">
+                                        <button type="submit" class="inline-flex items-center gap-1 rounded-lg border border-mz-border-light px-2.5 py-1.5 text-xs font-bold text-mz-text-muted hover:border-mz-error/40 hover:bg-mz-error/10 hover:text-mz-error transition-all active:scale-95">
                                             <x-icon name="trash" class="size-3.5" />
                                             Cancelar
                                         </button>
@@ -68,9 +85,14 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="{{ $canSeeAny ? 6 : 5 }}" class="px-4 py-14 text-center">
-                                <p class="text-sm font-medium text-mz-text-secondary">No hay ventas pendientes</p>
-                                <a href="{{ route('pos.index') }}" class="mt-2 inline-block text-xs font-medium text-mz-accent-primary hover:text-mz-accent-hover">Ir al punto de venta</a>
+                            <td colspan="{{ $canSeeAny ? 6 : 5 }}" class="px-5 py-16 text-center">
+                                <div class="mx-auto flex size-14 items-center justify-center rounded-2xl bg-mz-bg-surface-2 text-mz-text-muted">
+                                    <x-icon name="pause" class="size-7" />
+                                </div>
+                                <p class="mt-3 text-sm font-bold text-mz-text-primary">No hay ventas pendientes por cobrar</p>
+                                <a href="{{ route('pos.index') }}" class="mt-2 inline-flex items-center gap-1 text-xs font-bold text-mz-accent-primary hover:text-mz-accent-hover">
+                                    Ir al punto de venta &rarr;
+                                </a>
                             </td>
                         </tr>
                     @endforelse
@@ -79,5 +101,5 @@
         </div>
     </section>
 
-    <div class="mt-4">{{ $sales->links() }}</div>
+    <div class="mt-6">{{ $sales->links() }}</div>
 @endsection

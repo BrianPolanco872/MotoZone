@@ -39,11 +39,7 @@ class CajaController extends Controller
 
         $movement = $service->create($request->user(), $validated);
 
-        $label = $movement instanceof CashMovement
-            ? $movement->categoryLabel()
-            : ucfirst(str_replace('_', ' ', $movement->getMorphClass() ?? $movement->getTable()));
-
-        return back()->with('status', 'Movimiento de '.$label.' registrado correctamente.');
+        return back()->with('status', 'Movimiento de '.mb_strtolower($movement->categoryLabel()).' registrado correctamente.');
     }
 
     public function destroy(Request $request, CashMovement $cashMovement): RedirectResponse

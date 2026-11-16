@@ -27,7 +27,7 @@
             <x-card padded>
                 <div>
                     <h2 class="text-base font-semibold text-mz-text-primary">Información del producto</h2>
-                    <p class="text-xs text-mz-text-secondary">Datos que verá el cliente en el catálogo.</p>
+                    <p class="text-xs text-mz-text-secondary">Datos que verá el cliente en la ficha del producto.</p>
                 </div>
 
                 <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -43,17 +43,6 @@
                         @error('brand') <p class="{{ $errorClass }}">{{ $message }}</p> @enderror
                     </div>
 
-                    <div>
-                        <label for="category_id" class="{{ $labelClass }}">Categoría</label>
-                        <select id="category_id" name="category_id" required class="mz-select mt-1.5 h-11 w-full">
-                            <option value="">Selecciona una categoría</option>
-                            @foreach ($categories as $category)
-                                <option value="{{ $category->id }}" @selected(old('category_id', $product->category_id) == $category->id)>{{ $category->name }}</option>
-                            @endforeach
-                        </select>
-                        @error('category_id') <p class="{{ $errorClass }}">{{ $message }}</p> @enderror
-                    </div>
-
                     <div class="sm:col-span-2">
                         <label for="description" class="{{ $labelClass }}">Descripción</label>
                         <textarea id="description" name="description" rows="4" required class="mz-input mt-1.5 w-full min-h-[100px]" placeholder="Describe la pieza, compatibilidad y materiales.">{{ old('description', $product->description) }}</textarea>
@@ -66,7 +55,7 @@
             <x-card padded>
                 <div>
                     <h2 class="text-base font-semibold text-mz-text-primary">Identificación</h2>
-                    <p class="text-xs text-mz-text-secondary">El código de barras es el que se escanea en el punto de venta.</p>
+                    <p class="text-xs text-mz-text-secondary">Los dos códigos pueden capturarse con el escáner del punto de venta.</p>
                 </div>
 
                 <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -77,9 +66,9 @@
                     </div>
 
                     <div>
-                        <label for="sku" class="{{ $labelClass }}">SKU</label>
-                        <input id="sku" name="sku" type="text" value="{{ old('sku', $product->sku) }}" required class="mz-input mt-1.5 h-11 w-full font-mono" placeholder="KIT-428H">
-                        @error('sku') <p class="{{ $errorClass }}">{{ $message }}</p> @enderror
+                        <label for="barcode2" class="{{ $labelClass }}">Código de barras 2</label>
+                        <input id="barcode2" name="barcode2" type="text" value="{{ old('barcode2', $product->barcode2) }}" class="mz-input mt-1.5 h-11 w-full font-mono" placeholder="00(ABC)+123">
+                        @error('barcode2') <p class="{{ $errorClass }}">{{ $message }}</p> @enderror
                     </div>
                 </div>
             </x-card>
@@ -190,15 +179,15 @@
                     <label class="flex items-start gap-3 text-sm text-mz-text-secondary">
                         <input type="checkbox" name="featured" value="1" @checked(old('featured', $product->featured)) class="mz-checkbox mt-0.5">
                         <span>
-                            <span class="font-medium">Producto destacado</span>
-                            <span class="block text-xs text-mz-text-muted">Se muestra en la página de inicio.</span>
+                            <span class="font-medium">Destacado en POS (legado)</span>
+                            <span class="block text-xs text-mz-text-muted">Conserva el destacado del punto de venta. No selecciona productos para la portada.</span>
                         </span>
                     </label>
 
                     <label class="flex items-start gap-3 text-sm text-mz-text-secondary">
                         <input type="checkbox" name="is_active" value="1" @checked(old('is_active', $isEdit ? $product->is_active : true)) class="mz-checkbox mt-0.5">
                         <span>
-                            <span class="font-medium">Publicado en el catálogo</span>
+                            <span class="font-medium">Ficha pública activa</span>
                             <span class="block text-xs text-mz-text-muted">Desmárcalo para ocultarlo sin eliminarlo.</span>
                         </span>
                     </label>

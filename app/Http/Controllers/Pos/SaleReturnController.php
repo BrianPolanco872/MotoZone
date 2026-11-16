@@ -92,7 +92,7 @@ class SaleReturnController extends Controller
 
         return redirect()
             ->route('pos.returns.index')
-            ->with('status', 'Devolución autorizada. El stock y el efectivo quedaron actualizados.');
+            ->with('status', 'Devolución autorizada. Las existencias y el efectivo quedaron actualizados.');
     }
 
     public function reject(Request $request, SaleReturn $saleReturn, ReturnService $service): RedirectResponse

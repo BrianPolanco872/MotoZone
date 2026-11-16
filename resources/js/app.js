@@ -1,5 +1,10 @@
 import './admin/product-form';
 import './pos/pos';
+import './home-editor';
+import './carousel';
+import './home-categories';
+import './home-parallax';
+import './ticket-settings';
 
 document.querySelectorAll('[data-auto-submit]').forEach((element) => {
     element.addEventListener('change', () => element.form?.requestSubmit());

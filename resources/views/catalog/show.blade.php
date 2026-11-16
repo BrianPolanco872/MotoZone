@@ -9,10 +9,6 @@
             <nav class="flex flex-wrap items-center gap-2 text-xs text-slate-500" aria-label="Ruta de navegación">
                 <a href="{{ route('home') }}" class="transition hover:text-mz-accent-primary">Inicio</a>
                 <span aria-hidden="true">/</span>
-                <a href="{{ route('catalog.index') }}" class="transition hover:text-mz-accent-primary">Catálogo</a>
-                <span aria-hidden="true">/</span>
-                <a href="{{ route('catalog.index', ['categoria' => $product->category->slug]) }}" class="transition hover:text-mz-accent-primary">{{ $product->category->name }}</a>
-                <span aria-hidden="true">/</span>
                 <span class="text-slate-700">{{ $product->name }}</span>
             </nav>
         </div>
@@ -40,12 +36,7 @@
             </div>
 
             <div>
-                <a href="{{ route('catalog.index', ['categoria' => $product->category->slug]) }}" class="inline-flex items-center gap-1.5 font-display text-xs font-semibold uppercase tracking-[0.2em] text-mz-accent-primary transition hover:text-mz-accent-hover">
-                    <x-icon :name="$product->category->icon()" class="size-4" />
-                    {{ $product->category->name }}
-                </a>
-
-                <h1 class="mt-3 font-display text-4xl font-bold uppercase leading-[0.95] tracking-tight text-ink-900 sm:text-5xl">{{ $product->name }}</h1>
+                <h1 class="font-display text-4xl font-bold uppercase leading-[0.95] tracking-tight text-ink-900 sm:text-5xl">{{ $product->name }}</h1>
 
                 <div class="mt-3 flex flex-wrap items-center gap-3 text-sm">
                     <span class="font-display text-sm uppercase tracking-[0.16em] text-slate-500">{{ $product->brand }}</span>
@@ -73,8 +64,8 @@
                             Sin existencias
                         </span>
                     @endif
-                    <a href="{{ route('catalog.index', ['categoria' => $product->category->slug]) }}" class="inline-flex h-12 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-6 text-sm font-semibold text-ink-900 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400">
-                        Seguir comprando
+                    <a href="{{ route('home') }}" class="inline-flex h-12 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-6 text-sm font-semibold text-ink-900 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400">
+                        Volver al inicio
                     </a>
                 </div>
 
@@ -90,10 +81,6 @@
                     <div>
                         <dt class="text-xs uppercase tracking-[0.12em] text-slate-500">Marca</dt>
                         <dd class="mt-1 font-medium text-ink-900">{{ $product->brand }}</dd>
-                    </div>
-                    <div>
-                        <dt class="text-xs uppercase tracking-[0.12em] text-slate-500">Categoría</dt>
-                        <dd class="mt-1 font-medium text-ink-900">{{ $product->category->name }}</dd>
                     </div>
                     <div>
                         <dt class="text-xs uppercase tracking-[0.12em] text-slate-500">Existencias</dt>
@@ -125,12 +112,8 @@
                 <div class="flex flex-wrap items-end justify-between gap-4">
                     <div>
                         <p class="font-display text-xs font-semibold uppercase tracking-[0.24em] text-mz-accent-primary">También te puede servir</p>
-                        <h2 class="mt-2 font-display text-3xl font-bold uppercase tracking-tight text-ink-900 sm:text-4xl">Más de {{ $product->category->name }}</h2>
+                        <h2 class="mt-2 font-display text-3xl font-bold uppercase tracking-tight text-ink-900 sm:text-4xl">Otras piezas</h2>
                     </div>
-                    <a href="{{ route('catalog.index', ['categoria' => $product->category->slug]) }}" class="inline-flex items-center gap-2 text-sm font-semibold text-ink-900 transition hover:text-mz-accent-primary">
-                        Ver categoría
-                        <x-icon name="arrow-right" class="size-4" />
-                    </a>
                 </div>
 
                 <div class="mt-7 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

@@ -7,6 +7,7 @@ use App\Models\CustomerPayment;
 use App\Models\SupplierPayment;
 use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
@@ -21,10 +22,10 @@ class CashMovementService
      */
     public function create(User $user, array $data)
     {
-        $category = (string) ($data['category'] ?? '');
-        $definition = CashMovement::CATEGORIES[$category] ?? null;
+        $category = (string) ($data['category'] ?? 'other');
+        $definition = CashMovement::CATEGORIES[$category] ?? CashMovement::CATEGORIES['other'];
 
-        if (! $definition || ! $definition['manual']) {
+        if (! $definition['manual']) {
             throw ValidationException::withMessages(['category' => 'Selecciona un tipo de movimiento válido.']);
         }
 
@@ -69,7 +70,7 @@ class CashMovementService
         }
 
         // --- Movimiento de caja tradicional ---
-        $type = $definition['type'];
+        $type = $data['type'] ?? $definition['type'];
 
         if ($category === 'other' && in_array($data['type'] ?? null, [CashMovement::TYPE_IN, CashMovement::TYPE_OUT], true)) {
             $type = $data['type'];
@@ -138,6 +139,42 @@ class CashMovementService
                 'archivado_at' => $movement->archivado_at,
                 'archivado_por' => $movement->archivado_por,
             ]);
+        }
+
+        return $movements->count();
+    }
+
+    /**
+     * Archive every non-archived movement of a specific day.
+     * Used when the day is closed so the main view starts clean the next day.
+     *
+     * @return int Number of archived movements.
+     */
+    public function archiveDay(string $date, ?User $user = null): int
+    {
+        $start = Carbon::parse($date)->startOfDay();
+        $end = $start->copy()->endOfDay();
+
+        $movements = CashMovement::query()
+            ->whereNull('archivado_at')
+            ->whereNull('deleted_at')
+            ->whereBetween('happened_at', [$start, $end])
+            ->get();
+
+        foreach ($movements as $movement) {
+            $movement->update([
+                'archivado_at' => now(),
+                'archivado_por' => $user?->id,
+            ]);
+
+            $auditUser = $user ?? $movement->user;
+
+            if ($auditUser !== null) {
+                $this->audit('cash_movement.archive_day', $auditUser, $movement, null, [
+                    'archivado_at' => $movement->archivado_at,
+                    'archivado_por' => $movement->archivado_por,
+                ]);
+            }
         }
 
         return $movements->count();
@@ -220,17 +257,18 @@ class CashMovementService
     }
 
     /**
-     * Audit log for sensitive cash movement actions.
+     * Audit log for sensitive cash movement and payment actions.
      */
-    private function audit(string $action, User $user, CashMovement $movement, ?array $before, array $after): void
+    private function audit(string $action, User $user, Model $movement, ?array $before, array $after): void
     {
         Log::channel('stack')->info('cash_movement.audit', [
             'action' => $action,
             'user_id' => $user->id,
             'user_name' => $user->name,
-            'movement_id' => $movement->id,
-            'movement_category' => $movement->category,
-            'movement_amount' => $movement->amount,
+            'movement_id' => $movement->getKey(),
+            'movement_model' => class_basename($movement),
+            'movement_category' => $movement->getAttribute('category') ?? explode('.', $action)[0],
+            'movement_amount' => $movement->getAttribute('amount'),
             'before' => $before,
             'after' => $after,
             'ip' => request()->ip(),

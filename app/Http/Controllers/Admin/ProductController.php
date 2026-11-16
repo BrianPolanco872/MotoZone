@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\ProductRequest;
-use App\Models\Category;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleItem;
@@ -22,22 +21,23 @@ class ProductController extends Controller
     {
         $search = trim((string) $request->query('search', ''));
         $stockFilter = (string) $request->query('stock', '');
+        $reviewFilter = (string) $request->query('revision', '');
 
         $products = Product::query()
-            ->with('category')
             ->search($search)
-            ->when($request->query('categoria'), fn (Builder $query, string $slug) => $query->whereHas('category', fn (Builder $query) => $query->where('slug', $slug)))
-            ->when($stockFilter === 'bajo', fn (Builder $query) => $query->whereBetween('stock', [1, Product::LOW_STOCK_THRESHOLD]))
-            ->when($stockFilter === 'agotado', fn (Builder $query) => $query->where('stock', 0))
+            ->when($stockFilter === 'bajo', fn (Builder $query) => $query->active()->lowStock())
+            ->when($stockFilter === 'agotado', fn (Builder $query) => $query->active()->outOfStock())
+            ->when($reviewFilter === 'sin-foto', fn (Builder $query) => $query->active()->missingPhoto())
+            ->when($reviewFilter === 'sin-precio', fn (Builder $query) => $query->active()->missingPrice())
             ->orderBy('name')
             ->paginate(15)
             ->withQueryString();
 
         return view('admin.products.index', [
             'products' => $products,
-            'categories' => Category::query()->orderBy('sort_order')->get(),
             'search' => $search,
             'stockFilter' => $stockFilter,
+            'reviewFilter' => $reviewFilter,
         ]);
     }
 
@@ -139,23 +139,7 @@ class ProductController extends Controller
                     continue;
                 }
 
-                $category = null;
-                $categoryName = trim($mappedData['categoria'] ?? $mappedData['departamento'] ?? '');
-                if ($categoryName !== '') {
-                    $category = Category::query()->firstOrCreate(
-                        ['name' => $categoryName],
-                        ['slug' => Str::slug($categoryName)]
-                    );
-                } else {
-                    // Fallback a una categoría por defecto si no existe
-                    $category = Category::query()->firstOrCreate(
-                        ['name' => 'Sin categoría'],
-                        ['slug' => 'sin-categoria']
-                    );
-                }
-
                 Product::create([
-                    'category_id' => $category->id,
                     'name' => trim($mappedData['nombre'] ?? $mappedData['producto'] ?? $mappedData['descripcion'] ?? ''),
                     'sku' => $sku,
                     'barcode' => trim($mappedData['codigo_barras'] ?? $mappedData['barcode'] ?? null),
@@ -186,7 +170,6 @@ class ProductController extends Controller
     {
         return view('admin.products.create', [
             'product' => new Product,
-            'categories' => Category::query()->orderBy('sort_order')->get(),
         ]);
     }
 
@@ -207,11 +190,8 @@ class ProductController extends Controller
 
     public function edit(Product $product): View
     {
-        $product->load('category');
-
         return view('admin.products.edit', [
             'product' => $product,
-            'categories' => Category::query()->orderBy('sort_order')->get(),
         ]);
     }
 
@@ -240,10 +220,9 @@ class ProductController extends Controller
     private function productData(ProductRequest $request, ?Product $product = null): array
     {
         $data = $request->safe()->only([
-            'category_id',
             'name',
-            'sku',
             'barcode',
+            'barcode2',
             'brand',
             'description',
             'price',
@@ -255,6 +234,10 @@ class ProductController extends Controller
             'featured',
             'is_active',
         ]);
+
+        if ($product === null) {
+            $data['sku'] = 'AUTO-'.Str::uuid()->toString();
+        }
 
         $data['slug'] = $this->uniqueSlug($data['name'], $product);
         $data['tax_rate'] = round(((float) $request->validated('tax_rate')) / 100, 4);

@@ -28,9 +28,20 @@ if (configElement) {
     const paymentMethod = document.getElementById('payment-method');
     const cashDialog = document.getElementById('cash-dialog');
     const cashType = document.getElementById('cash-type');
-    const cashCategory = document.getElementById('cash-category');
     const cashTitle = document.getElementById('cash-title');
     const cashError = document.getElementById('cash-error');
+    const startDayDialog = document.getElementById('start-day-dialog');
+    const startDayForm = document.getElementById('start-day-form');
+    const startDayAmount = document.getElementById('start-day-amount');
+    const startDayError = document.getElementById('start-day-error');
+
+    // Producto común (artículo libre)
+    const customProductDialog = document.getElementById('custom-product-dialog');
+    const customProductForm = document.getElementById('custom-product-form');
+    const customProductName = document.getElementById('custom-product-name');
+    const customProductPrice = document.getElementById('custom-product-price');
+    const customProductQuantity = document.getElementById('custom-product-quantity');
+    const customProductError = document.getElementById('custom-product-error');
 
     // Estado para detectar escáner
     let isScanning = false;
@@ -44,10 +55,15 @@ if (configElement) {
     const formatMoney = (value) => `$${money.format(Number(value) || 0)}`;
     const round = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
-    // Formatea el monto de movimiento de caja con separador de miles y dos decimales
+    // Formatea el monto con separador de miles, sin forzar decimales (respeta "1,000")
     const formatCashAmount = (value) => {
-        const num = Number(value) || 0;
-        return numeral(num).format('0,0.00');
+        if (value === null || value === undefined || value === '') return value;
+        const num = Number(String(value).replace(/,/g, ''));
+        if (!Number.isFinite(num)) return value;
+        const str = String(num);
+        const [intPart, decPart] = str.split('.');
+        const formattedInt = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        return decPart !== undefined ? `${formattedInt}.${decPart}` : formattedInt;
     };
 
     // Devuelve el número plano a partir de un monto formateado (ej. "1,234.56" -> 1234.56)
@@ -86,7 +102,18 @@ if (configElement) {
             return;
         }
 
-        errorBox.innerHTML = `<p class="font-semibold">No se pudo completar la operación</p><p class="mt-1">${escapeHtml(message)}</p>`;
+        errorBox.innerHTML = `
+            <div class="flex items-start gap-3">
+                <div class="size-6 shrink-0 rounded-full bg-mz-error/20 flex items-center justify-center text-mz-error">
+                    <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+                </div>
+                <div class="flex-1">
+                    <p class="font-semibold text-white">No se pudo completar la operación</p>
+                    <p class="mt-0.5 text-xs text-mz-text-secondary">${escapeHtml(message)}</p>
+                </div>
+                <button type="button" onclick="this.closest('#pos-error').classList.add('hidden')" class="text-mz-text-muted hover:text-white p-1 rounded-md transition" aria-label="Cerrar"><svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>
+            </div>
+        `;
         errorBox.classList.remove('hidden');
         errorBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
     };
@@ -146,109 +173,25 @@ if (configElement) {
             }
 
             const data = await response.json();
-            const sale = data.sale;
-            const settings = data.settings || config;
+            container.innerHTML = data.ticket_html;
+            const width = Number(data.settings?.ticket?.width_mm) === 58 ? 58 : 80;
+            let pageStyle = document.getElementById('ticket-page-style');
 
-            const money = new Intl.NumberFormat('es-MX', {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-            });
-            const formatMoney = (value) => `$${money.format(Number(value) || 0)}`;
+            if (!pageStyle) {
+                pageStyle = document.createElement('style');
+                pageStyle.id = 'ticket-page-style';
+                document.head.append(pageStyle);
+            }
 
-            const itemsHtml = sale.items.map((item) => {
-                const returned = item.returned_quantity > 0
-                    ? `<tr><td colspan="3" class="muted">Devueltas: ${item.returned_quantity} pieza(s)</td></tr>`
-                    : '';
-                return `
-                    <tr>
-                        <td>
-                            <span class="item-name">${escapeHtml(item.product_name)}</span>
-                            <span class="muted" style="display:block">
-                                ${escapeHtml(item.sku || item.barcode || '')}${item.category ? ` · ${escapeHtml(item.category)}` : ''}
-                                · ${formatMoney(item.unit_price)} c/u
-                            </span>
-                        </td>
-                        <td class="num">${item.quantity}</td>
-                        <td class="num">${formatMoney(item.line_total)}</td>
-                    </tr>
-                    ${returned}
-                `;
-            }).join('');
-
-            const business = settings.business || {};
-
-            container.innerHTML = `
-                <div class="ticket-sheet">
-                    <div class="center">
-                        <p class="business">${business.name ?? 'MotoZone'}</p>
-                        ${business.address ? `<p class="muted">${business.address}</p>` : ''}
-                        ${business.phone ? `<p class="muted">Tel. ${business.phone}</p>` : ''}
-                        ${business.tax_id ? `<p class="muted">RFC ${business.tax_id}</p>` : ''}
-                    </div>
-
-                    <hr class="divider">
-
-                    <div class="center">
-                        <p class="folio">${sale.folio}</p>
-                        <p class="muted">${sale.paid_at ?? ''}</p>
-                        <p class="muted">Atendió: ${sale.user ?? ''}</p>
-                    </div>
-
-                    <hr class="divider">
-
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Producto</th>
-                                <th class="num">Cant.</th>
-                                <th class="num">Importe</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${itemsHtml}
-                        </tbody>
-                    </table>
-
-                    <hr class="divider">
-
-                    <table class="totals">
-                        <tr>
-                            <td class="label">Subtotal</td>
-                            <td class="num">${formatMoney(sale.subtotal)}</td>
-                        </tr>
-                        <tr>
-                            <td class="label">IVA incluido</td>
-                            <td class="num">${formatMoney(sale.tax_total)}</td>
-                        </tr>
-                        <tr class="total-row">
-                            <td>Total</td>
-                            <td class="num">${formatMoney(sale.total)}</td>
-                        </tr>
-                        <tr>
-                            <td class="label">Pago con</td>
-                            <td class="num">${formatMoney(sale.amount_paid)}</td>
-                        </tr>
-                        <tr>
-                            <td class="label">Cambio</td>
-                            <td class="num">${formatMoney(sale.change_amount)}</td>
-                        </tr>
-                    </table>
-
-                    <hr class="divider">
-
-                    <div class="center">
-                        <p class="muted">Método de pago: efectivo</p>
-                        <p class="footer">${settings.ticket?.footer ?? 'Gracias por su compra.'}</p>
-                        <p class="muted">Conserve este ticket para cambios y devoluciones.</p>
-                    </div>
-                </div>
-            `;
+            pageStyle.textContent = `@media print { @page { size: ${width}mm auto; margin: 4mm; } }`;
+            await Promise.all(Array.from(container.querySelectorAll('img'), (image) => image.decode()));
 
             container.classList.remove('hidden');
             window.print();
-            container.classList.add('hidden');
         } catch (error) {
             showError(error.message);
+        } finally {
+            container.classList.add('hidden');
         }
     };
 
@@ -290,30 +233,35 @@ if (configElement) {
 
         items.forEach((item, index) => {
             const row = document.createElement('tr');
+            row.className = 'group transition-colors duration-150 hover:bg-mz-bg-surface-2/40 border-b border-mz-border-light/50 last:border-b-0';
             const locked = pendingSaleId !== null;
             const priceControl = permissions.price_edit && !locked
-                ? `<input type="number" step="0.01" min="0" value="${item.unit_price.toFixed(2)}" data-action="price" data-index="${index}" class="h-9 w-24 rounded-md border border-mz-border-light bg-mz-bg-surface-2 px-2 text-right text-sm font-medium tabular-nums text-mz-text-primary focus:border-mz-accent-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/20">`
-                : `<span class="tabular-nums text-mz-text-secondary">${formatMoney(item.unit_price)}</span>`;
+                ? `<input type="number" step="0.01" min="0" value="${item.unit_price.toFixed(2)}" data-action="price" data-index="${index}" class="h-9 w-24 rounded-lg border border-mz-border-light bg-mz-bg-surface-2 px-2.5 text-right text-sm font-semibold tabular-nums text-mz-text-primary focus:border-mz-accent-primary focus:bg-mz-bg-surface focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/20 transition-all">`
+                : `<span class="tabular-nums font-medium text-mz-text-secondary">${formatMoney(item.unit_price)}</span>`;
 
             const quantityControl = !locked
-                ? `<input type="number" step="1" min="1" value="${item.quantity}" data-action="quantity" data-index="${index}" class="h-9 w-20 rounded-md border border-mz-border-light bg-mz-bg-surface-2 px-2 text-center text-sm font-medium tabular-nums text-mz-text-primary focus:border-mz-accent-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/20">`
-                : `<span class="tabular-nums text-mz-text-secondary">${item.quantity}</span>`;
+                ? `<input type="number" step="1" min="1" value="${item.quantity}" data-action="quantity" data-index="${index}" class="h-9 w-20 rounded-lg border border-mz-border-light bg-mz-bg-surface-2 px-2 text-center text-sm font-bold tabular-nums text-mz-text-primary focus:border-mz-accent-primary focus:bg-mz-bg-surface focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/20 transition-all">`
+                : `<span class="tabular-nums font-bold text-mz-text-secondary">${item.quantity}</span>`;
 
             const stockLabel = item.track_inventory
-                ? `${item.stock ?? 0} disponibles`
+                ? `${item.stock ?? 0} disp.`
                 : 'Sin control';
 
             row.innerHTML = `
                 <td class="px-4 py-3">
-                    <p class="font-medium text-mz-text-primary">${escapeHtml(item.name)}</p>
-                    <p class="text-xs text-mz-text-muted">${escapeHtml(item.sku || item.barcode || '')}${item.category ? ` · ${escapeHtml(item.category)}` : ''}</p>
+                    <p class="font-semibold text-sm text-mz-text-primary group-hover:text-mz-accent-primary transition-colors">${escapeHtml(item.name)}</p>
+                    <div class="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-mz-text-muted">
+                        <span class="font-mono text-[11px] text-mz-text-muted/80">${escapeHtml(item.barcode || item.barcode2 || item.sku || 'S/C')}</span>
+                    </div>
                 </td>
                 <td class="whitespace-nowrap px-4 py-3 text-right">${priceControl}</td>
                 <td class="whitespace-nowrap px-4 py-3 text-center">${quantityControl}</td>
-                <td class="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums text-mz-text-primary">${formatMoney(lineTotal(item))}</td>
-                <td class="whitespace-nowrap px-4 py-3 text-right text-xs ${item.track_inventory && item.stock <= (item.min_stock ?? 0) ? 'text-mz-warning' : 'text-mz-text-muted'}">${stockLabel}</td>
+                <td class="whitespace-nowrap px-4 py-3 text-right font-bold tabular-nums text-mz-text-primary font-display text-base">${formatMoney(lineTotal(item))}</td>
+                <td class="whitespace-nowrap px-4 py-3 text-right text-xs">
+                    <span class="inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium ${item.track_inventory && item.stock <= (item.min_stock ?? 0) ? 'bg-mz-warning/15 text-mz-warning border border-mz-warning/30' : 'bg-mz-bg-surface-2 text-mz-text-muted'}">${stockLabel}</span>
+                </td>
                 <td class="px-4 py-3 text-right">
-                    ${locked ? '' : `<button type="button" data-action="remove" data-index="${index}" class="inline-flex size-8 items-center justify-center rounded-lg border border-mz-border-light text-mz-text-muted transition hover:border-mz-error/40 hover:bg-mz-error/10 hover:text-mz-error" aria-label="Quitar ${escapeHtml(item.name)}"><svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>`}
+                    ${locked ? '' : `<button type="button" data-action="remove" data-index="${index}" class="inline-flex size-8 items-center justify-center rounded-lg border border-mz-border-light text-mz-text-muted transition-all duration-150 hover:border-mz-error/50 hover:bg-mz-error/15 hover:text-mz-error active:scale-95" title="Quitar artículo" aria-label="Quitar ${escapeHtml(item.name)}"><svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>`}
                 </td>
             `;
 
@@ -361,7 +309,7 @@ if (configElement) {
                 name: product.name,
                 sku: product.sku,
                 barcode: product.barcode,
-                category: product.category,
+                barcode2: product.barcode2,
                 price: round(product.price),
                 wholesale_price: product.wholesale_price === null ? null : round(product.wholesale_price),
                 unit_price: priceFor(product),
@@ -378,6 +326,53 @@ if (configElement) {
         searchInput.value = '';
         resultsBox.classList.add('hidden');
         searchInput.focus();
+    };
+
+    const showCustomProductError = (message) => {
+        if (!customProductError) {
+            return;
+        }
+
+        customProductError.textContent = message;
+        customProductError.classList.remove('hidden');
+    };
+
+    const addCustomProduct = (name, price, quantity = 1) => {
+        clearError();
+
+        if (pendingSaleId !== null) {
+            showError('Termina o cancela la venta pendiente antes de agregar otros productos.');
+            return;
+        }
+
+        const existing = items.find((item) => item.is_custom && item.name === name);
+
+        if (existing) {
+            existing.quantity = existing.quantity + quantity;
+        } else {
+            items.push({
+                product_id: null,
+                is_custom: true,
+                custom_name: name,
+                custom_price: price,
+                name: name,
+                sku: null,
+                barcode: null,
+                price: round(price),
+                wholesale_price: null,
+                unit_price: round(price),
+                manual_price: round(price),
+                quantity,
+                tax_rate: 0,
+                stock: null,
+                min_stock: 0,
+                track_inventory: false,
+            });
+        }
+
+        renderCart();
+        customProductForm?.reset();
+        customProductDialog?.close();
     };
 
     const setWholesale = (enabled) => {
@@ -398,20 +393,22 @@ if (configElement) {
         productCache = new Map(products.map((product) => [Number(product.id), product]));
 
         if (products.length === 0) {
-            resultsBox.innerHTML = '<p class="px-4 py-6 text-center text-sm text-mz-text-muted">No se encontraron productos activos.</p>';
+            resultsBox.innerHTML = '<div class="px-4 py-8 text-center text-sm text-mz-text-muted"><svg class="size-8 mx-auto mb-2 text-mz-text-muted/50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>No se encontraron productos activos con ese término.</div>';
             resultsBox.classList.remove('hidden');
             return;
         }
 
         resultsBox.innerHTML = products.map((product) => `
-            <button type="button" data-product-id="${product.id}" class="flex w-full items-center justify-between gap-4 border-b border-mz-border px-4 py-3 text-left transition last:border-b-0 hover:bg-mz-bg-surface-2">
-                <span class="min-w-0">
-                    <span class="block truncate text-sm font-medium text-mz-text-primary">${escapeHtml(product.name)}</span>
-                    <span class="block truncate text-xs text-mz-text-muted">${escapeHtml(product.sku || product.barcode || '')}${product.category ? ` · ${escapeHtml(product.category)}` : ''}</span>
+            <button type="button" data-product-id="${product.id}" class="group flex w-full items-center justify-between gap-4 border-b border-mz-border-light/40 px-4 py-3 text-left transition-colors duration-150 last:border-b-0 hover:bg-mz-bg-surface-2/80">
+                <span class="min-w-0 flex-1">
+                    <span class="block truncate text-sm font-semibold text-mz-text-primary group-hover:text-mz-accent-primary transition-colors">${escapeHtml(product.name)}</span>
+                    <span class="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-mz-text-muted">
+                        <span class="font-mono text-[11px] text-mz-text-muted/80">${escapeHtml(product.barcode || product.barcode2 || 'S/C')}</span>
+                    </span>
                 </span>
                 <span class="shrink-0 text-right">
-                    <span class="block text-sm font-semibold tabular-nums text-mz-text-primary">${formatMoney(product.price)}</span>
-                    <span class="block text-[11px] ${product.in_stock ? 'text-mz-success' : 'text-mz-error'}">${escapeHtml(product.stock_label)}</span>
+                    <span class="block text-base font-bold tabular-nums text-mz-text-primary font-display">${formatMoney(product.price)}</span>
+                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${product.in_stock ? 'bg-mz-success/15 text-mz-success border border-mz-success/30' : 'bg-mz-error/15 text-mz-error border border-mz-error/30'}">${escapeHtml(product.stock_label)}</span>
                 </span>
             </button>
         `).join('');
@@ -468,6 +465,9 @@ if (configElement) {
         payment_method: paymentMethod?.value || 'cash',
         items: items.map((item) => ({
             product_id: item.product_id,
+            is_custom: item.is_custom || false,
+            custom_name: item.custom_name || null,
+            custom_price: item.custom_price || null,
             quantity: item.quantity,
             unit_price: item.manual_price,
             wholesale: wholesaleMode,
@@ -625,7 +625,6 @@ if (configElement) {
                 name: item.name,
                 sku: item.sku,
                 barcode: item.barcode,
-                category: item.category,
                 price: Number(item.unit_price),
                 wholesale_price: null,
                 unit_price: Number(item.unit_price),
@@ -758,6 +757,29 @@ if (configElement) {
 
     wholesaleToggle?.addEventListener('change', () => setWholesale(wholesaleToggle.checked));
 
+    // Producto común: abrir modal y agregar artículo libre al carrito
+    customProductForm?.addEventListener('submit', (event) => {
+        event.preventDefault();
+
+        const name = customProductName?.value.trim();
+        const price = Number(customProductPrice?.value);
+        const quantity = Math.max(1, Math.floor(Number(customProductQuantity?.value) || 1));
+
+        if (!name) {
+            showCustomProductError('Escribe el nombre del producto.');
+            customProductName?.focus();
+            return;
+        }
+
+        if (!Number.isFinite(price) || price <= 0) {
+            showCustomProductError('Escribe un precio válido mayor a cero.');
+            customProductPrice?.focus();
+            return;
+        }
+
+        addCustomProduct(name, price, quantity);
+    });
+
     document.querySelector('[data-amount-exact]')?.addEventListener('click', () => {
         paymentAmount.value = Number(paymentTotal.dataset.total || 0).toFixed(2);
         updateChange();
@@ -803,7 +825,7 @@ if (configElement) {
             return;
         }
 
-        if (!window.confirm('¿Dejar esta venta pendiente? No se descontará stock ni se moverá caja hasta cobrarla.')) {
+        if (!window.confirm('¿Dejar esta venta pendiente? No se descontarán existencias ni se moverá caja hasta cobrarla.')) {
             return;
         }
 
@@ -858,27 +880,17 @@ if (configElement) {
             cashType.value = type;
             cashTitle.textContent = type === 'in' ? 'Entrada de efectivo' : 'Salida de efectivo';
 
-            Array.from(cashCategory.options).forEach((option) => {
-                const matches = option.dataset.type === type || option.value === 'other';
-                option.hidden = !matches;
-                option.disabled = !matches;
-            });
-
-            const first = Array.from(cashCategory.options).find((option) => !option.disabled);
-            cashCategory.value = first?.value ?? '';
+            const cashConcept = document.getElementById('cash-concept');
+            if (cashConcept) {
+                cashConcept.placeholder = type === 'in'
+                    ? '¿De dónde entra el efectivo?'
+                    : '¿Por qué sale el efectivo?';
+            }
 
             cashError?.classList.add('hidden');
 
             cashDialog.showModal();
         });
-    });
-
-    cashCategory?.addEventListener('change', () => {
-        if (cashCategory.value === 'other') {
-            return;
-        }
-
-        cashType.value = cashCategory.selectedOptions[0]?.dataset.type ?? cashType.value;
     });
 
     // Formato de miles y centavos al salir del campo de monto
@@ -972,6 +984,92 @@ if (configElement) {
         cashError?.classList.add('hidden');
     });
 
+    // Iniciar día: registra únicamente el efectivo inicial del turno.
+    const startDaySaveButton = startDayForm?.querySelector('button[type="submit"]');
+    let startDaySubmitting = false;
+
+    const setStartDaySubmitting = (value) => {
+        startDaySubmitting = value;
+
+        if (value) {
+            startDaySaveButton?.setAttribute('disabled', 'disabled');
+            startDaySaveButton?.classList.add('opacity-75', 'cursor-not-allowed');
+        } else {
+            startDaySaveButton?.removeAttribute('disabled');
+            startDaySaveButton?.classList.remove('opacity-75', 'cursor-not-allowed');
+        }
+    };
+
+    const showStartDayError = (message) => {
+        if (!startDayError) {
+            return;
+        }
+
+        startDayError.textContent = message;
+        startDayError.classList.remove('hidden');
+    };
+
+    startDayAmount?.addEventListener('blur', () => {
+        startDayAmount.value = formatCashAmount(startDayAmount.value);
+    });
+
+    startDayForm?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        if (startDaySubmitting) {
+            return;
+        }
+
+        startDayError?.classList.add('hidden');
+
+        const raw = Number(parseCashAmount(startDayAmount?.value));
+
+        if (!Number.isFinite(raw) || raw <= 0) {
+            showStartDayError('Escribe un monto válido mayor a cero.');
+            startDayAmount?.focus();
+            return;
+        }
+
+        startDayAmount.value = String(raw);
+        setStartDaySubmitting(true);
+
+        try {
+            const response = await fetch(startDayForm.action, {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'X-CSRF-TOKEN': csrf,
+                },
+                body: new FormData(startDayForm),
+                redirect: 'manual',
+            });
+
+            if (response.type === 'opaqueredirect' || response.redirected || response.ok) {
+                startDayForm.reset();
+                startDayDialog?.close();
+                window.location.reload();
+                return;
+            }
+
+            const data = await response.json().catch(() => ({}));
+            const errors = data.errors
+                ? Object.values(data.errors).flat().join(' ')
+                : (data.message || 'No se pudo registrar el efectivo inicial.');
+
+            showStartDayError(errors);
+        } catch (error) {
+            showStartDayError(error.message || 'No se pudo registrar el efectivo inicial. Revisa tu conexión.');
+        } finally {
+            setStartDaySubmitting(false);
+        }
+    });
+
+    startDayDialog?.addEventListener('close', () => {
+        setStartDaySubmitting(false);
+        startDayForm?.reset();
+        startDayError?.classList.add('hidden');
+    });
+
     document.addEventListener('keydown', (event) => {
         if (event.key === 'F12' && !paymentDialog.open && !cashDialog?.open) {
             event.preventDefault();
@@ -981,7 +1079,7 @@ if (configElement) {
         if (event.key === 'F6' && !paymentDialog.open && !cashDialog?.open) {
             event.preventDefault();
             if (items.length > 0) {
-                if (window.confirm('¿Dejar esta venta pendiente? No se descontará stock ni se moverá caja hasta cobrarla.')) {
+                if (window.confirm('¿Dejar esta venta pendiente? No se descontarán existencias ni se moverá caja hasta cobrarla.')) {
                     document.getElementById('pos-pending')?.click();
                 }
             }

@@ -217,8 +217,37 @@
             </tbody>
         </table>
 
-        @if (! $employee && $breakdown)
-            @include('pos.cuts.partials.employee-breakdown', ['date' => $date, 'breakdown' => $breakdown])
+        @if (! $employee && ! empty($breakdown['employees']))
+            <h2>Por empleado</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Empleado</th>
+                        <th class="num">Tkts</th>
+                        <th class="num">Ventas</th>
+                        <th class="num">Ingresos</th>
+                        <th class="num">Salida</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach ($breakdown['employees'] as $row)
+                        <tr>
+                            <td>{{ $row['name'] }}</td>
+                            <td class="num">{{ $row['tickets'] }}</td>
+                            <td class="num">{{ $money($row['sales']) }}</td>
+                            <td class="num">{{ $money($row['cash_in'] ?? 0) }}</td>
+                            <td class="num">{{ $row['closed_at'] ? \Carbon\Carbon::parse($row['closed_at'])->format('H:i') : '—' }}</td>
+                        </tr>
+                    @endforeach
+                    <tr class="row-total">
+                        <td>Total</td>
+                        <td class="num">{{ $breakdown['total']['tickets'] ?? 0 }}</td>
+                        <td class="num">{{ $money($breakdown['total']['sales'] ?? 0) }}</td>
+                        <td class="num">{{ $money($breakdown['total']['cash_in'] ?? 0) }}</td>
+                        <td class="num">—</td>
+                    </tr>
+                </tbody>
+            </table>
         @endif
 
         <div class="sign">

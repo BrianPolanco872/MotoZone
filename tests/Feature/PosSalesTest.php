@@ -43,8 +43,7 @@ class PosSalesTest extends TestCase
         ], $overrides));
     }
 
-    /** @test */
-    public function employee_can_create_paid_sale_and_deducts_stock(): void
+    public function test_employee_can_create_paid_sale_and_deducts_stock(): void
     {
         $employee = $this->employee();
         $product = $this->createProduct(['stock' => 5]);
@@ -52,7 +51,7 @@ class PosSalesTest extends TestCase
         $response = $this->actingAs($employee)->postJson(route('pos.sales.store'), [
             'idempotency_key' => 'test-sale-001',
             'status' => 'paid',
-            'amount_paid' => 116.00,
+            'amount_paid' => 200.00,
             'items' => [
                 [
                     'product_id' => $product->id,
@@ -61,21 +60,20 @@ class PosSalesTest extends TestCase
             ],
         ]);
 
-        $response->assertCreated();
+        $response->assertOk();
 
         $sale = Sale::where('idempotency_key', 'test-sale-001')->first();
         $this->assertNotNull($sale);
         $this->assertNotNull($sale->folio);
         $this->assertEquals('paid', $sale->status);
         $this->assertEquals(200.00, (float) $sale->total);
-        $this->assertEquals(116.00, (float) $sale->amount_paid);
+        $this->assertEquals(200.00, (float) $sale->amount_paid);
 
         $product->refresh();
         $this->assertEquals(3, $product->stock);
     }
 
-    /** @test */
-    public function idempotency_prevents_duplicate_sale(): void
+    public function test_idempotency_prevents_duplicate_sale(): void
     {
         $employee = $this->employee();
         $product = $this->createProduct(['stock' => 5]);
@@ -83,7 +81,7 @@ class PosSalesTest extends TestCase
         $this->actingAs($employee)->postJson(route('pos.sales.store'), [
             'idempotency_key' => 'idem-001',
             'status' => 'paid',
-            'amount_paid' => 116.00,
+            'amount_paid' => 200.00,
             'items' => [
                 [
                     'product_id' => $product->id,
@@ -95,7 +93,7 @@ class PosSalesTest extends TestCase
         $response = $this->actingAs($employee)->postJson(route('pos.sales.store'), [
             'idempotency_key' => 'idem-001',
             'status' => 'paid',
-            'amount_paid' => 116.00,
+            'amount_paid' => 200.00,
             'items' => [
                 [
                     'product_id' => $product->id,
@@ -104,15 +102,14 @@ class PosSalesTest extends TestCase
             ],
         ]);
 
-        $response->assertCreated();
+        $response->assertOk();
 
         $this->assertCount(1, Sale::where('idempotency_key', 'idem-001')->get());
         $product->refresh();
         $this->assertEquals(3, $product->stock); // Solo se descontó una vez
     }
 
-    /** @test */
-    public function sale_cannot_exceed_available_stock(): void
+    public function test_sale_cannot_exceed_available_stock(): void
     {
         $employee = $this->employee();
         $product = $this->createProduct(['stock' => 1]);
@@ -120,7 +117,7 @@ class PosSalesTest extends TestCase
         $response = $this->actingAs($employee)->postJson(route('pos.sales.store'), [
             'idempotency_key' => 'stock-001',
             'status' => 'paid',
-            'amount_paid' => 116.00,
+            'amount_paid' => 200.00,
             'items' => [
                 [
                     'product_id' => $product->id,
@@ -135,8 +132,7 @@ class PosSalesTest extends TestCase
         $this->assertEquals(1, $product->stock);
     }
 
-    /** @test */
-    public function pending_sale_can_be_charged_and_updates_stock(): void
+    public function test_pending_sale_can_be_charged_and_updates_stock(): void
     {
         $employee = $this->employee();
         $product = $this->createProduct(['stock' => 5]);
@@ -161,7 +157,7 @@ class PosSalesTest extends TestCase
             'amount_paid' => 232.00,
         ]);
 
-        $chargeResponse->assertCreated();
+        $chargeResponse->assertOk();
 
         $this->assertEquals(3, $product->refresh()->stock); // Ahora se descuenta
 

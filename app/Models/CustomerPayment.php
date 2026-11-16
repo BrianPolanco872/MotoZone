@@ -35,4 +35,12 @@ class CustomerPayment extends Model
     {
         return $this->belongsTo(DailyCut::class, 'daily_cut_id');
     }
+
+    /**
+     * Human-readable label for the payment category.
+     */
+    public function categoryLabel(): string
+    {
+        return CashMovement::CATEGORIES['customer_payment']['label'];
+    }
 }

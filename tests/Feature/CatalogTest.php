@@ -3,69 +3,23 @@
 namespace Tests\Feature;
 
 use App\Models\Category;
+use App\Models\HomePage;
 use App\Models\Product;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\TestWith;
 use Tests\TestCase;
 
 class CatalogTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_catalog_lists_only_active_products(): void
+    #[TestWith(['/catalogo'])]
+    #[TestWith(['/catalogo?categoria=frenos'])]
+    #[TestWith(['/catalogo?search=BAL-TEST-01'])]
+    #[TestWith(['/catalogo?orden=precio-asc'])]
+    public function test_removed_catalog_returns_not_found(string $url): void
     {
-        $category = Category::factory()->create(['name' => 'Frenos', 'slug' => 'frenos']);
-
-        Product::factory()->for($category)->create(['name' => 'Balata de prueba']);
-        Product::factory()->for($category)->create(['name' => 'Pieza descontinuada', 'is_active' => false]);
-
-        $response = $this->get('/catalogo');
-
-        $response->assertOk();
-        $response->assertViewIs('catalog.index');
-        $response->assertSee('Balata de prueba');
-        $response->assertDontSee('Pieza descontinuada');
-    }
-
-    public function test_catalog_filters_by_category(): void
-    {
-        $brakes = Category::factory()->create(['name' => 'Frenos', 'slug' => 'frenos']);
-        $tires = Category::factory()->create(['name' => 'Llantas', 'slug' => 'llantas']);
-
-        Product::factory()->for($brakes)->create(['name' => 'Balata de prueba']);
-        Product::factory()->for($tires)->create(['name' => 'Neumático de prueba']);
-
-        $response = $this->get('/catalogo?categoria=frenos');
-
-        $response->assertOk();
-        $response->assertSee('Balata de prueba');
-        $response->assertDontSee('Neumático de prueba');
-    }
-
-    public function test_catalog_searches_by_sku(): void
-    {
-        $category = Category::factory()->create(['name' => 'Frenos', 'slug' => 'frenos']);
-
-        Product::factory()->for($category)->create(['name' => 'Balata de prueba', 'sku' => 'BAL-TEST-01', 'brand' => 'Yamaha']);
-        Product::factory()->for($category)->create(['name' => 'Disco de prueba', 'sku' => 'DIS-TEST-02', 'brand' => 'Honda']);
-
-        $response = $this->get('/catalogo?search=BAL-TEST-01');
-
-        $response->assertOk();
-        $response->assertSee('Balata de prueba');
-        $response->assertDontSee('Disco de prueba');
-    }
-
-    public function test_catalog_sorts_products_by_price_ascending(): void
-    {
-        $category = Category::factory()->create(['name' => 'Frenos', 'slug' => 'frenos']);
-
-        Product::factory()->for($category)->create(['name' => 'Pieza economica', 'price' => 100]);
-        Product::factory()->for($category)->create(['name' => 'Pieza costosa', 'price' => 5000]);
-
-        $response = $this->get('/catalogo?orden=precio-asc');
-
-        $response->assertOk();
-        $response->assertSeeInOrder(['Pieza economica', 'Pieza costosa']);
+        $this->get($url)->assertNotFound();
     }
 
     public function test_product_detail_is_rendered(): void
@@ -82,13 +36,48 @@ class CatalogTest extends TestCase
         $response->assertViewIs('catalog.show');
         $response->assertSee('Balata de prueba');
         $response->assertSee('BAL-TEST-01');
+        $response->assertDontSee('href="'.url('/catalogo'), false);
+        $response->assertDontSee('Frenos');
+    }
+
+    public function test_active_product_without_category_remains_accessible_outside_home(): void
+    {
+        $product = Product::factory()->create([
+            'name' => 'Refacción fuera de portada',
+            'is_active' => true,
+            'home_visible' => false,
+            'featured' => true,
+            'category_id' => null,
+        ]);
+
+        $home = $this->get(route('home'));
+        $detail = $this->get(route('catalog.show', $product));
+
+        $home->assertOk();
+        $home->assertDontSee($product->name);
+        $detail->assertOk();
+        $detail->assertSee($product->name);
     }
 
     public function test_inactive_product_detail_returns_not_found(): void
     {
         $category = Category::factory()->create(['name' => 'Frenos', 'slug' => 'frenos']);
-        $product = Product::factory()->for($category)->create(['is_active' => false]);
+        $product = Product::factory()->for($category)->create(['is_active' => false, 'home_visible' => true]);
 
         $this->get(route('catalog.show', $product))->assertNotFound();
+        $this->get(route('home'))->assertOk()->assertDontSee($product->name);
+    }
+
+    public function test_home_style_and_contact_do_not_change_product_detail(): void
+    {
+        HomePage::factory()->create(['content' => ['store_name' => 'Mostrador exclusivo de home', 'whatsapp' => '+525576543210', 'email' => 'home@example.test', 'show_whatsapp_bubble' => true, 'show_email_bubble' => true]]);
+        $product = Product::factory()->create(['is_active' => true]);
+
+        $this->get(route('catalog.show', $product))->assertOk()
+            ->assertDontSee('home-storefront', false)
+            ->assertDontSee('Mostrador exclusivo de home')
+            ->assertDontSee('wa.me/525576543210', false)
+            ->assertDontSee('mailto:home@example.test', false)
+            ->assertSee('wa.me/525512345678', false);
     }
 }

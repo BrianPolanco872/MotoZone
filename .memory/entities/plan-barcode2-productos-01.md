@@ -1,0 +1,18 @@
+---
+entity: plan-barcode2-productos-01
+type: plan
+---
+
+- Tipo: feature
+- Objetivo: Permitir registrar dos códigos de barras por producto y localizar el producto en el POS por cualquiera de los dos.
+- Pasos: 1) Añadir barcode2 nullable e índice único; conservar datos SKU y migrar SKU a barcode2 solo para productos sin barcode1 para mantener la búsqueda heredada. 2) Actualizar modelo, validación y persistencia; conservar SKU en registros existentes y generar SKU interno único para productos nuevos. 3) Reemplazar el campo SKU visible por Código de barras 2 (type=text) y mostrar ambos códigos en Productos. 4) Cambiar búsqueda exacta del POS a barcode/barcode2 y conservar búsqueda textual por nombre/marca; exponer los códigos en su interfaz. 5) Añadir pruebas de creación, edición, caracteres especiales, ceros iniciales, unicidad y búsqueda POS por ambos códigos, verificando que SKU no sea criterio de escaneo.
+- Archivos afectados: database/migrations/<timestamp>_add_barcode2_to_products_table.php (columna e índice); app/Models/Product.php (fillable y búsqueda de catálogo); app/Http/Requests/Admin/ProductRequest.php (validar texto/únicos); app/Http/Controllers/Admin/ProductController.php (persistir barcode2 y SKU interno); resources/views/admin/products/partials/form.blade.php (dos inputs de texto); resources/views/admin/products/index.blade.php (mostrar ambos códigos); app/Http/Controllers/PosController.php (búsqueda por los dos códigos); resources/views/pos/index.blade.php (indicación de búsqueda); resources/js/pos/pos.js (mostrar códigos); tests/Feature/AdminProductTest.php y tests/Feature/PosProductSearchTest.php (cobertura funcional).
+- Criterios de aceptación: El valor escaneado en cada campo se guarda exactamente, incluidos ceros iniciales, símbolos y paréntesis; ambos códigos encuentran el producto en POS; SKU no se usa para búsqueda exacta en POS; búsqueda por nombre/marca sigue funcionando; duplicados que causen resultados ambiguos son rechazados.
+- Plan de rollback: Exportar primero los valores barcode2; revertir el criterio POS y la interfaz/formulario a SKU; restaurar persistencia previa y solo después revertir la migración que elimina barcode2. Los SKU originales se conservan.
+- Riesgos: El escáner debe escribir como teclado y el campo correspondiente debe tener foco; se recomienda probar el escáner físico. Los SKU heredados solo se copian a barcode2 cuando barcode1 está vacío; los productos con barcode1 y un SKU alternativo deberán recibir su segundo código real. SKU internos autogenerados podrían seguir visibles en pantallas/tickets fuera del alcance. Sin dependencias externas.
+- Alternativas consideradas: Reutilizar la columna sku evita una migración, pero mezcla el significado de SKU y barcode2 y deja usos/etiquetas existentes con semántica confusa; se prefiere una columna barcode2 dedicada.
+- Estado: IMPLEMENTADO
+- Aprobación explícita: El usuario solicitó aplicar el plan el 2026-11-16.
+- Aclaración adicional: Ambos campos aceptan cualquier formato de código como texto, con límite de 255 caracteres; no hay validación de simbología.
+- Cambios aplicados: Se agregó barcode2 con migración y compatibilidad para SKU heredado en productos sin barcode1; el formulario guarda ambos códigos como texto, el SKU se conserva internamente y se genera para productos nuevos; búsqueda de Productos y POS actualizada; se añadieron pruebas de persistencia, unicidad y búsqueda.
+- Desviaciones del plan original: Ninguna de alcance. Las pruebas automatizadas se añadieron pero no se ejecutaron; la migración no se aplicó a la base de datos y el escáner físico no se probó.

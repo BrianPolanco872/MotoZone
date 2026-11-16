@@ -186,15 +186,24 @@ class SaleService
         $normalized = [];
 
         foreach ($items as $item) {
-            $productId = (int) ($item['product_id'] ?? 0);
+            $productId = isset($item['product_id']) ? (int) $item['product_id'] : null;
             $quantity = (int) ($item['quantity'] ?? 0);
+            $isCustom = (bool) ($item['is_custom'] ?? false);
 
-            if ($productId <= 0 || $quantity <= 0) {
+            if ($quantity <= 0) {
+                continue;
+            }
+
+            // Los artículos libres no requieren product_id; los del catálogo sí.
+            if (! $isCustom && (! $productId || $productId <= 0)) {
                 continue;
             }
 
             $normalized[] = [
                 'product_id' => $productId,
+                'is_custom' => $isCustom,
+                'custom_name' => $isCustom ? trim((string) ($item['custom_name'] ?? '')) : null,
+                'custom_price' => $isCustom ? (float) ($item['custom_price'] ?? 0) : null,
                 'quantity' => min($quantity, 9999),
                 'unit_price' => isset($item['unit_price']) && is_numeric($item['unit_price'])
                     ? (float) $item['unit_price']
@@ -213,6 +222,11 @@ class SaleService
     private function lockProducts(array $items)
     {
         $ids = array_values(array_unique(array_map(fn (array $item): int => $item['product_id'], $items)));
+        $ids = array_filter($ids, fn ($id) => $id > 0);
+
+        if ($ids === []) {
+            return collect();
+        }
 
         return Product::query()
             ->whereIn('id', $ids)
@@ -232,6 +246,34 @@ class SaleService
         $prepared = [];
 
         foreach ($items as $item) {
+            if (! empty($item['is_custom'])) {
+                $unitPrice = round((float) ($item['custom_price'] ?? $item['unit_price'] ?? 0), 2);
+                $amounts = $this->pricing->lineAmounts($unitPrice, $item['quantity'], 0.0);
+
+                $prepared[] = [
+                    'product_id' => null,
+                    'category_id' => null,
+                    'is_custom' => true,
+                    'custom_name' => $item['custom_name'],
+                    'custom_price' => $unitPrice,
+                    'product_name' => $item['custom_name'],
+                    'sku' => null,
+                    'barcode' => null,
+                    'category_name' => null,
+                    'quantity' => $item['quantity'],
+                    'unit_price' => $unitPrice,
+                    'cost_price' => 0.0,
+                    'tax_rate' => 0.0,
+                    'line_subtotal' => $amounts['line_subtotal'],
+                    'tax_amount' => $amounts['tax_amount'],
+                    'line_total' => $amounts['line_total'],
+                    'line_cost' => 0.0,
+                    'price_overridden' => false,
+                ];
+
+                continue;
+            }
+
             $product = $products->get($item['product_id']);
 
             if (! $product) {
@@ -303,6 +345,11 @@ class SaleService
     private function applyStockAndCash(Sale $sale, array $preparedItems, $products, User $user): void
     {
         foreach ($preparedItems as $item) {
+            // Los artículos libres no descuentan stock ni generan movimientos de inventario.
+            if (! empty($item['is_custom'])) {
+                continue;
+            }
+
             $product = $products->get($item['product_id']);
 
             if (! $product || ! $product->track_inventory) {

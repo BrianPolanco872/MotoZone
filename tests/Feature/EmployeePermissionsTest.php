@@ -121,14 +121,17 @@ class EmployeePermissionsTest extends TestCase
     {
         $employee = User::factory()->create()->assignRole('empleado');
         $employee->givePermissionTo('pos.access');
+        $email = $employee->email;
 
         $this->actingAs($this->admin())
             ->delete(route('admin.users.destroy', $employee))
             ->assertRedirect(route('admin.users.index'));
 
-        $this->assertSoftDeleted('users', ['id' => $employee->id]);
+        // El empleado se borra físicamente (forceDelete), por lo que
+        // ya no existe ni siquiera como soft-deleted y su correo queda libre.
         $this->assertFalse(User::query()->whereKey($employee->id)->exists());
-        $this->assertTrue(User::withTrashed()->whereKey($employee->id)->exists());
+        $this->assertFalse(User::withTrashed()->whereKey($employee->id)->exists());
+        $this->assertFalse(User::query()->where('email', $email)->exists());
     }
 
     public function test_admin_cannot_delete_an_administrator(): void

@@ -10,6 +10,7 @@ use App\Models\User;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
@@ -121,12 +122,39 @@ class UserController extends Controller
         abort_unless($user->hasRole('empleado'), 403, 'Solo se pueden eliminar empleados.');
 
         $name = $user->name;
+        $email = $user->email;
 
-        $user->delete();
+        // 1. Movimientos de caja: user_id tiene restrictOnDelete y no es nullable,
+        //    por lo que bloquean el borrado físico del usuario.
+        DB::table('cash_movements')->where('user_id', $user->id)->delete();
+
+        // 2. Ventas: user_id tiene restrictOnDelete y no es nullable.
+        //    Al borrar la venta se cascada automáticamente a sale_items,
+        //    sale_returns y sale_return_items (todas tienen cascadeOnDelete).
+        DB::table('sales')->where('user_id', $user->id)->delete();
+
+        // 3. Registros restantes que referencian al usuario.
+        //    Se usa el query builder directo para evitar scopes de SoftDeletes
+        //    en modelos como AuditLog y CashMovement que no tienen columna deleted_at.
+        DB::table('stock_movements')->where('user_id', $user->id)->delete();
+        DB::table('daily_cuts')
+            ->where('user_id', $user->id)
+            ->orWhere('generated_by', $user->id)
+            ->delete();
+        DB::table('customer_payments')->where('user_id', $user->id)->delete();
+        DB::table('supplier_payments')->where('user_id', $user->id)->delete();
+        DB::table('audit_logs')->where('user_id', $user->id)->delete();
+
+        // 4. Borrado físico real (forceDelete): elimina el registro de la tabla
+        //    users y libera el correo electrónico para poder registrarlo de nuevo.
+        $user->forceDelete();
 
         return redirect()
             ->route('admin.users.index')
-            ->with('status', "Empleado «{$name}» eliminado correctamente.");
+            ->with(
+                'status',
+                "Empleado «{$name}» ({$email}) eliminado definitivamente. Ahora puedes registrarlo de nuevo con ese correo si lo deseas."
+            );
     }
 
     /**

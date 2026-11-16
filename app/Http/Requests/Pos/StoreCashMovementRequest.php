@@ -19,14 +19,14 @@ class StoreCashMovementRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'category' => ['required', 'string', Rule::in(array_keys(CashMovement::manualCategories()))],
+            'category' => ['nullable', 'string', Rule::in(array_keys(CashMovement::manualCategories()))],
             'type' => ['nullable', Rule::in([CashMovement::TYPE_IN, CashMovement::TYPE_OUT])],
             'amount' => ['required', 'numeric', 'min:0.01', 'max:9999999'],
-            'concept' => ['nullable', 'string', 'max:255'],
-            'method' => ['sometimes', 'required_if:category,customer_payment,supplier_payment', 'string', Rule::in(['cash', 'card', 'transfer'])],
-            'customer_name' => ['sometimes', 'required_if:category,customer_payment', 'string', 'max:255'],
-            'supplier_name' => ['sometimes', 'required_if:category,supplier_payment', 'string', 'max:255'],
-            'reason' => ['sometimes', 'required_if:category,supplier_payment', 'string', 'max:500'],
+            'concept' => ['required', 'string', 'max:255'],
+            'method' => ['nullable', 'string', Rule::in(['cash', 'card', 'transfer'])],
+            'customer_name' => ['nullable', 'string', 'max:255'],
+            'supplier_name' => ['nullable', 'string', 'max:255'],
+            'reason' => ['nullable', 'string', 'max:500'],
             'customer_id' => ['nullable', 'integer'],
             'supplier_id' => ['nullable', 'integer'],
         ];

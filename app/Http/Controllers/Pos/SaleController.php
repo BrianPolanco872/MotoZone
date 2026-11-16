@@ -11,6 +11,7 @@ use App\Models\Sale;
 use App\Models\User;
 use App\Services\AuditLogService;
 use App\Services\SaleService;
+use App\Services\TicketSettings;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -34,7 +35,7 @@ class SaleController extends Controller
                 return response()->json([
                     'message' => 'Este día ya está cerrado para ti. No se pueden registrar ventas.',
                     'day_closed_for_user' => true,
-                    'reopen_url' => route('cuts.reopen-my-day'),
+                    'reopen_url' => route('pos.cuts.reopen-my-day'),
                 ], 422);
             }
 
@@ -70,7 +71,7 @@ class SaleController extends Controller
                 return response()->json([
                     'message' => 'Este día ya está cerrado para ti. No se pueden cobrar ventas.',
                     'day_closed_for_user' => true,
-                    'reopen_url' => route('cuts.reopen-my-day'),
+                    'reopen_url' => route('pos.cuts.reopen-my-day'),
                 ], 422);
             }
 
@@ -207,7 +208,7 @@ class SaleController extends Controller
         ]);
     }
 
-    public function ticket(Request $request, Sale $sale): View
+    public function ticket(Request $request, Sale $sale, TicketSettings $tickets): View
     {
         $this->authorizeTicket($request->user(), $sale);
 
@@ -215,15 +216,17 @@ class SaleController extends Controller
 
         return view('pos.tickets.ticket', [
             'sale' => $sale,
-            'settings' => config('pos'),
+            'settings' => $tickets->current(),
         ]);
     }
 
-    public function ticketData(Request $request, Sale $sale): JsonResponse
+    public function ticketData(Request $request, Sale $sale, TicketSettings $tickets): JsonResponse
     {
         $this->authorizeTicket($request->user(), $sale);
 
         $sale->load('items', 'user');
+
+        $settings = $tickets->current();
 
         return response()->json([
             'sale' => [
@@ -247,7 +250,8 @@ class SaleController extends Controller
                     'returned_quantity' => (int) $item->returned_quantity,
                 ])->all(),
             ],
-            'settings' => config('pos'),
+            'settings' => $settings,
+            'ticket_html' => view('pos.tickets.receipt', compact('sale', 'settings'))->render(),
         ]);
     }
 

@@ -16,6 +16,14 @@ return [
     'ticket' => [
         'width_mm' => 80,
         'footer' => 'Gracias por su compra.',
+        'policy' => 'Conserve este ticket para cambios y devoluciones.',
+        'show_logo' => false,
+        'show_tax_id' => false,
+        'show_sku' => true,
+        'show_cashier' => true,
+        'show_tax' => true,
+        'show_qr' => false,
+        'qr_image_url' => null,
     ],
 
     'folio' => [

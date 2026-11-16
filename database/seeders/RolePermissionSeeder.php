@@ -20,6 +20,7 @@ class RolePermissionSeeder extends Seeder
             'pos.discount',
             'pos.cancel.sale',
             'pos.wholesale',
+            'pos.caja.view',
             'pos.cash.manage',
             'pos.tickets.print.own',
             'pos.tickets.print.any',
