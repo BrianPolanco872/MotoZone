@@ -6,6 +6,6 @@
     <span class="absolute -bottom-8 -right-8 size-24 rounded-full border border-white/10"></span>
     <span class="absolute bottom-3 right-3 font-display text-[11px] uppercase tracking-[0.18em] text-white/50">{{ $product->brand }}</span>
     @if ($product->image_path)
-        <img src="{{ Storage::disk('public')->url($product->image_path) }}" alt="{{ $product->name }}" class="absolute inset-0 size-full bg-white object-contain p-3" width="640" height="480" loading="lazy" decoding="async" onerror="this.hidden = true">
+        <img src="{{ Storage::disk('public')->url($product->image_path) }}" alt="{{ $product->name }}" class="absolute inset-0 size-full bg-white object-contain p-4" width="640" height="480" loading="lazy" decoding="async" onerror="this.hidden = true">
     @endif
 </div>

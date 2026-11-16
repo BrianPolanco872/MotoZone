@@ -17,7 +17,7 @@ class HomeContentRequest extends FormRequest
         'decoration' => ['auto_decoration'],
         'contact' => ['store_name', 'store_description', 'phone', 'whatsapp', 'email', 'hours', 'whatsapp_message', 'show_whatsapp_bubble', 'show_email_bubble'],
         'location' => ['address', 'location_reference', 'maps_url', 'map_mode', 'map_embed_url', 'latitude', 'longitude', 'show_location'],
-        'information' => ['store_notice', 'advice_title', 'advice_description', 'benefit_1_title', 'benefit_1_description', 'benefit_2_title', 'benefit_2_description', 'benefit_3_title', 'benefit_3_description', 'benefit_4_title', 'benefit_4_description', 'metric_1_value', 'metric_1_label', 'metric_2_value', 'metric_2_label', 'metric_3_value', 'metric_3_label', 'show_notice', 'show_benefits', 'show_metrics', 'show_advice'],
+        'information' => ['store_notice', 'advice_title', 'advice_description', 'benefit_1_title', 'benefit_1_description', 'benefit_2_title', 'benefit_2_description', 'benefit_3_title', 'benefit_3_description', 'benefit_4_title', 'benefit_4_description', 'metric_1_value', 'metric_1_label', 'metric_2_value', 'metric_2_label', 'metric_3_value', 'metric_3_label', 'show_notice', 'show_benefits', 'show_metrics', 'show_advice', 'footer_description', 'address', 'maps_url', 'hours', 'whatsapp', 'phone', 'email', 'facebook_url', 'instagram_url', 'copyright_text'],
     ];
 
     public const BLOCK_ANCHORS = ['hero' => 'presentacion', 'categories' => 'categorias', 'products' => 'destacados', 'new' => 'nuevos', 'decoration' => 'decoracion', 'contact' => 'contacto', 'location' => 'ubicacion', 'information' => 'informacion'];
@@ -59,16 +59,16 @@ class HomeContentRequest extends FormRequest
             'remove_gallery.*' => ['string', 'max:2048'],
         ];
 
-        foreach ([...HomePage::TEXT_FIELDS, ...HomePage::CONTACT_FIELDS, ...HomePage::LOCATION_FIELDS, ...HomePage::INFORMATION_FIELDS] as $key => $label) {
+        foreach ([...HomePage::TEXT_FIELDS, ...HomePage::CONTACT_FIELDS, ...HomePage::LOCATION_FIELDS, ...HomePage::INFORMATION_FIELDS, ...HomePage::FOOTER_FIELDS] as $key => $label) {
             if (in_array($key, $fields, true)) {
                 $required = array_key_exists($key, HomePage::TEXT_FIELDS) && (str_ends_with($key, '_title') || $key === 'hero_button');
                 $max = match ($key) {
                     'map_embed_url' => 8192,
-                    'hero_button_url', 'maps_url' => 2048,
+                    'hero_button_url', 'maps_url', 'facebook_url', 'instagram_url' => 2048,
                     'phone', 'whatsapp' => 32,
                     'email' => 254,
-                    'address', 'location_reference', 'store_notice' => 500,
-                    'hours', 'whatsapp_message' => 1000,
+                    'address', 'location_reference', 'store_notice', 'copyright_text' => 500,
+                    'hours', 'whatsapp_message', 'footer_description', 'store_description' => 1000,
                     default => str_ends_with($key, '_description') ? 1000 : 160,
                 };
                 $rules['content.'.$key] = ['bail', 'sometimes', $required ? 'required' : 'nullable', 'string', 'max:'.$max];
@@ -88,7 +88,7 @@ class HomeContentRequest extends FormRequest
             $rules['content.email'][] = 'email:filter';
             foreach (['phone', 'whatsapp'] as $key) {
                 $rules['content.'.$key][] = function (string $attribute, mixed $value, Closure $fail): void {
-                    if (HomePage::normalizePhoneNumber($value) === null) {
+                    if ($value !== null && trim((string) $value) !== '' && HomePage::normalizePhoneNumber($value) === null) {
                         $fail('Escribe de 7 a 15 dígitos, con código de país para WhatsApp; puedes usar +, espacios, guiones o paréntesis.');
                     }
                 };
@@ -108,6 +108,12 @@ class HomeContentRequest extends FormRequest
                     }
                 };
             }
+        } elseif (in_array('maps_url', $fields, true)) {
+            $rules['content.maps_url'][] = function (string $attribute, mixed $value, Closure $fail): void {
+                if ($value !== null && trim((string) $value) !== '' && ! HomePage::isGoogleMapsUrl($value)) {
+                    $fail('Escribe un enlace HTTPS de Google Maps para llegar al mostrador.');
+                }
+            };
         }
 
         return $rules;
@@ -176,7 +182,7 @@ class HomeContentRequest extends FormRequest
     public function attributes(): array
     {
         $attributes = ['hero_image' => 'imagen principal', 'hero_image_url' => 'enlace de la imagen principal', 'gallery_url' => 'enlace de galería', 'content' => 'contenido'];
-        foreach ([...HomePage::TEXT_FIELDS, ...HomePage::CONTACT_FIELDS, ...HomePage::LOCATION_FIELDS, ...HomePage::INFORMATION_FIELDS] as $key => $label) {
+        foreach ([...HomePage::TEXT_FIELDS, ...HomePage::CONTACT_FIELDS, ...HomePage::LOCATION_FIELDS, ...HomePage::INFORMATION_FIELDS, ...HomePage::FOOTER_FIELDS] as $key => $label) {
             $attributes['content.'.$key] = mb_strtolower($label);
         }
 

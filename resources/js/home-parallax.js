@@ -1,28 +1,33 @@
 const hero = document.querySelector('[data-home-hero]');
-const visual = hero?.querySelector('[data-home-parallax]');
+const parallaxBg = hero?.querySelector('[data-home-parallax]');
 
-if (hero && visual && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    let framePending = false;
+if (hero && parallaxBg && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    let ticking = false;
 
-    const update = () => {
-        const { top, bottom } = hero.getBoundingClientRect();
+    const updateParallax = () => {
+        const rect = hero.getBoundingClientRect();
+        const windowHeight = window.innerHeight;
 
-        if (bottom > 0 && top < window.innerHeight) {
-            const offset = Math.max(-64, Math.min(96, -top * 0.18));
-            visual.style.transform = `translate3d(0, ${offset}px, 0) scale(1.04)`;
+        // Only compute if hero is partially or fully visible in viewport
+        if (rect.bottom > 0 && rect.top < windowHeight) {
+            // How much user has scrolled past the top of the hero:
+            const scrollDistance = -rect.top;
+            // Move background smoothly at ~35% of scroll speed
+            const translateY = Math.max(-120, Math.min(200, scrollDistance * 0.35));
+            parallaxBg.style.transform = `translate3d(0, ${translateY}px, 0)`;
         }
 
-        framePending = false;
+        ticking = false;
     };
 
-    const scheduleUpdate = () => {
-        if (!framePending) {
-            window.requestAnimationFrame(update);
-            framePending = true;
+    const onScrollOrResize = () => {
+        if (!ticking) {
+            window.requestAnimationFrame(updateParallax);
+            ticking = true;
         }
     };
 
-    window.addEventListener('scroll', scheduleUpdate, { passive: true });
-    window.addEventListener('resize', scheduleUpdate, { passive: true });
-    scheduleUpdate();
+    window.addEventListener('scroll', onScrollOrResize, { passive: true });
+    window.addEventListener('resize', onScrollOrResize, { passive: true });
+    updateParallax();
 }

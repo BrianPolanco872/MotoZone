@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Category;
+use App\Models\DailyCut;
 use App\Models\HomeCard;
 use App\Models\HomePage;
 use App\Models\Product;
@@ -12,6 +13,7 @@ use App\Models\SaleReturn;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -340,6 +342,65 @@ class AdminTest extends TestCase
         $response->assertSee('Sin ventas de refacciones activas en este periodo.');
         $response->assertSee('No hay cards de productos destacados en la home.');
         $response->assertSee('Aún no hay productos publicados.');
+        $response->assertSee('Sin sesiones recientes ni actividad registrada hoy.');
+    }
+
+    public function test_dashboard_shows_recent_sessions_and_employee_activity_with_cut_links(): void
+    {
+        $this->freezeTime();
+        config(['session.driver' => 'database']);
+
+        $admin = $this->admin();
+        $onlineCashier = User::factory()->create(['name' => 'Cajera conectada'])->assignRole('empleado');
+        $onlineWithoutSales = User::factory()->create(['name' => 'Cajero sin ventas'])->assignRole('empleado');
+        $cutOnlyEmployee = User::factory()->create(['name' => 'Empleado con corte'])->assignRole('empleado');
+        $expiredSessionEmployee = User::factory()->create(['name' => 'Sesión expirada'])->assignRole('empleado');
+        $inactiveEmployee = User::factory()->create(['name' => 'Sin actividad'])->assignRole('empleado');
+
+        $this->sale($onlineCashier, ['payment_method' => 'cash', 'total' => 150]);
+        DailyCut::query()->create([
+            'cut_key' => DailyCut::keyFor(now()->toDateString(), DailyCut::SCOPE_EMPLOYEE, $cutOnlyEmployee->id),
+            'cut_date' => now()->toDateString(),
+            'scope' => DailyCut::SCOPE_EMPLOYEE,
+            'user_id' => $cutOnlyEmployee->id,
+            'version' => 1,
+            'totals' => [],
+            'generated_by' => $admin->id,
+            'generated_at' => now(),
+        ]);
+
+        foreach ([
+            [$onlineCashier, now()->subMinutes(4)],
+            [$onlineWithoutSales, now()->subMinutes(2)],
+            [$expiredSessionEmployee, now()->subMinutes(6)],
+        ] as [$employee, $lastActivity]) {
+            DB::table('sessions')->insert([
+                'id' => (string) Str::uuid(),
+                'user_id' => $employee->id,
+                'ip_address' => '127.0.0.1',
+                'user_agent' => 'AdminTest',
+                'payload' => '',
+                'last_activity' => $lastActivity->getTimestamp(),
+            ]);
+        }
+
+        $response = $this->actingAs($admin)->get('/admin');
+
+        $response->assertOk();
+        $response->assertSee('Cajera conectada');
+        $response->assertSee('Cajero sin ventas');
+        $response->assertSee('Empleado con corte');
+        $response->assertSee('En línea');
+        $response->assertSee('150.00');
+        $response->assertSee('Corte generado');
+        foreach ([$onlineCashier, $onlineWithoutSales, $cutOnlyEmployee] as $employee) {
+            $response->assertSee(route('pos.cuts.index', [
+                'date' => now()->toDateString(),
+                'employee' => $employee->id,
+            ]), false);
+        }
+        $response->assertDontSee('Sesión expirada');
+        $response->assertDontSee('Sin actividad');
     }
 
     /**

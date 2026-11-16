@@ -208,4 +208,96 @@
             </section>
         </div>
     </div>
+
+    @php
+        $dashboardOnlineUsers = collect($onlineUsers ?? []);
+        $dashboardOnlineMap = $dashboardOnlineUsers->keyBy('id');
+        $hasEmployeeActivity = static fn (array $employee): bool =>
+            (int) ($employee['tickets'] ?? 0) > 0
+            || (float) ($employee['sales'] ?? 0) > 0
+            || (float) ($employee['cash_in'] ?? 0) > 0
+            || (float) ($employee['cash_out'] ?? 0) > 0
+            || (float) ($employee['refunds'] ?? 0) > 0;
+        $teamRows = collect($employeeBreakdown['employees'] ?? [])
+            ->filter(fn (array $employee): bool =>
+                $dashboardOnlineMap->has($employee['id'])
+                || $hasEmployeeActivity($employee)
+                || ($employee['latest_cut'] ?? null) !== null
+            )
+            ->values();
+        $onlineEmployeeCount = $teamRows->filter(fn (array $employee): bool => $dashboardOnlineMap->has($employee['id']))->count();
+        $activeEmployeeCount = $teamRows->filter($hasEmployeeActivity)->count();
+        $generatedCutCount = $teamRows->filter(fn (array $employee): bool => ($employee['latest_cut'] ?? null) !== null)->count();
+    @endphp
+
+    <section class="mt-6 mz-card overflow-hidden" aria-labelledby="team-cuts-title">
+        <div class="border-b border-mz-border-light p-5">
+            <p class="text-xs font-medium uppercase tracking-widest text-mz-text-muted">Equipo · Operación de hoy</p>
+            <h2 id="team-cuts-title" class="mt-1 text-base font-semibold text-mz-text-primary">Sesiones y cortes por empleado</h2>
+            <p class="mt-1 text-xs text-mz-text-secondary">“En línea” indica una sesión activa en los últimos cinco minutos; no representa asistencia física.</p>
+        </div>
+
+        <div class="grid grid-cols-1 gap-3 border-b border-mz-border-light p-4 sm:grid-cols-3 sm:p-5">
+            <div class="rounded-lg border border-mz-border-light p-3">
+                <p class="text-xs text-mz-text-secondary">Sesiones activas</p>
+                <p class="mt-1 font-display text-2xl font-semibold tabular-nums text-mz-text-primary">{{ number_format($onlineEmployeeCount) }}</p>
+            </div>
+            <div class="rounded-lg border border-mz-border-light p-3">
+                <p class="text-xs text-mz-text-secondary">Personas con actividad hoy</p>
+                <p class="mt-1 font-display text-2xl font-semibold tabular-nums text-mz-text-primary">{{ number_format($activeEmployeeCount) }}</p>
+            </div>
+            <div class="rounded-lg border border-mz-border-light p-3">
+                <p class="text-xs text-mz-text-secondary">Cortes generados hoy</p>
+                <p class="mt-1 font-display text-2xl font-semibold tabular-nums text-mz-text-primary">{{ number_format($generatedCutCount) }}</p>
+            </div>
+        </div>
+
+        @if ($teamRows->isEmpty())
+            <p class="px-5 py-10 text-center text-sm text-mz-text-secondary">Sin sesiones recientes ni actividad registrada hoy.</p>
+        @else
+            <ul class="divide-y divide-mz-border-light">
+                @foreach ($teamRows as $employee)
+                    @php
+                        $session = $dashboardOnlineMap->get($employee['id']);
+                        $latestCut = $employee['latest_cut'];
+                    @endphp
+                    <li class="flex min-w-0 flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                        <div class="min-w-0">
+                            <p class="truncate text-sm font-semibold text-mz-text-primary">{{ $employee['name'] }}</p>
+                            <p class="mt-1 text-xs text-mz-text-secondary">
+                                {{ number_format((int) $employee['tickets']) }} tickets · ${{ number_format((float) $employee['sales'], 2) }} en ventas
+                            </p>
+                        </div>
+
+                        <div class="flex flex-wrap items-center gap-2 text-xs">
+                            @if ($session)
+                                <span class="inline-flex items-center gap-1.5 rounded-full bg-mz-success/10 px-2.5 py-1 font-medium text-mz-success">
+                                    <span class="size-1.5 rounded-full bg-mz-success"></span>
+                                    En línea · {{ $session['last_activity']->diffForHumans() }}
+                                </span>
+                            @else
+                                <span class="inline-flex items-center gap-1.5 rounded-full bg-mz-bg-surface-2 px-2.5 py-1 font-medium text-mz-text-secondary">
+                                    Sin sesión reciente
+                                </span>
+                            @endif
+
+                            @if ($latestCut)
+                                <span class="inline-flex items-center gap-1 rounded-full bg-mz-accent-primary/10 px-2.5 py-1 font-medium text-mz-accent-primary">
+                                    {{ $employee['is_day_closed'] ? 'Corte cerrado' : 'Corte generado' }}
+                                </span>
+                            @else
+                                <span class="inline-flex items-center gap-1 rounded-full bg-mz-bg-surface-2 px-2.5 py-1 font-medium text-mz-text-secondary">
+                                    Sin corte registrado
+                                </span>
+                            @endif
+                        </div>
+
+                        <a href="{{ route('pos.cuts.index', ['date' => $generatedAt->toDateString(), 'employee' => $employee['id']]) }}" class="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium text-mz-accent-primary hover:text-mz-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mz-accent-primary" aria-label="Ver corte de {{ $employee['name'] }}">
+                            Ver corte <x-icon name="arrow-right" class="size-3.5" />
+                        </a>
+                    </li>
+                @endforeach
+            </ul>
+        @endif
+    </section>
 @endsection

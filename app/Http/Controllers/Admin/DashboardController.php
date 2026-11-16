@@ -8,17 +8,21 @@ use App\Models\HomePage;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleReturn;
+use App\Services\DailyCutService;
+use App\Services\PresenceService;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 
 class DashboardController extends Controller
 {
-    public function __invoke(): View
+    public function __invoke(DailyCutService $dailyCutService, PresenceService $presenceService): View
     {
         $generatedAt = now();
         $startOfDay = $generatedAt->copy()->startOfDay();
         $rankingStart = $startOfDay->copy()->subDays(29);
+        $employeeBreakdown = $dailyCutService->employeeBreakdown($generatedAt->toDateString());
+        $onlineUsers = $presenceService->onlineUsers();
 
         $sales = Sale::query()->paid()->whereBetween('paid_at', [$startOfDay, $generatedAt]);
         $returns = SaleReturn::query()
@@ -78,6 +82,8 @@ class DashboardController extends Controller
             'lowStockProducts',
             'homeCards',
             'topProducts',
+            'employeeBreakdown',
+            'onlineUsers',
         ));
     }
 }

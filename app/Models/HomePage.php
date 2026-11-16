@@ -41,6 +41,10 @@ class HomePage extends Model
         'products_description' => 'Una selección de piezas y accesorios de MotoZone.',
         'new_title' => 'Recién llegados',
         'new_description' => 'Lo más reciente en piezas y accesorios.',
+        'footer_description' => 'Refacciones y accesorios para tu moto. Calidad y servicio garantizado.',
+        'copyright_text' => '© 2026 MotoZone. Todos los derechos reservados.',
+        'facebook_url' => '',
+        'instagram_url' => '',
         'show_hero' => true,
         'show_categories' => true,
         'show_products' => true,
@@ -86,6 +90,13 @@ class HomePage extends Model
         'metric_2_label' => 'Indicador 2: etiqueta',
         'metric_3_value' => 'Indicador 3: valor',
         'metric_3_label' => 'Indicador 3: etiqueta',
+    ];
+
+    public const FOOTER_FIELDS = [
+        'footer_description' => 'Descripción corta del negocio',
+        'facebook_url' => 'Enlace de Facebook',
+        'instagram_url' => 'Enlace de Instagram',
+        'copyright_text' => 'Texto de Copyright',
     ];
 
     protected $fillable = ['content', 'hero_image_path', 'gallery'];
@@ -153,7 +164,7 @@ class HomePage extends Model
 
     public function whatsappUrl(?string $message = null): ?string
     {
-        $number = self::normalizePhoneNumber($this->text('whatsapp'));
+        $number = self::normalizePhoneNumber($this->text('whatsapp')) ?: self::normalizePhoneNumber($this->text('phone'));
         if ($number === null) {
             return null;
         }
@@ -161,6 +172,55 @@ class HomePage extends Model
         $message ??= $this->text('whatsapp_message');
 
         return 'https://wa.me/'.ltrim($number, '+').($message !== '' ? '?text='.rawurlencode($message) : '');
+    }
+
+    public function footerDescription(): string
+    {
+        $desc = trim($this->text('footer_description'));
+        if ($desc !== '') {
+            return $desc;
+        }
+
+        $storeDesc = trim($this->text('store_description'));
+        if ($storeDesc !== '') {
+            return $storeDesc;
+        }
+
+        return 'Refacciones y accesorios para quienes viven sobre dos ruedas. Piezas originales y genéricas con respaldo de taller.';
+    }
+
+    public function copyrightText(): string
+    {
+        $text = trim($this->text('copyright_text'));
+        if ($text === '') {
+            $text = '© '.date('Y').' '.config('app.name', 'MotoZone').'. Todos los derechos reservados.';
+        }
+
+        return str_replace('{year}', date('Y'), $text);
+    }
+
+    public function facebookUrl(): ?string
+    {
+        $url = trim($this->text('facebook_url'));
+        if ($url === '') {
+            return null;
+        }
+
+        return str_starts_with($url, 'http://') || str_starts_with($url, 'https://')
+            ? $url
+            : 'https://'.ltrim($url, '/');
+    }
+
+    public function instagramUrl(): ?string
+    {
+        $url = trim($this->text('instagram_url'));
+        if ($url === '') {
+            return null;
+        }
+
+        return str_starts_with($url, 'http://') || str_starts_with($url, 'https://')
+            ? $url
+            : 'https://'.ltrim($url, '/');
     }
 
     public function emailUrl(): ?string
