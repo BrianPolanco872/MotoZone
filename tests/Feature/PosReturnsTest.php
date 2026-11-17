@@ -3,13 +3,19 @@
 namespace Tests\Feature;
 
 use App\Models\CashMovement;
+use App\Models\DailyCut;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\SaleReturn;
 use App\Models\User;
+use App\Services\DailyCutService;
+use App\Services\ReturnService;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Validation\ValidationException;
+use PHPUnit\Framework\Attributes\TestWith;
 use Tests\TestCase;
 
 class PosReturnsTest extends TestCase
@@ -169,6 +175,108 @@ class PosReturnsTest extends TestCase
             'category' => 'refund',
             'amount' => 100.00,
             'type' => 'out',
+        ]);
+    }
+
+    public function test_approval_does_not_change_a_globally_closed_day(): void
+    {
+        $this->freezeTime();
+        $admin = User::factory()->create()->assignRole('admin');
+        $data = $this->paidSaleWithProduct($this->employee());
+        $return = $this->pendingReturn($admin, $data);
+        app(DailyCutService::class)->generate(today(), $admin);
+        DailyCut::query()->where('scope', DailyCut::SCOPE_GLOBAL)->update(['closed_at' => now()]);
+
+        $this->actingAs($admin)->putJson(route('pos.returns.approve', $return))
+            ->assertUnprocessable()->assertJsonValidationErrors('return');
+
+        $this->assertSame(SaleReturn::STATUS_PENDING, $return->fresh()->status);
+        $this->assertSame(10, $data['product']->fresh()->stock);
+        $this->assertSame(0, $data['saleItem']->fresh()->returned_quantity);
+        $this->assertSame(0, CashMovement::query()->where('category', 'refund')->count());
+    }
+
+    public function test_reject_rechecks_a_stale_pending_return_after_it_was_approved(): void
+    {
+        $admin = User::factory()->create()->assignRole('admin');
+        $data = $this->paidSaleWithProduct($this->employee());
+        $return = $this->pendingReturn($admin, $data);
+        $staleReturn = $return->fresh();
+        $service = app(ReturnService::class);
+        $service->approve($return, $admin);
+
+        try {
+            $service->reject($staleReturn, $admin);
+            $this->fail('Una devolución aprobada no puede rechazarse con un modelo obsoleto.');
+        } catch (ValidationException $exception) {
+            $this->assertSame(['Esta devolución ya fue procesada.'], $exception->errors()['return']);
+        }
+
+        $this->assertSame(SaleReturn::STATUS_APPROVED, $return->fresh()->status);
+        $this->assertSame(11, $data['product']->fresh()->stock);
+        $this->assertSame(1, CashMovement::query()->where('category', 'refund')->count());
+    }
+
+    public function test_approve_rechecks_a_stale_pending_return_after_it_was_rejected(): void
+    {
+        $admin = User::factory()->create()->assignRole('admin');
+        $data = $this->paidSaleWithProduct($this->employee());
+        $return = $this->pendingReturn($admin, $data);
+        $staleReturn = $return->fresh();
+        $service = app(ReturnService::class);
+        $service->reject($return, $admin);
+
+        try {
+            $service->approve($staleReturn, $admin);
+            $this->fail('Una devolución rechazada no puede aprobarse con un modelo obsoleto.');
+        } catch (ValidationException $exception) {
+            $this->assertSame(['Esta devolución ya fue procesada.'], $exception->errors()['return']);
+        }
+
+        $this->assertSame(SaleReturn::STATUS_REJECTED, $return->fresh()->status);
+        $this->assertSame(10, $data['product']->fresh()->stock);
+        $this->assertSame(0, CashMovement::query()->where('category', 'refund')->count());
+    }
+
+    #[TestWith(['approve'])]
+    #[TestWith(['generate'])]
+    #[TestWith(['close'])]
+    public function test_day_lock_blocks_competing_approval_generation_and_close(string $operation): void
+    {
+        $this->freezeTime();
+        $admin = User::factory()->create()->assignRole('admin');
+        $data = $this->paidSaleWithProduct($this->employee());
+        $return = $this->pendingReturn($admin, $data);
+        $lock = Cache::store('database')->lock('pos-day:'.today()->toDateString(), 120);
+        $this->assertTrue($lock->get());
+        $this->actingAs($admin);
+
+        try {
+            $response = match ($operation) {
+                'approve' => $this->putJson(route('pos.returns.approve', $return)),
+                'generate' => $this->postJson(route('pos.cuts.store'), ['date' => today()->toDateString()]),
+                'close' => $this->postJson(route('pos.cuts.close-day'), ['force' => true]),
+            };
+            $response->assertUnprocessable()->assertJsonValidationErrors('day');
+        } finally {
+            $lock->release();
+        }
+
+        $this->assertDatabaseCount('daily_cuts', 0);
+        $this->assertSame(SaleReturn::STATUS_PENDING, $return->fresh()->status);
+        $this->assertSame(10, $data['product']->fresh()->stock);
+        $this->assertSame(0, CashMovement::query()->where('category', 'refund')->count());
+    }
+
+    /**
+     * @param  array{sale: Sale, saleItem: SaleItem, product: Product}  $data
+     */
+    private function pendingReturn(User $requester, array $data): SaleReturn
+    {
+        return app(ReturnService::class)->request($requester, [
+            'sale_id' => $data['sale']->id,
+            'reason' => 'Producto defectuoso',
+            'items' => [['sale_item_id' => $data['saleItem']->id, 'quantity' => 1]],
         ]);
     }
 }

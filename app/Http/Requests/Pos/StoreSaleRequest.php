@@ -40,10 +40,10 @@ class StoreSaleRequest extends FormRequest
     {
         return [
             'items' => ['required', 'array', 'min:1'],
-            'items.*.product_id' => ['nullable', 'integer'],
+            'items.*.product_id' => ['nullable', 'required_unless:items.*.is_custom,true', 'integer', 'min:1'],
             'items.*.is_custom' => ['boolean'],
-            'items.*.custom_name' => ['nullable', 'string', 'max:255'],
-            'items.*.custom_price' => ['nullable', 'numeric', 'min:0.01'],
+            'items.*.custom_name' => ['nullable', 'required_if:items.*.is_custom,true', 'string', 'max:255'],
+            'items.*.custom_price' => ['nullable', 'required_if:items.*.is_custom,true', 'numeric', 'min:0.01'],
             'items.*.quantity' => ['required', 'integer', 'min:1', 'max:9999'],
             'items.*.unit_price' => ['nullable', 'numeric', 'min:0'],
             'items.*.wholesale' => ['boolean'],

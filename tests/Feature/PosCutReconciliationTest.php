@@ -3,21 +3,227 @@
 namespace Tests\Feature;
 
 use App\Models\CashMovement;
+use App\Models\CustomerPayment;
 use App\Models\DailyCut;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\SaleReturn;
+use App\Models\SupplierPayment;
 use App\Models\User;
 use App\Services\DailyCutService;
+use App\Services\ReturnService;
+use App\Services\SaleService;
 use Carbon\Carbon;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\TestWith;
 use Tests\TestCase;
 
 class PosCutReconciliationTest extends TestCase
 {
     use RefreshDatabase;
+
+    #[TestWith(['card'])]
+    #[TestWith(['transfer'])]
+    public function test_real_electronic_sale_does_not_add_physical_cash(string $method): void
+    {
+        $this->freezeTime();
+        $user = $this->admin();
+        $product = $this->product();
+        $sale = app(SaleService::class)->create($user, [
+            'idempotency_key' => 'electronic-real', 'payment_method' => $method,
+            'items' => [['product_id' => $product->id, 'quantity' => 1]],
+        ]);
+
+        $totals = app(DailyCutService::class)->build(today(), $user);
+
+        $this->assertSame(100.0, $totals['sales']['total']);
+        $this->assertSame(0.0, $totals['computer_panel']['subtotal']);
+        $this->assertSame(0.0, $totals['cash_box_panel']['subtotal']);
+        $this->assertTrue($totals['reconciliation']['is_reconciled']);
+        $this->assertDatabaseHas('cash_movements', ['sale_id' => $sale->id, 'amount' => 100]);
+    }
+
+    public function test_mixed_payment_without_breakdown_is_not_reported_as_reconciled_or_purely_electronic(): void
+    {
+        $this->freezeTime();
+        $user = $this->admin();
+        $product = $this->product();
+        app(SaleService::class)->create($user, [
+            'idempotency_key' => 'unallocated-mixed', 'payment_method' => 'mixed',
+            'items' => [['product_id' => $product->id, 'quantity' => 1]],
+        ]);
+
+        $totals = app(DailyCutService::class)->build(today(), $user);
+
+        $this->assertSame(100.0, $totals['sales']['total']);
+        $this->assertSame(100.0, $totals['sales']['total_mixed']);
+        $this->assertSame(0.0, $totals['sales']['total_non_cash']);
+        $this->assertFalse($totals['reconciliation']['is_reconciled']);
+        $this->assertTrue($totals['reconciliation']['has_unallocated_mixed']);
+        $this->assertStringContainsString('no está determinado', $totals['reconciliation']['warning']);
+        $service = app(DailyCutService::class);
+        $cut = $service->generate(today(), $user)->firstWhere('scope', DailyCut::SCOPE_GLOBAL);
+        $this->assertFalse($service->recordCashCounted($cut, 0)->is_reconciled);
+    }
+
+    #[TestWith(['card'])]
+    #[TestWith(['transfer'])]
+    public function test_electronic_supplier_payment_does_not_reduce_physical_cash(string $method): void
+    {
+        $this->freezeTime();
+        $user = $this->admin();
+        $this->cashMovement($user, 'initial', 500);
+        SupplierPayment::create([
+            'user_id' => $user->id, 'amount' => 200, 'method' => $method,
+            'supplier_name' => 'Proveedor', 'reason' => 'Pago electrónico', 'happened_at' => now(),
+        ]);
+
+        $totals = app(DailyCutService::class)->build(today(), $user);
+
+        $this->assertSame(200.0, $totals['supplier_payments']);
+        $this->assertSame(500.0, $totals['computer_panel']['subtotal']);
+        $this->assertSame(500.0, $totals['cash_box_panel']['subtotal']);
+        $this->assertSame(0.0, $totals['cash_out']['suppliers']);
+    }
+
+    public function test_creator_keeps_commercial_sale_but_cash_belongs_to_the_employee_who_charged_it(): void
+    {
+        $this->freezeTime();
+        $creator = $this->employee();
+        $cashier = $this->admin();
+        $product = $this->product();
+        $service = app(SaleService::class);
+        $sale = $service->create($creator, [
+            'idempotency_key' => 'another-cashier', 'status' => 'pending',
+            'items' => [['product_id' => $product->id, 'quantity' => 1]],
+        ]);
+        $service->chargePending($sale, $cashier);
+        $cuts = app(DailyCutService::class);
+
+        $creatorTotals = $cuts->build(today(), $creator);
+        $cashierTotals = $cuts->build(today(), $cashier);
+
+        $this->assertSame($creator->id, $sale->fresh()->user_id);
+        $this->assertSame(100.0, $creatorTotals['sales']['total']);
+        $this->assertSame(0.0, $cashierTotals['sales']['total']);
+        $this->assertSame(0.0, $creatorTotals['computer_panel']['subtotal']);
+        $this->assertSame(0.0, $creatorTotals['cash_box_panel']['subtotal']);
+        $this->assertSame(100.0, $cashierTotals['computer_panel']['subtotal']);
+        $this->assertSame(100.0, $cashierTotals['cash_box_panel']['subtotal']);
+        $rows = $cuts->employeeBreakdown(today()->toDateString())['employees']->keyBy('id');
+        $this->assertSame(0.0, $rows[$creator->id]['other_payments']);
+        $this->assertSame(100.0, $rows[$cashier->id]['cash']);
+        $this->assertSame(100.0, $rows[$cashier->id]['should_have']);
+    }
+
+    public function test_commercial_return_stays_with_seller_and_physical_refund_with_approver(): void
+    {
+        $this->freezeTime();
+        $seller = $this->employee();
+        $approver = $this->admin();
+        $product = $this->product();
+        $sale = app(SaleService::class)->create($seller, [
+            'idempotency_key' => 'other-approver',
+            'items' => [['product_id' => $product->id, 'quantity' => 1]],
+        ]);
+        $returns = app(ReturnService::class);
+        $return = $returns->request($seller, [
+            'sale_id' => $sale->id, 'reason' => 'Cambio',
+            'items' => [['sale_item_id' => $sale->items->first()->id, 'quantity' => 1]],
+        ]);
+        $returns->approve($return, $approver);
+        $cuts = app(DailyCutService::class);
+
+        $sellerTotals = $cuts->build(today(), $seller);
+        $approverTotals = $cuts->build(today(), $approver);
+
+        $this->assertSame(0.0, $sellerTotals['totals']['net_sales']);
+        $this->assertSame(100.0, $sellerTotals['computer_panel']['subtotal']);
+        $this->assertSame(100.0, $sellerTotals['cash_box_panel']['subtotal']);
+        $this->assertSame(-100.0, $approverTotals['computer_panel']['subtotal']);
+        $this->assertSame(-100.0, $approverTotals['cash_box_panel']['subtotal']);
+        $this->assertSame(0.0, $cuts->build(today())['cash_box_panel']['subtotal']);
+    }
+
+    public function test_missing_cash_movement_remains_a_real_global_reconciliation_difference(): void
+    {
+        $this->freezeTime();
+        $user = $this->admin();
+        $sale = $this->paidSale($user, 100, 'missing-movement');
+        CashMovement::query()->where('sale_id', $sale->id)->forceDelete();
+
+        $totals = app(DailyCutService::class)->build(today());
+
+        $this->assertSame(100.0, $totals['computer_panel']['subtotal']);
+        $this->assertSame(0.0, $totals['cash_box_panel']['subtotal']);
+        $this->assertFalse($totals['reconciliation']['is_reconciled']);
+    }
+
+    public function test_payment_only_users_receive_individual_cuts_and_snapshot_breakdown(): void
+    {
+        $this->freezeTime();
+        $admin = $this->admin();
+        $customerOperator = User::factory()->create();
+        $supplierOperator = User::factory()->create();
+        CustomerPayment::create([
+            'user_id' => $customerOperator->id, 'amount' => 50, 'method' => 'cash',
+            'customer_name' => 'Cliente', 'happened_at' => now(),
+        ]);
+        SupplierPayment::create([
+            'user_id' => $supplierOperator->id, 'amount' => 20, 'method' => 'cash',
+            'supplier_name' => 'Proveedor', 'reason' => 'Compra', 'happened_at' => now(),
+        ]);
+
+        $cuts = app(DailyCutService::class)->generate(today(), $admin);
+
+        $global = $cuts->firstWhere('scope', DailyCut::SCOPE_GLOBAL);
+        $rows = collect($global->totals['employee_breakdown']['employees'] ?? [])->keyBy('id');
+        $this->assertSame(50.0, (float) ($rows[$customerOperator->id]['should_have'] ?? -1));
+        $this->assertSame(-20.0, (float) ($rows[$supplierOperator->id]['should_have'] ?? -1));
+        $this->assertDatabaseHas('daily_cuts', ['scope' => 'employee', 'user_id' => $customerOperator->id]);
+        $this->assertDatabaseHas('daily_cuts', ['scope' => 'employee', 'user_id' => $supplierOperator->id]);
+        $this->assertSame(30.0, (float) $global->totals['cash_box_panel']['subtotal']);
+    }
+
+    public function test_generated_snapshot_keeps_frozen_scalar_breakdown_without_nested_cut_models(): void
+    {
+        $this->freezeTime();
+        $admin = $this->admin();
+        $this->paidSale($admin, 100, 'snapshot-first');
+        $service = app(DailyCutService::class);
+        $first = $service->generate(today(), $admin)->firstWhere('scope', 'global');
+        $firstTotals = $first->totals;
+        $this->paidSale($admin, 200, 'snapshot-second');
+
+        $service->generate(today(), $admin);
+
+        $this->assertSame($firstTotals, $first->fresh()->totals);
+        $this->assertSame(100.0, (float) ($firstTotals['employee_breakdown']['total']['should_have'] ?? -1));
+        foreach ($firstTotals['employee_breakdown']['employees'] as $row) {
+            $this->assertArrayNotHasKey('latest_cut', $row);
+            $this->assertTrue($row['closed_at'] === null || is_string($row['closed_at']));
+        }
+    }
+
+    public function test_cash_monitor_table_includes_customer_payments_in_drawer_amount(): void
+    {
+        $this->freezeTime();
+        $admin = $this->admin();
+        $this->cashMovement($admin, 'initial', 500);
+        CustomerPayment::create([
+            'user_id' => $admin->id, 'amount' => 20, 'method' => 'cash',
+            'customer_name' => 'Cliente', 'happened_at' => now(),
+        ]);
+
+        $html = $this->actingAs($admin)->getJson(route('pos.cash.cut-board'))->assertOk()->json('html');
+
+        $this->assertSame(1, preg_match('/<tbody[^>]*>(.*?)<\/tbody>/s', $html, $body));
+        $this->assertStringContainsString('$520.00', $body[1]);
+        $this->assertSame(1, preg_match('/<tfoot[^>]*>(.*?)<\/tfoot>/s', $html, $foot));
+        $this->assertStringContainsString('$520.00', $foot[1]);
+    }
 
     protected function setUp(): void
     {

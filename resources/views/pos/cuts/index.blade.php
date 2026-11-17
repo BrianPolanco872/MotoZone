@@ -151,6 +151,10 @@
     @endif
 
     {{-- Alerta de diferencia entre ventas y movimientos de caja --}}
+    @if (! empty($rec['warning']))
+        <x-alert variant="warning">{{ $rec['warning'] }}</x-alert>
+    @endif
+
     @if ($hasSnapshot && ! empty($rec['difference']) && abs((float) $rec['difference']) >= 0.005 && ! $rec['is_reconciled'])
         <div class="mb-4 rounded-md border border-mz-warning/20 bg-mz-warning/5 px-4 py-3 text-sm text-mz-warning flex items-center gap-3">
             <span class="font-semibold">Hay una diferencia de ${{ number_format(abs((float) $rec['difference']), 2) }} entre ventas y movimientos de caja.</span>

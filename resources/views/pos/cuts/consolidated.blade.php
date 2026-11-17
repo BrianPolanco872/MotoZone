@@ -141,6 +141,9 @@
 </head>
 <body>
     <div class="page">
+        @if (! empty($totals['warning']))
+            <p>{{ $totals['warning'] }}</p>
+        @endif
         <header>
             <table width="100%" style="border: none;">
                 <tr>
@@ -184,7 +187,7 @@
                     <td class="num value">
                         @php
                             $diff = (float) ($totals['difference'] ?? 0);
-                            $isRec = abs($diff) < 0.005;
+                            $isRec = ! empty($totals['is_reconciled']);
                         @endphp
                         {{ $isRec ? 'Cuadra' : 'Diferencia' }}
                         @if (! $isRec)
@@ -202,9 +205,9 @@
                     <tr>
                         <th>Empleado</th>
                         <th class="num">Tickets</th>
-                        <th class="num">Ventas Totales</th>
-                        <th class="num">Efectivo</th>
-                        <th class="num">Electr&oacute;nico</th>
+                        <th class="num">Ventas del vendedor</th>
+                        <th class="num">Efectivo cobrado</th>
+                        <th class="num">Ventas electr&oacute;nicas</th>
                         <th class="num">Salidas</th>
                         <th class="num">En Gaveta</th>
                         <th class="center">Estado</th>

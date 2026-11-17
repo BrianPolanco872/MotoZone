@@ -8,12 +8,15 @@
         $salesSection = $totals['sales'] ?? [];
         $computerPanel = $totals['computer_panel'] ?? [];
         $cashBoxPanel = $totals['cash_box_panel'] ?? [];
+        $cashBoxSubtotal = $cashBoxPanel['subtotal'] ?? $totals['should_have'] ?? $breakdown['total']['should_have'] ?? 0;
         $reconciliation = $totals['reconciliation'] ?? [];
+        $warning = $reconciliation['warning'] ?? $breakdown['total']['warning'] ?? null;
         $grandTotals = $totals['totals'] ?? [];
         $departments = $totals['departments'] ?? [];
         $cashOut = $totals['cash_out'] ?? [];
         $money = fn ($value) => '$'.number_format((float) $value, 2);
         $cut = $cut ?? null;
+        $generatedAt = $cut ? $cut->generated_at?->format('d/m/Y H:i') : now()->format('d/m/Y H:i');
     @endphp
     <style>
         * { box-sizing: border-box; }
@@ -119,10 +122,14 @@
             <p>Corte del día · {{ $date->format('d/m/Y') }}</p>
             <div class="meta">
                 <span>{{ $employee ? 'Empleado: '.$employee->name : 'Corte global' }}</span>
-                <span>Versión {{ $cut?->version ?? 1 }}</span>
-                <span>Generado {{ now()->format('d/m/Y H:i') }}</span>
+                <span>{{ $cut ? 'Versión '.$cut->version : 'Vista previa sin guardar' }}</span>
+                <span>Generado {{ $generatedAt ?? '—' }}</span>
             </div>
         </header>
+
+        @if ($warning)
+            <p>{{ $warning }}</p>
+        @endif
 
         <h2>Resumen de ventas</h2>
         <table>
@@ -130,6 +137,9 @@
                 <tr><td>Ventas totales</td><td class="num">{{ $money($grandTotals['sales'] ?? 0) }}</td></tr>
                 <tr><td>Ventas en efectivo</td><td class="num">{{ $money($salesSection['total_cash'] ?? 0) }}</td></tr>
                 <tr><td>Otros medios de pago</td><td class="num">{{ $money($salesSection['total_non_cash'] ?? 0) }}</td></tr>
+                @if (($salesSection['total_mixed'] ?? 0) > 0)
+                    <tr><td>Pagos mixtos sin desglose</td><td class="num">{{ $money($salesSection['total_mixed']) }}</td></tr>
+                @endif
                 <tr><td>Menos devoluciones</td><td class="num">−{{ $money($grandTotals['refunds'] ?? 0) }}</td></tr>
                 <tr class="row-total"><td>Ventas netas</td><td class="num">{{ $money($grandTotals['net_sales'] ?? 0) }}</td></tr>
                 <tr><td>Ganancia</td><td class="num">{{ $money($grandTotals['profit'] ?? 0) }}</td></tr>
@@ -156,7 +166,7 @@
                 <div class="line"><span class="label">Pagos de clientes</span><span class="val num">+{{ $money($cashBoxPanel['customer_payments'] ?? 0) }}</span></div>
                 <div class="line"><span class="label">− Devoluciones</span><span class="val num text-rose-600">−{{ $money($cashBoxPanel['refunds'] ?? 0) }}</span></div>
                 <div class="line"><span class="label">− Salidas de efectivo</span><span class="val num text-amber-600">−{{ $money($cashBoxPanel['cash_out'] ?? 0) }}</span></div>
-                <div class="line total-line"><span class="label">Subtotal en caja</span><span class="val num">{{ $money($cashBoxPanel['subtotal'] ?? 0) }}</span></div>
+                <div class="line total-line"><span class="label">Subtotal en caja</span><span class="val num">{{ $money($cashBoxSubtotal) }}</span></div>
             </div>
         </div>
 
@@ -168,7 +178,7 @@
                 <span class="label">Diferencia</span>
                 <span class="val num
                     @php $diff = (float) ($reconciliation['difference'] ?? 0); @endphp
-                    {{ abs($diff) < 0.005 ? 'text-emerald-700' : 'text-rose-700' }}">{{ $money(abs($diff)) }}</span>
+                    {{ abs($diff) < 0.005 ? 'text-emerald-700' : 'text-rose-700' }}">{{ $money($diff) }}</span>
             </div>
             <div class="row">
                 <span class="label">Estado</span>
@@ -178,14 +188,14 @@
             </div>
         </div>
 
-        @if ($cut && $cut->cash_counted)
+        @if ($cut && $cut->cash_counted !== null)
             <div class="reconciliation">
                 <h3>Efectivo contado físicamente</h3>
                 <div class="row"><span class="label">Monto contado</span><span class="val num">{{ $money($cut->cash_counted) }}</span></div>
                 <div class="row"><span class="label">Sobrante / Faltante</span><span class="val num
                     @php $diff = (float) ($cut->difference ?? 0); @endphp
                     {{ $diff > 0 ? 'text-emerald-700' : ($diff < 0 ? 'text-rose-700' : 'text-slate-700') }}
-                    ">{{ $diff > 0 ? '+' : '' }}{{ $money(abs($diff)) }}</span></div>
+                    ">{{ $diff > 0 ? '+' : ($diff < 0 ? '−' : '') }}{{ $money(abs($diff)) }}</span></div>
                 <div class="row"><span class="label">Contado el</span><span class="val">{{ $cut->cash_counted_at?->format('d/m/Y H:i') }}</span></div>
                 @if ($cut->reason)
                     <div class="row"><span class="label">Motivo</span><span class="val">{{ $cut->reason }}</span></div>
@@ -217,34 +227,43 @@
             </tbody>
         </table>
 
+        @if (! $employee && $cut && ! isset($breakdown))
+            <p>Desglose por empleado no disponible en este corte antiguo. Se muestran únicamente los totales guardados.</p>
+        @endif
+
         @if (! $employee && ! empty($breakdown['employees']))
             <h2>Por empleado</h2>
             <table>
                 <thead>
                     <tr>
                         <th>Empleado</th>
-                        <th class="num">Tkts</th>
                         <th class="num">Ventas</th>
-                        <th class="num">Ingresos</th>
-                        <th class="num">Salida</th>
+                        <th class="num">Entradas</th>
+                        <th class="num">Salidas</th>
+                        <th class="num">Debe haber</th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach ($breakdown['employees'] as $row)
                         <tr>
-                            <td>{{ $row['name'] }}</td>
-                            <td class="num">{{ $row['tickets'] }}</td>
+                            <td>
+                                {{ $row['name'] }}
+                                @if (! empty($row['warning']))
+                                    <br><small>{{ $row['warning'] }}</small>
+                                @endif
+                            </td>
                             <td class="num">{{ $money($row['sales']) }}</td>
                             <td class="num">{{ $money($row['cash_in'] ?? 0) }}</td>
-                            <td class="num">{{ $row['closed_at'] ? \Carbon\Carbon::parse($row['closed_at'])->format('H:i') : '—' }}</td>
+                            <td class="num">{{ $money($row['cash_out'] ?? 0) }}</td>
+                            <td class="num">{{ $money($row['should_have'] ?? 0) }}</td>
                         </tr>
                     @endforeach
                     <tr class="row-total">
                         <td>Total</td>
-                        <td class="num">{{ $breakdown['total']['tickets'] ?? 0 }}</td>
                         <td class="num">{{ $money($breakdown['total']['sales'] ?? 0) }}</td>
                         <td class="num">{{ $money($breakdown['total']['cash_in'] ?? 0) }}</td>
-                        <td class="num">—</td>
+                        <td class="num">{{ $money($breakdown['total']['cash_out'] ?? 0) }}</td>
+                        <td class="num">{{ $money($breakdown['total']['should_have'] ?? 0) }}</td>
                     </tr>
                 </tbody>
             </table>
@@ -257,7 +276,7 @@
 
         <div class="footer">
             {{ $settings['ticket']['footer'] ?? 'Gracias por su compra.' }}<br>
-            Corte generado en {{ config('app.name') }} · {{ now()->format('d/m/Y H:i') }}
+            Corte generado en {{ config('app.name') }} · {{ $generatedAt ?? '—' }}
         </div>
     </div>
 </body>

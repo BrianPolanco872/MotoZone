@@ -2,9 +2,22 @@
 
 namespace Tests\Feature;
 
+use App\Models\AuditLog;
+use App\Models\CustomerPayment;
+use App\Models\Product;
+use App\Models\Sale;
+use App\Models\SaleReturn;
+use App\Models\SupplierPayment;
 use App\Models\User;
+use App\Services\DailyCutService;
+use App\Services\ReturnService;
+use App\Services\SaleService;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
+use PHPUnit\Framework\Attributes\TestWith;
+use RuntimeException;
 use Tests\TestCase;
 
 class EmployeePermissionsTest extends TestCase
@@ -155,6 +168,129 @@ class EmployeePermissionsTest extends TestCase
             ->assertForbidden();
 
         $this->assertDatabaseHas('users', ['id' => $target->id]);
+    }
+
+    public function test_admin_can_delete_employee_with_own_history(): void
+    {
+        $this->freezeTime();
+        $employee = User::factory()->create()->assignRole('empleado');
+        $sale = $this->employeeHistory($employee);
+
+        $this->actingAs($this->admin())->delete(route('admin.users.destroy', $employee))
+            ->assertRedirect(route('admin.users.index'))
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseMissing('users', ['id' => $employee->id]);
+        $this->assertDatabaseMissing('sales', ['id' => $sale->id]);
+        foreach (['cash_movements', 'stock_movements', 'daily_cuts', 'customer_payments', 'supplier_payments', 'audit_logs'] as $table) {
+            $this->assertDatabaseMissing($table, ['user_id' => $employee->id]);
+        }
+        $this->assertDatabaseMissing('sale_items', ['sale_id' => $sale->id]);
+        $this->assertDatabaseMissing('sale_returns', ['sale_id' => $sale->id]);
+        $this->assertDatabaseCount('sale_return_items', 0);
+        $this->assertDatabaseCount('products', 1);
+    }
+
+    #[TestWith(['pending'])]
+    #[TestWith(['approved'])]
+    #[TestWith(['rejected'])]
+    public function test_employee_deletion_is_rejected_without_changes_when_they_requested_a_return_for_another_seller(string $status): void
+    {
+        $this->freezeTime();
+        $employee = User::factory()->create()->assignRole('empleado');
+        $this->employeeHistory($employee);
+        $otherEmployee = User::factory()->create()->assignRole('empleado');
+        $otherSale = $this->employeeHistory($otherEmployee);
+        SaleReturn::create([
+            'sale_id' => $otherSale->id,
+            'requested_by' => $employee->id,
+            'status' => $status,
+            'reason' => 'Devolución de una venta ajena',
+            'total' => 100,
+        ]);
+        $this->actingAs($this->admin());
+        $historyBefore = $this->historySnapshot();
+
+        $this->from(route('admin.users.index'))->delete(route('admin.users.destroy', $employee))
+            ->assertRedirect(route('admin.users.index'))
+            ->assertSessionHasErrors([
+                'user' => 'No se puede eliminar este empleado porque solicitó devoluciones de ventas de otro usuario.',
+            ]);
+
+        $this->assertSame($historyBefore, $this->historySnapshot());
+    }
+
+    public function test_employee_deletion_rolls_back_all_history_when_the_final_delete_fails(): void
+    {
+        $this->freezeTime();
+        $employee = User::factory()->create()->assignRole('empleado');
+        $this->employeeHistory($employee);
+        $this->actingAs($this->admin());
+        $historyBefore = $this->historySnapshot();
+        Event::listen('eloquent.forceDeleting: '.User::class, function (): void {
+            throw new RuntimeException('Simulated final employee deletion failure');
+        });
+
+        $this->delete(route('admin.users.destroy', $employee))->assertServerError();
+
+        $this->assertSame($historyBefore, $this->historySnapshot());
+    }
+
+    public function test_employee_deletion_rolls_back_history_when_the_final_delete_is_cancelled(): void
+    {
+        $this->freezeTime();
+        $employee = User::factory()->create()->assignRole('empleado');
+        $this->employeeHistory($employee);
+        $this->actingAs($this->admin());
+        $historyBefore = $this->historySnapshot();
+        Event::listen('eloquent.forceDeleting: '.User::class, fn (): bool => false);
+
+        $this->from(route('admin.users.index'))->delete(route('admin.users.destroy', $employee))
+            ->assertRedirect(route('admin.users.index'))
+            ->assertSessionHasErrors('user');
+
+        $this->assertSame($historyBefore, $this->historySnapshot());
+    }
+
+    private function employeeHistory(User $employee): Sale
+    {
+        $product = Product::factory()->create(['stock' => 5, 'price' => 100]);
+        $sale = app(SaleService::class)->create($employee, [
+            'idempotency_key' => 'employee-history-'.$employee->id,
+            'items' => [['product_id' => $product->id, 'quantity' => 1]],
+        ]);
+        app(ReturnService::class)->request($employee, [
+            'sale_id' => $sale->id,
+            'reason' => 'Devolución propia',
+            'items' => [['sale_item_id' => $sale->items->first()->id, 'quantity' => 1]],
+        ]);
+        CustomerPayment::create([
+            'user_id' => $employee->id, 'amount' => 20, 'method' => 'cash',
+            'customer_name' => 'Cliente de prueba', 'happened_at' => now(),
+        ]);
+        SupplierPayment::create([
+            'user_id' => $employee->id, 'amount' => 10, 'method' => 'cash',
+            'supplier_name' => 'Proveedor de prueba', 'reason' => 'Pago de prueba', 'happened_at' => now(),
+        ]);
+        AuditLog::create([
+            'user_id' => $employee->id, 'action' => AuditLog::ACTION_MAKE_CUT, 'entity_type' => 'daily_cut',
+        ]);
+        app(DailyCutService::class)->generate(today(), $employee, $employee);
+
+        return $sale;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function historySnapshot(): array
+    {
+        $snapshot = [];
+        foreach (['users', 'products', 'sales', 'sale_items', 'sale_returns', 'sale_return_items', 'cash_movements', 'stock_movements', 'daily_cuts', 'customer_payments', 'supplier_payments', 'audit_logs', 'model_has_roles', 'model_has_permissions'] as $table) {
+            $snapshot[$table] = DB::table($table)->get()->toJson();
+        }
+
+        return $snapshot;
     }
 
     private function admin(): User

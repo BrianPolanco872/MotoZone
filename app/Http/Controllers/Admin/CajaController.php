@@ -116,6 +116,7 @@ class CajaController extends Controller
             ->when($employee !== null, fn ($q) => $q->where('user_id', $employee))
             ->when($type !== null, fn ($q) => $q->where('type', $type))
             ->when($search !== '', fn ($q) => $q->where('concept', 'like', "%{$search}%"))
+            ->when(! $request->user()->can('pos.sales.day.any'), fn ($q) => $q->where('user_id', $request->user()->id))
             ->orderByDesc('happened_at')
             ->get();
 

@@ -4,9 +4,12 @@ namespace Tests\Feature;
 
 use App\Models\Product;
 use App\Models\Sale;
+use App\Models\SaleItem;
 use App\Models\User;
+use App\Services\SaleService;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\TestWith;
 use Tests\TestCase;
 
 class PosSalesTest extends TestCase
@@ -164,5 +167,139 @@ class PosSalesTest extends TestCase
         $sale = Sale::find($saleId);
         $this->assertEquals('paid', $sale->status);
         $this->assertNotNull($sale->paid_at);
+    }
+
+    public function test_custom_only_sale_is_paid_without_inventory_movements(): void
+    {
+        $employee = $this->employee(['pos.tickets.print.own']);
+
+        $response = $this->actingAs($employee)->postJson(route('pos.sales.store'), [
+            'idempotency_key' => 'custom-only',
+            'items' => [['is_custom' => true, 'custom_name' => 'Mano de obra', 'custom_price' => 25.50, 'quantity' => 2]],
+        ])->assertOk();
+
+        $sale = Sale::query()->findOrFail($response->json('sale.id'));
+        $this->assertSame('51.00', $sale->total);
+        $this->assertSame('paid', $sale->status);
+        $this->assertDatabaseHas('sale_items', [
+            'sale_id' => $sale->id, 'product_id' => null, 'is_custom' => true,
+            'product_name' => 'Mano de obra', 'custom_price' => 25.50, 'quantity' => 2,
+        ]);
+        $this->assertDatabaseCount('products', 0);
+        $this->assertDatabaseCount('stock_movements', 0);
+        $this->assertDatabaseHas('cash_movements', ['sale_id' => $sale->id, 'amount' => 51]);
+        $this->get(route('pos.sales.ticket', $sale))->assertOk()->assertSee('Mano de obra');
+    }
+
+    public function test_pending_sale_with_catalog_and_distinct_custom_items_can_be_loaded_and_charged(): void
+    {
+        $employee = $this->employee();
+        $product = $this->createProduct(['stock' => 5]);
+        $this->actingAs($employee);
+        $response = $this->postJson(route('pos.sales.store'), [
+            'idempotency_key' => 'custom-pending', 'status' => 'pending',
+            'items' => [
+                ['product_id' => $product->id, 'quantity' => 1],
+                ['is_custom' => true, 'custom_name' => 'Instalación', 'custom_price' => 30, 'quantity' => 1],
+                ['is_custom' => true, 'custom_name' => 'Revisión', 'custom_price' => 20, 'quantity' => 1],
+            ],
+        ])->assertOk();
+        $sale = Sale::query()->findOrFail($response->json('sale.id'));
+        $this->assertSame(5, $product->fresh()->stock);
+        $this->assertDatabaseCount('cash_movements', 0);
+        $this->getJson(route('pos.sales.show', $sale))->assertOk()
+            ->assertJsonPath('sale.items.1.is_custom', true)
+            ->assertJsonPath('sale.items.1.custom_name', 'Instalación')
+            ->assertJsonPath('sale.items.1.custom_price', 30)
+            ->assertJsonPath('sale.items.2.custom_name', 'Revisión');
+
+        $this->postJson(route('pos.sales.charge', $sale), ['amount_paid' => 150])->assertOk();
+
+        $this->assertSame('paid', $sale->fresh()->status);
+        $this->assertSame('150.00', $sale->fresh()->total);
+        $this->assertSame(4, $product->fresh()->stock);
+        $this->assertDatabaseCount('stock_movements', 1);
+        $this->assertSame(['Instalación', 'Revisión'], $sale->items()->where('is_custom', true)->orderBy('id')->pluck('custom_name')->all());
+        $this->assertDatabaseHas('cash_movements', ['sale_id' => $sale->id, 'amount' => 150]);
+    }
+
+    #[TestWith([['is_custom' => true, 'custom_price' => 10], 'items.0.custom_name'])]
+    #[TestWith([['is_custom' => true, 'custom_name' => 'Libre'], 'items.0.custom_price'])]
+    #[TestWith([['is_custom' => true, 'custom_name' => 'Libre', 'custom_price' => 0], 'items.0.custom_price'])]
+    #[TestWith([['is_custom' => false], 'items.0.product_id'])]
+    public function test_custom_and_catalog_items_require_their_own_fields(array $item, string $field): void
+    {
+        $this->actingAs($this->employee())->postJson(route('pos.sales.store'), [
+            'idempotency_key' => 'invalid-custom', 'items' => [['quantity' => 1, ...$item]],
+        ])->assertUnprocessable()->assertJsonValidationErrors($field);
+
+        $this->assertDatabaseCount('sales', 0);
+        $this->assertDatabaseCount('stock_movements', 0);
+        $this->assertDatabaseCount('cash_movements', 0);
+    }
+
+    #[TestWith(['paid'])]
+    #[TestWith(['pending'])]
+    public function test_repeated_catalog_lines_cannot_exceed_combined_available_stock(string $status): void
+    {
+        $product = $this->createProduct(['stock' => 5]);
+        $this->actingAs($this->employee());
+        $payload = [
+            'idempotency_key' => 'repeated-stock', 'status' => $status,
+            'items' => [
+                ['product_id' => $product->id, 'quantity' => 3],
+                ['product_id' => $product->id, 'quantity' => 3],
+            ],
+        ];
+
+        if ($status === 'pending') {
+            $created = $this->postJson(route('pos.sales.store'), $payload)->assertOk();
+            $this->postJson(route('pos.sales.charge', $created->json('sale.id')), [])
+                ->assertUnprocessable()->assertJsonValidationErrors('items');
+            $this->assertDatabaseHas('sales', ['id' => $created->json('sale.id'), 'status' => 'pending']);
+        } else {
+            $this->postJson(route('pos.sales.store'), $payload)->assertUnprocessable()->assertJsonValidationErrors('items');
+            $this->assertDatabaseCount('sales', 0);
+        }
+
+        $this->assertSame(5, $product->fresh()->stock);
+        $this->assertDatabaseCount('stock_movements', 0);
+        $this->assertDatabaseCount('cash_movements', 0);
+    }
+
+    public function test_repeated_product_keeps_separate_authorized_prices_when_combined_stock_is_sufficient(): void
+    {
+        $product = $this->createProduct(['stock' => 5]);
+
+        $this->actingAs($this->employee(['pos.price.edit']))->postJson(route('pos.sales.store'), [
+            'idempotency_key' => 'repeated-prices',
+            'items' => [
+                ['product_id' => $product->id, 'quantity' => 2, 'unit_price' => 100],
+                ['product_id' => $product->id, 'quantity' => 3, 'unit_price' => 90],
+            ],
+        ])->assertOk();
+
+        $this->assertSame(0, $product->fresh()->stock);
+        $this->assertSame(['100.00', '90.00'], SaleItem::query()->orderBy('id')->pluck('unit_price')->all());
+        $this->assertDatabaseHas('sales', ['total' => 470]);
+    }
+
+    public function test_day_filter_uses_selected_employee_and_preserves_employee_isolation(): void
+    {
+        $this->freezeTime();
+        $admin = User::factory()->create()->assignRole('admin');
+        $firstEmployee = $this->employee();
+        $selectedEmployee = $this->employee();
+        $product = $this->createProduct();
+        $service = app(SaleService::class);
+        $firstSale = $service->create($firstEmployee, ['idempotency_key' => 'filter-first', 'items' => [['product_id' => $product->id, 'quantity' => 1]]]);
+        $selectedSale = $service->create($selectedEmployee, ['idempotency_key' => 'filter-selected', 'items' => [['product_id' => $product->id, 'quantity' => 1]]]);
+
+        $response = $this->actingAs($admin)->get(route('pos.sales.day', ['employee' => $selectedEmployee->id]))->assertOk();
+
+        $this->assertSame([$selectedSale->id], $response->viewData('sales')->getCollection()->modelKeys());
+        $this->assertSame(1, $response->viewData('summary')['count']);
+        $ownResponse = $this->actingAs($firstEmployee)->get(route('pos.sales.day', ['employee' => $selectedEmployee->id]))->assertOk();
+        $this->assertSame([$firstSale->id], $ownResponse->viewData('sales')->getCollection()->modelKeys());
     }
 }

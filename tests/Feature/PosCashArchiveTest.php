@@ -8,6 +8,7 @@ use App\Models\Sale;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\TestWith;
 use Tests\TestCase;
 
 class PosCashArchiveTest extends TestCase
@@ -190,11 +191,14 @@ class PosCashArchiveTest extends TestCase
         $this->assertNull($movement->archivado_por);
     }
 
-    public function test_cannot_delete_movement_in_closed_cut(): void
+    #[TestWith(['pos.cash.destroy'])]
+    #[TestWith(['admin.caja.destroy'])]
+    public function test_cannot_delete_movement_in_closed_cut(string $route): void
     {
+        $this->freezeTime();
         $admin = $this->admin();
 
-        // Crear una venta pagada con paid_at hoy
+        // La venta se pagó ayer, pero el movimiento pertenece al cierre de hoy.
         $sale = Sale::create([
             'user_id' => $admin->id,
             'folio' => 'V-000001',
@@ -206,7 +210,7 @@ class PosCashArchiveTest extends TestCase
             'amount_paid' => 100.00,
             'change_amount' => 0.00,
             'idempotency_key' => 'closed-cut-test-'.uniqid(),
-            'paid_at' => now(),
+            'paid_at' => now()->subDay(),
         ]);
 
         // Movimiento de caja ligado a la venta (categoría 'sale')
@@ -230,9 +234,10 @@ class PosCashArchiveTest extends TestCase
             'totals' => [],
             'generated_by' => $admin->id,
             'generated_at' => now(),
+            'closed_at' => now(),
         ]);
 
-        $response = $this->actingAs($admin)->delete(route('pos.cash.destroy', $movement), [
+        $response = $this->actingAs($admin)->delete(route($route, $movement), [
             'deletion_reason' => 'Prueba de eliminación',
         ]);
 
@@ -240,6 +245,89 @@ class PosCashArchiveTest extends TestCase
 
         // El movimiento no debe haberse eliminado
         $this->assertNull($movement->fresh()->deleted_at);
+    }
+
+    #[TestWith(['pos.cash.destroy'])]
+    #[TestWith(['admin.caja.destroy'])]
+    public function test_manual_movement_cannot_be_deleted_after_closing_and_restoring(string $route): void
+    {
+        $this->freezeTime();
+        $admin = $this->admin();
+        $date = today('America/Mexico_City')->toDateString();
+        $movement = CashMovement::create([
+            'user_id' => $admin->id,
+            'type' => 'out',
+            'category' => 'expense',
+            'amount' => 100,
+            'concept' => 'Gasto manual del día cerrado',
+            'happened_at' => $date.' 00:00:00',
+        ]);
+
+        DailyCut::create([
+            'cut_key' => DailyCut::keyFor($date, DailyCut::SCOPE_GLOBAL),
+            'cut_date' => $date,
+            'scope' => DailyCut::SCOPE_GLOBAL,
+            'version' => 1,
+            'totals' => [],
+            'generated_by' => $admin->id,
+            'generated_at' => now(),
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('pos.cuts.close-day', ['date' => $date]), ['force' => true])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+        $this->assertNotNull($movement->fresh()->archivado_at);
+
+        $this->post(route('pos.cash.restore', $movement))
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+        $this->assertNull($movement->fresh()->archivado_at);
+
+        $this->delete(route($route, $movement), ['deletion_reason' => 'No debe cambiar el cierre'])
+            ->assertRedirect()
+            ->assertSessionHasErrors();
+
+        $this->assertNotSoftDeleted($movement);
+        $this->assertNull($movement->fresh()->deleted_by);
+        $this->assertNull($movement->fresh()->deletion_reason);
+    }
+
+    #[TestWith(['pos.cash.destroy', false])]
+    #[TestWith(['admin.caja.destroy', false])]
+    #[TestWith(['pos.cash.destroy', true])]
+    #[TestWith(['admin.caja.destroy', true])]
+    public function test_movement_can_be_deleted_without_effective_closure_of_its_day(string $route, bool $closedPreviousDay): void
+    {
+        $this->freezeTime();
+        $admin = $this->admin();
+        $movement = CashMovement::create([
+            'user_id' => $admin->id,
+            'type' => 'out',
+            'category' => 'expense',
+            'amount' => 100,
+            'concept' => 'Gasto en día abierto',
+            'happened_at' => now()->endOfDay(),
+        ]);
+        $date = $closedPreviousDay ? now()->subDay()->toDateString() : now()->toDateString();
+
+        DailyCut::create([
+            'cut_key' => DailyCut::keyFor($date, DailyCut::SCOPE_GLOBAL),
+            'cut_date' => $date,
+            'scope' => DailyCut::SCOPE_GLOBAL,
+            'version' => 1,
+            'totals' => [],
+            'generated_by' => $admin->id,
+            'generated_at' => now(),
+            'closed_at' => $closedPreviousDay ? now() : null,
+        ]);
+
+        $this->actingAs($admin)
+            ->delete(route($route, $movement), ['deletion_reason' => 'Error de captura'])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $this->assertSoftDeleted($movement);
     }
 
     public function test_admin_can_delete_movement_not_in_cut_with_reason(): void

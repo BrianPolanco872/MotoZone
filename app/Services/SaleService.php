@@ -53,7 +53,11 @@ class SaleService
             }
 
             $products = $this->lockProducts($items);
-            $preparedItems = $this->prepareItems($items, $products, $user, $status);
+            $preparedItems = $this->prepareItems($items, $products, $user);
+
+            if ($status === Sale::STATUS_PAID) {
+                $this->assertStock($preparedItems, $products);
+            }
 
             $totals = $this->totals($preparedItems);
             $amountPaid = $status === Sale::STATUS_PAID
@@ -111,14 +115,14 @@ class SaleService
             }
 
             $items = $sale->items->map(fn (SaleItem $item): array => [
-                'product_id' => (int) $item->product_id,
+                'product_id' => $item->product_id,
+                'is_custom' => $item->is_custom,
+                'product_name' => $item->product_name,
                 'quantity' => (int) $item->quantity,
-                'unit_price' => (float) $item->unit_price,
-                'wholesale' => false,
             ])->all();
 
             $products = $this->lockProducts($items);
-            $this->assertStock($sale->items, $products);
+            $this->assertStock($items, $products);
 
             $total = (float) $sale->total;
             $paid = round($amountPaid ?? $total, 2);
@@ -135,25 +139,7 @@ class SaleService
                 'payment_method' => $paymentMethod ?? $sale->payment_method,
             ]);
 
-            $preparedItems = $sale->items->map(fn (SaleItem $item): array => [
-                'product_id' => $item->product_id,
-                'category_id' => $item->category_id,
-                'product_name' => $item->product_name,
-                'sku' => $item->sku,
-                'barcode' => $item->barcode,
-                'category_name' => $item->category_name,
-                'quantity' => $item->quantity,
-                'unit_price' => (float) $item->unit_price,
-                'cost_price' => (float) $item->cost_price,
-                'tax_rate' => (float) $item->tax_rate,
-                'line_subtotal' => (float) $item->line_subtotal,
-                'tax_amount' => (float) $item->tax_amount,
-                'line_total' => (float) $item->line_total,
-                'line_cost' => (float) $item->line_cost,
-                'price_overridden' => $item->price_overridden,
-            ])->all();
-
-            $this->applyStockAndCash($sale, $preparedItems, $products, $user);
+            $this->applyStockAndCash($sale, $items, $products, $user);
 
             return $sale->fresh(['items']);
         });
@@ -189,6 +175,9 @@ class SaleService
             $productId = isset($item['product_id']) ? (int) $item['product_id'] : null;
             $quantity = (int) ($item['quantity'] ?? 0);
             $isCustom = (bool) ($item['is_custom'] ?? false);
+            if ($isCustom) {
+                $productId = null;
+            }
 
             if ($quantity <= 0) {
                 continue;
@@ -219,10 +208,12 @@ class SaleService
      * @param  array<int, array{product_id: int, quantity: int}>  $items
      * @return Collection<int, Product>
      */
-    private function lockProducts(array $items)
+    private function lockProducts(array $items): Collection
     {
-        $ids = array_values(array_unique(array_map(fn (array $item): int => $item['product_id'], $items)));
-        $ids = array_filter($ids, fn ($id) => $id > 0);
+        $ids = array_values(array_unique(array_filter(
+            array_column($items, 'product_id'),
+            fn (?int $id): bool => $id !== null && $id > 0,
+        )));
 
         if ($ids === []) {
             return collect();
@@ -241,7 +232,7 @@ class SaleService
      * @param  Collection<int, Product>  $products
      * @return array<int, array<string, mixed>>
      */
-    private function prepareItems(array $items, $products, User $user, string $status): array
+    private function prepareItems(array $items, Collection $products, User $user): array
     {
         $prepared = [];
 
@@ -282,12 +273,6 @@ class SaleService
 
             if (! $product->is_active) {
                 throw ValidationException::withMessages(['items' => "El producto «{$product->name}» no está disponible."]);
-            }
-
-            if ($status === Sale::STATUS_PAID && $product->track_inventory && $product->stock < $item['quantity']) {
-                throw ValidationException::withMessages([
-                    'items' => "No hay existencia suficiente de «{$product->name}». Disponible: {$product->stock}.",
-                ]);
             }
 
             $pricing = $this->pricing->resolveUnitPrice(
@@ -385,19 +370,27 @@ class SaleService
     }
 
     /**
-     * @param  Collection<int, SaleItem>  $items
+     * @param  array<int, array{product_id: ?int, quantity: int, product_name: string, is_custom?: bool}>  $items
      * @param  Collection<int, Product>  $products
      */
-    private function assertStock($items, $products): void
+    private function assertStock(array $items, Collection $products): void
     {
-        foreach ($items as $item) {
-            $product = $products->get($item->product_id);
+        $quantities = [];
 
-            if (! $product) {
-                throw ValidationException::withMessages(['items' => "El producto «{$item->product_name}» ya no existe."]);
+        foreach ($items as $item) {
+            if (! empty($item['is_custom'])) {
+                continue;
             }
 
-            if ($product->track_inventory && $product->stock < $item->quantity) {
+            $product = $products->get($item['product_id']);
+
+            if (! $product) {
+                throw ValidationException::withMessages(['items' => "El producto «{$item['product_name']}» ya no existe."]);
+            }
+
+            $quantities[$product->id] = ($quantities[$product->id] ?? 0) + $item['quantity'];
+
+            if ($product->track_inventory && $product->stock < $quantities[$product->id]) {
                 throw ValidationException::withMessages([
                     'items' => "No hay existencia suficiente de «{$product->name}». Disponible: {$product->stock}.",
                 ]);

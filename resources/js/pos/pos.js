@@ -345,7 +345,7 @@ if (configElement) {
             return;
         }
 
-        const existing = items.find((item) => item.is_custom && item.name === name);
+        const existing = items.find((item) => item.is_custom && item.name === name && item.unit_price === round(price));
 
         if (existing) {
             existing.quantity = existing.quantity + quantity;
@@ -354,7 +354,7 @@ if (configElement) {
                 product_id: null,
                 is_custom: true,
                 custom_name: name,
-                custom_price: price,
+                custom_price: round(price),
                 name: name,
                 sku: null,
                 barcode: null,
@@ -467,7 +467,7 @@ if (configElement) {
             product_id: item.product_id,
             is_custom: item.is_custom || false,
             custom_name: item.custom_name || null,
-            custom_price: item.custom_price || null,
+            custom_price: item.is_custom ? item.unit_price : null,
             quantity: item.quantity,
             unit_price: item.manual_price,
             wholesale: wholesaleMode,
@@ -568,7 +568,18 @@ if (configElement) {
     };
 
     const updateChange = () => {
-        const total = totals().total;
+        const total = pendingSaleId !== null ? Number(paymentTotal.dataset.total || 0) : totals().total;
+        const showAmount = !paymentMethod || paymentMethod.value === 'cash' || paymentMethod.value === 'mixed';
+        const amountGroup = document.getElementById('payment-amount-group');
+
+        if (amountGroup) {
+            amountGroup.style.display = showAmount ? 'block' : 'none';
+        }
+
+        if (!showAmount) {
+            paymentAmount.value = total.toFixed(2);
+        }
+
         const paid = Number(paymentAmount.value) || 0;
         const change = round(paid - total);
         const missing = change < 0;
@@ -594,18 +605,13 @@ if (configElement) {
         paymentError.classList.add('hidden');
         updateChange();
 
-        // Mostrar/ocultar campo "Pago con" según método de pago
-        if (paymentMethod) {
-            const showAmount = paymentMethod.value === 'cash' || paymentMethod.value === 'mixed';
-            const amountGroup = document.getElementById('payment-amount-group');
-            if (amountGroup) {
-                amountGroup.style.display = showAmount ? 'block' : 'none';
-            }
-        }
-
         paymentDialog.showModal();
-        paymentAmount.focus();
-        paymentAmount.select();
+        if (!paymentMethod || paymentMethod.value === 'cash' || paymentMethod.value === 'mixed') {
+            paymentAmount.focus();
+            paymentAmount.select();
+        } else {
+            paymentMethod.focus();
+        }
     };
 
     const loadPendingSale = async (saleId) => {
@@ -622,7 +628,10 @@ if (configElement) {
             pendingSaleId = Number(data.sale.id);
             items = data.sale.items.map((item) => ({
                 product_id: item.product_id,
-                name: item.name,
+                is_custom: Boolean(item.is_custom),
+                custom_name: item.custom_name ?? null,
+                custom_price: item.is_custom ? Number(item.custom_price ?? item.unit_price) : null,
+                name: item.is_custom ? (item.custom_name ?? item.name) : item.name,
                 sku: item.sku,
                 barcode: item.barcode,
                 price: Number(item.unit_price),
@@ -637,6 +646,9 @@ if (configElement) {
             }));
 
             paymentTotal.dataset.total = String(data.sale.total);
+            if (paymentMethod) {
+                paymentMethod.value = data.sale.payment_method || 'cash';
+            }
             pendingBanner.classList.remove('hidden');
             wholesaleToggle.disabled = true;
             renderCart();
@@ -857,15 +869,13 @@ if (configElement) {
     document.getElementById('pos-print-ticket')?.addEventListener('click', printLastSaleTicket);
 
     paymentConfirm?.addEventListener('click', () => {
-        const total = Number(paymentTotal.dataset.total || 0);
-        const paid = Number(paymentAmount.value) || 0;
+        updateChange();
 
-        if (paid < total) {
-            updateChange();
+        if (paymentConfirm.disabled) {
             return;
         }
 
-        submitSale('paid', paid);
+        submitSale('paid', Number(paymentAmount.value) || 0);
     });
 
     document.querySelectorAll('[data-close-dialog]').forEach((button) => {
@@ -1071,31 +1081,39 @@ if (configElement) {
     });
 
     document.addEventListener('keydown', (event) => {
-        if (event.key === 'F12' && !paymentDialog.open && !cashDialog?.open) {
+        if (event.defaultPrevented || document.querySelector('dialog[open]')) {
+            return;
+        }
+
+        const editing = event.target?.isContentEditable || event.target?.closest?.('input, textarea, select');
+        // El buscador mantiene los atajos de función del flujo de escáner, nunca Delete/Escape.
+        const scannerShortcut = event.target === searchInput && ['F12', 'F6', 'F7', 'F8', 'F11'].includes(event.key);
+
+        if (editing && !scannerShortcut) {
+            return;
+        }
+
+        if (event.key === 'F12') {
             event.preventDefault();
             openPayment();
         }
 
-        if (event.key === 'F6' && !paymentDialog.open && !cashDialog?.open) {
+        if (event.key === 'F6') {
             event.preventDefault();
-            if (items.length > 0) {
-                if (window.confirm('¿Dejar esta venta pendiente? No se descontarán existencias ni se moverá caja hasta cobrarla.')) {
-                    document.getElementById('pos-pending')?.click();
-                }
-            }
+            document.getElementById('pos-pending')?.click();
         }
 
-        if (event.key === 'F7' && !paymentDialog.open && !cashDialog?.open) {
+        if (event.key === 'F7') {
             event.preventDefault();
             document.querySelector('[data-cash-open="in"]')?.click();
         }
 
-        if (event.key === 'F8' && !paymentDialog.open && !cashDialog?.open) {
+        if (event.key === 'F8') {
             event.preventDefault();
             document.querySelector('[data-cash-open="out"]')?.click();
         }
 
-        if (event.key === 'F11' && !paymentDialog.open && !cashDialog?.open) {
+        if (event.key === 'F11') {
             event.preventDefault();
             if (permissions.wholesale) {
                 wholesaleToggle.checked = !wholesaleToggle.checked;
@@ -1103,7 +1121,7 @@ if (configElement) {
             }
         }
 
-        if (event.key === 'Delete' && !paymentDialog.open && !cashDialog?.open) {
+        if (event.key === 'Delete') {
             event.preventDefault();
             if (items.length > 0 && !pendingSaleId) {
                 if (window.confirm('¿Eliminar el último artículo de la venta?')) {
@@ -1112,27 +1130,9 @@ if (configElement) {
                 }
             }
         }
-
-        if (event.key === 'Escape' && !paymentDialog.open && !cashDialog?.open) {
-            resetSale();
-        }
     });
 
-    // Mostrar/ocultar campo "Pago con" según método de pago
-    paymentMethod?.addEventListener('change', () => {
-        const showAmount = paymentMethod.value === 'cash' || paymentMethod.value === 'mixed';
-        const amountGroup = document.getElementById('payment-amount-group');
-        if (amountGroup) {
-            amountGroup.style.display = showAmount ? 'block' : 'none';
-        }
-        if (!showAmount) {
-            paymentAmount.value = '0.00';
-            paymentChange.textContent = '$0.00';
-            paymentError.classList.add('hidden');
-        } else {
-            updateChange();
-        }
-    });
+    paymentMethod?.addEventListener('change', updateChange);
 
     renderCart();
 

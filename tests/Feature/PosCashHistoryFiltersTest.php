@@ -8,6 +8,7 @@ use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use PHPUnit\Framework\Attributes\TestWith;
 use Tests\TestCase;
 
 class PosCashHistoryFiltersTest extends TestCase
@@ -32,7 +33,7 @@ class PosCashHistoryFiltersTest extends TestCase
     private function employee(): User
     {
         $user = User::factory()->create()->assignRole('empleado');
-        $user->givePermissionTo(['pos.access', 'pos.cash.manage']);
+        $user->givePermissionTo(['pos.access', 'pos.caja.view', 'pos.cash.manage']);
 
         return $user;
     }
@@ -168,5 +169,73 @@ class PosCashHistoryFiltersTest extends TestCase
             ->assertOk()
             ->assertDontSee('Movimiento propio visible')
             ->assertDontSee('Movimiento ajeno oculto');
+    }
+
+    #[TestWith(['pos.cash.export'])]
+    #[TestWith(['admin.caja.export'])]
+    public function test_employee_exports_only_own_movements(string $route): void
+    {
+        $this->freezeTime();
+        $employee = $this->employee();
+        $otherEmployee = $this->employee();
+        $this->movement($employee, 'Movimiento propio exportable', now());
+        $this->movement($otherEmployee, 'Movimiento ajeno protegido', now());
+
+        $response = $this->actingAs($employee)->get(route($route));
+
+        $response->assertOk();
+        $content = $response->streamedContent();
+        $this->assertStringContainsString('Movimiento propio exportable', $content);
+        $this->assertStringNotContainsString('Movimiento ajeno protegido', $content);
+    }
+
+    #[TestWith(['pos.cash.export'])]
+    #[TestWith(['admin.caja.export'])]
+    public function test_employee_filter_cannot_export_another_employees_archived_movements(string $route): void
+    {
+        $this->freezeTime();
+        $employee = $this->employee();
+        $otherEmployee = $this->employee();
+        $this->movement($employee, 'Archivado propio exportable', now(), now());
+        $this->movement($otherEmployee, 'Archivado ajeno protegido', now(), now());
+
+        $response = $this->actingAs($employee)->get(route($route, [
+            'employee' => $otherEmployee->id,
+            'show_archived' => 1,
+        ]));
+
+        $response->assertOk();
+        $content = $response->streamedContent();
+        $this->assertStringNotContainsString('Archivado propio exportable', $content);
+        $this->assertStringNotContainsString('Archivado ajeno protegido', $content);
+    }
+
+    #[TestWith(['pos.cash.export'])]
+    #[TestWith(['admin.caja.export'])]
+    public function test_export_with_any_employee_permission_preserves_filters(string $route): void
+    {
+        $this->freezeTime();
+        $employee = $this->employee()->givePermissionTo('pos.sales.day.any');
+        $otherEmployee = $this->employee();
+        $this->movement($employee, 'Archivo propio no solicitado', now(), now());
+        $this->movement($otherEmployee, 'Archivo ajeno solicitado', now(), now());
+        $this->movement($otherEmployee, 'Archivo ajeno fuera de fecha', now()->subDay(), now());
+        $this->movement($otherEmployee, 'Archivo ajeno sin coincidencia', now(), now());
+
+        $response = $this->actingAs($employee)->get(route($route, [
+            'employee' => $otherEmployee->id,
+            'show_archived' => 1,
+            'from' => now()->toDateString(),
+            'to' => now()->toDateString(),
+            'type' => 'in',
+            'search' => 'solicitado',
+        ]));
+
+        $response->assertOk();
+        $content = $response->streamedContent();
+        $this->assertStringContainsString('Archivo ajeno solicitado', $content);
+        $this->assertStringNotContainsString('Archivo propio no solicitado', $content);
+        $this->assertStringNotContainsString('Archivo ajeno fuera de fecha', $content);
+        $this->assertStringNotContainsString('Archivo ajeno sin coincidencia', $content);
     }
 }

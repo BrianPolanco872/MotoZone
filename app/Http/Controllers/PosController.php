@@ -114,6 +114,9 @@ class PosController extends Controller
                 'items' => $sale->items->map(fn (SaleItem $item): array => [
                     'sale_item_id' => $item->id,
                     'product_id' => $item->product_id,
+                    'is_custom' => $item->is_custom,
+                    'custom_name' => $item->custom_name,
+                    'custom_price' => $item->custom_price === null ? null : (float) $item->custom_price,
                     'name' => $item->product_name,
                     'sku' => $item->sku,
                     'barcode' => $item->barcode,

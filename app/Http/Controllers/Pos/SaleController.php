@@ -141,7 +141,10 @@ class SaleController extends Controller
 
     public function day(Request $request): View
     {
-        $request->validate(['date' => ['nullable', 'date']]);
+        $request->validate([
+            'date' => ['nullable', 'date'],
+            'employee' => ['nullable', 'integer', 'exists:users,id'],
+        ]);
 
         $user = $request->user();
 
@@ -154,7 +157,7 @@ class SaleController extends Controller
             ->paid()
             ->whereBetween('paid_at', [$date->copy()->startOfDay(), $date->copy()->endOfDay()])
             ->when(! $canSeeAny, fn ($query) => $query->where('user_id', $user->id))
-            ->when($canSeeAny && $request->filled('employee'), fn ($query, $employee) => $query->where('user_id', (int) $employee));
+            ->when($canSeeAny && $request->filled('employee'), fn ($query) => $query->where('user_id', $request->integer('employee')));
 
         $summary = [
             'count' => (clone $query)->count(),

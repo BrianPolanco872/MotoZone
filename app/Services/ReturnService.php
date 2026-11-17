@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\CashMovement;
+use App\Models\DailyCut;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\SaleReturn;
@@ -13,6 +14,8 @@ use Illuminate\Validation\ValidationException;
 
 class ReturnService
 {
+    public function __construct(private readonly DailyCutService $cuts) {}
+
     /**
      * @param  array{sale_id: int, reason: string, items: array<int, array{sale_item_id: int, quantity: int}>}  $data
      */
@@ -78,7 +81,14 @@ class ReturnService
 
     public function approve(SaleReturn $return, User $user): SaleReturn
     {
-        return DB::transaction(function () use ($return, $user): SaleReturn {
+        $approvedAt = now();
+        $date = $approvedAt->toDateString();
+
+        return $this->cuts->withDayLock($date, function () use ($return, $user, $date, $approvedAt): SaleReturn {
+            if (DailyCut::isDayClosed($date)) {
+                throw ValidationException::withMessages(['return' => 'Este día ya está cerrado. No se pueden aprobar devoluciones.']);
+            }
+
             $return = SaleReturn::query()
                 ->whereKey($return->getKey())
                 ->lockForUpdate()
@@ -131,13 +141,13 @@ class ReturnService
                 'category' => 'refund',
                 'amount' => round($refundTotal, 2),
                 'concept' => "Devolución venta {$return->sale->folio}",
-                'happened_at' => now(),
+                'happened_at' => $approvedAt,
             ]);
 
             $return->update([
                 'status' => SaleReturn::STATUS_APPROVED,
                 'approved_by' => $user->id,
-                'approved_at' => now(),
+                'approved_at' => $approvedAt,
                 'total' => round($refundTotal, 2),
             ]);
 
@@ -147,17 +157,21 @@ class ReturnService
 
     public function reject(SaleReturn $return, User $user): SaleReturn
     {
-        if (! $return->isPending()) {
-            throw ValidationException::withMessages(['return' => 'Esta devolución ya fue procesada.']);
-        }
+        return DB::transaction(function () use ($return, $user): SaleReturn {
+            $return = SaleReturn::query()->whereKey($return->getKey())->lockForUpdate()->firstOrFail();
 
-        $return->update([
-            'status' => SaleReturn::STATUS_REJECTED,
-            'approved_by' => $user->id,
-            'rejected_at' => now(),
-        ]);
+            if (! $return->isPending()) {
+                throw ValidationException::withMessages(['return' => 'Esta devolución ya fue procesada.']);
+            }
 
-        return $return;
+            $return->update([
+                'status' => SaleReturn::STATUS_REJECTED,
+                'approved_by' => $user->id,
+                'rejected_at' => now(),
+            ]);
+
+            return $return;
+        });
     }
 
     /**

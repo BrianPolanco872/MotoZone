@@ -4,13 +4,20 @@ namespace Tests\Feature;
 
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\StockMovement;
 use App\Models\User;
+use App\Services\DailyCutService;
+use App\Services\ReturnService;
+use App\Services\SaleService;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Database\Eloquent\Factories\Sequence;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\TestWith;
+use RuntimeException;
 use Tests\TestCase;
 
 class AdminProductTest extends TestCase
@@ -377,6 +384,243 @@ class AdminProductTest extends TestCase
 
         $response->assertOk();
         $this->assertSame([$matching->id], $response->viewData('products')->getCollection()->modelKeys());
+    }
+
+    #[TestWith(['admin'])]
+    #[TestWith(['empleado'])]
+    public function test_clearing_inventory_zeros_stock_and_preserves_catalog_and_history(string $role): void
+    {
+        $this->freezeTime();
+        $operator = User::factory()->create()->assignRole($role);
+        $operator->givePermissionTo('admin.products.manage');
+        $product = Product::factory()->create(['stock' => 6, 'price' => 100]);
+        $untracked = Product::factory()->create(['stock' => 3, 'track_inventory' => false]);
+        $inactive = Product::factory()->create(['stock' => 2, 'is_active' => false]);
+        $empty = Product::factory()->outOfStock()->create();
+        $sale = app(SaleService::class)->create($operator, [
+            'idempotency_key' => 'inventory-history',
+            'items' => [['product_id' => $product->id, 'quantity' => 1]],
+        ]);
+        app(ReturnService::class)->request($operator, [
+            'sale_id' => $sale->id,
+            'reason' => 'Solicitud anterior a la limpieza',
+            'items' => [['sale_item_id' => $sale->items->first()->id, 'quantity' => 1]],
+        ]);
+        app(DailyCutService::class)->generate(today(), $operator);
+        $productBefore = $product->fresh()->only([
+            'id', 'name', 'sku', 'barcode', 'barcode2', 'category_id', 'slug', 'price',
+            'cost', 'wholesale_price', 'tax_rate', 'image_path', 'track_inventory', 'is_active',
+        ]);
+        $stockMovement = StockMovement::query()->firstOrFail();
+        $stockMovementBefore = $stockMovement->getAttributes();
+        $history = [];
+        foreach (['sales', 'sale_items', 'cash_movements', 'sale_returns', 'sale_return_items', 'daily_cuts', 'audit_logs'] as $table) {
+            $history[$table] = DB::table($table)->orderBy('id')->get()->toJson();
+        }
+
+        $this->actingAs($operator)->post(route('admin.products.clearInventory'))
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('status', 'Todas las existencias se pusieron en cero. El catálogo y el historial se conservaron.');
+
+        $this->assertDatabaseCount('products', 4);
+        foreach ([$product, $untracked, $inactive, $empty] as $item) {
+            $this->assertSame(0, $item->fresh()->stock);
+        }
+        $this->assertSame($productBefore, $product->fresh()->only(array_keys($productBefore)));
+        $this->assertSame($stockMovementBefore, $stockMovement->fresh()->getAttributes());
+        foreach ($history as $table => $rows) {
+            $this->assertSame($rows, DB::table($table)->orderBy('id')->get()->toJson(), $table);
+        }
+        $this->assertSame(3, StockMovement::query()->where('type', StockMovement::TYPE_ADJUSTMENT)->count());
+        foreach ([[$product, 5], [$untracked, 3], [$inactive, 2]] as [$item, $stockBefore]) {
+            $this->assertDatabaseHas('stock_movements', [
+                'product_id' => $item->id,
+                'user_id' => $operator->id,
+                'sale_id' => null,
+                'type' => StockMovement::TYPE_ADJUSTMENT,
+                'quantity' => -$stockBefore,
+                'stock_before' => $stockBefore,
+                'stock_after' => 0,
+            ]);
+        }
+    }
+
+    public function test_clearing_already_empty_inventory_does_not_add_adjustments(): void
+    {
+        $product = Product::factory()->outOfStock()->create();
+
+        $this->actingAs($this->admin())->post(route('admin.products.clearInventory'))
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHasNoErrors();
+
+        $this->assertModelExists($product);
+        $this->assertSame(0, $product->fresh()->stock);
+        $this->assertDatabaseCount('stock_movements', 0);
+    }
+
+    public function test_clearing_inventory_rolls_back_every_product_when_an_adjustment_fails(): void
+    {
+        $products = Product::factory()->count(2)->sequence(['stock' => 4], ['stock' => 7])->create();
+        $productsBefore = DB::table('products')->orderBy('id')->get()->toJson();
+        Event::listen('eloquent.creating: '.StockMovement::class, function (StockMovement $movement) use ($products): void {
+            if ($movement->product_id === $products->last()->id) {
+                throw new RuntimeException('Simulated adjustment failure');
+            }
+        });
+
+        $this->actingAs($this->admin())->post(route('admin.products.clearInventory'))->assertServerError();
+
+        $this->assertSame($productsBefore, DB::table('products')->orderBy('id')->get()->toJson());
+        $this->assertDatabaseCount('stock_movements', 0);
+    }
+
+    public function test_employee_without_product_permission_cannot_clear_inventory(): void
+    {
+        $employee = User::factory()->create()->assignRole('empleado');
+        $product = Product::factory()->create(['stock' => 4]);
+
+        $this->actingAs($employee)->post(route('admin.products.clearInventory'))->assertForbidden();
+
+        $this->assertSame(4, $product->fresh()->stock);
+        $this->assertDatabaseCount('stock_movements', 0);
+    }
+
+    public function test_product_without_history_is_deleted_but_product_with_stock_movements_is_kept(): void
+    {
+        $admin = $this->admin();
+        $removable = Product::factory()->create(['name' => 'Sin historial']);
+        $withHistory = Product::factory()->create(['name' => 'Con historial']);
+        StockMovement::create([
+            'product_id' => $withHistory->id,
+            'user_id' => $admin->id,
+            'type' => StockMovement::TYPE_ADJUSTMENT,
+            'quantity' => 1,
+            'stock_before' => 0,
+            'stock_after' => 1,
+            'note' => 'Alta de existencias',
+        ]);
+
+        $this->actingAs($admin)->delete(route('admin.products.destroy', $removable))
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHas('status');
+
+        $this->assertModelMissing($removable);
+
+        $this->actingAs($admin)->delete(route('admin.products.destroy', $withHistory))
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHas('error');
+
+        $this->assertModelExists($withHistory);
+        $this->assertDatabaseCount('products', 1);
+    }
+
+    public function test_import_creates_rows_without_barcode_as_null(): void
+    {
+        $csv = implode("\n", [
+            'sku,nombre,marca,descripcion,precio_venta,stock,codigo_barras',
+            'IMP-001,Producto uno,Marca,Descripción uno,10,2,',
+            'IMP-002,Producto dos,Marca,Descripción dos,20,3,',
+        ]);
+
+        $this->actingAs($this->admin())
+            ->post(route('admin.products.import'), [
+                'import_file' => UploadedFile::fake()->createWithContent('productos.csv', $csv),
+            ])
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseCount('products', 2);
+        $this->assertDatabaseHas('products', ['sku' => 'IMP-001', 'barcode' => null, 'stock' => 2]);
+        $this->assertDatabaseHas('products', ['sku' => 'IMP-002', 'barcode' => null, 'stock' => 3]);
+    }
+
+    public function test_import_saves_nothing_when_a_later_row_is_invalid(): void
+    {
+        $csv = implode("\n", [
+            'sku,nombre,marca,descripcion,precio_venta,stock',
+            'IMP-001,Producto uno,Marca,Descripción uno,10,2',
+            'IMP-002,Producto dos,Marca,Descripción dos,,3',
+        ]);
+
+        $this->actingAs($this->admin())
+            ->from(route('admin.products.index'))
+            ->post(route('admin.products.import'), [
+                'import_file' => UploadedFile::fake()->createWithContent('productos.csv', $csv),
+            ])
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHasErrors('import_file');
+
+        $this->assertDatabaseCount('products', 0);
+        $this->assertStringContainsString('Fila 3', session('errors')->first('import_file'));
+    }
+
+    public function test_import_reports_repeated_codes_without_a_database_exception(): void
+    {
+        $csv = implode("\n", [
+            'sku,nombre,marca,descripcion,precio_venta,stock,codigo_barras',
+            'IMP-001,Producto uno,Marca,Descripción uno,10,2,DUP-001',
+            'IMP-002,Producto dos,Marca,Descripción dos,20,3,DUP-001',
+        ]);
+
+        $this->actingAs($this->admin())
+            ->from(route('admin.products.index'))
+            ->post(route('admin.products.import'), [
+                'import_file' => UploadedFile::fake()->createWithContent('productos.csv', $csv),
+            ])
+            ->assertSessionHasErrors('import_file');
+
+        $this->assertDatabaseCount('products', 0);
+    }
+
+    public function test_import_rejects_excel_files(): void
+    {
+        $this->actingAs($this->admin())
+            ->from(route('admin.products.index'))
+            ->post(route('admin.products.import'), [
+                'import_file' => UploadedFile::fake()->create(
+                    'productos.xlsx',
+                    10,
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                ),
+            ])
+            ->assertSessionHasErrors('import_file');
+    }
+
+    public function test_import_requires_sku_and_name_headers(): void
+    {
+        $this->actingAs($this->admin())
+            ->from(route('admin.products.index'))
+            ->post(route('admin.products.import'), [
+                'import_file' => UploadedFile::fake()->createWithContent(
+                    'productos.csv',
+                    "nombre,marca,descripcion,precio_venta,stock\nProducto,Marca,Descripción,10,1",
+                ),
+            ])
+            ->assertSessionHasErrors('import_file');
+
+        $this->assertDatabaseCount('products', 0);
+    }
+
+    public function test_import_keeps_skipping_rows_with_an_existing_sku(): void
+    {
+        Product::factory()->create(['sku' => 'IMP-001']);
+        $csv = implode("\n", [
+            'sku,nombre,marca,descripcion,precio_venta,stock',
+            'IMP-001,Producto uno,Marca,Descripción uno,10,2',
+            'IMP-002,Producto dos,Marca,Descripción dos,20,3',
+        ]);
+
+        $this->actingAs($this->admin())
+            ->post(route('admin.products.import'), [
+                'import_file' => UploadedFile::fake()->createWithContent('productos.csv', $csv),
+            ])
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseCount('products', 2);
+        $this->assertDatabaseHas('products', ['sku' => 'IMP-002']);
+        $this->assertSame(1, Product::query()->where('sku', 'IMP-001')->count());
     }
 
     private function admin(): User

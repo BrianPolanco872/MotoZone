@@ -64,9 +64,9 @@
                 <div class="flex-1">
                     <label for="import_file" class="block text-xs font-semibold uppercase tracking-[0.12em] text-mz-text-muted">Importar productos CSV</label>
                     <div class="mt-1.5 flex items-center gap-2">
-                        <input id="import_file" type="file" name="import_file" accept=".csv,.txt,.xlsx,.xls" class="block w-full text-sm text-mz-text-secondary file:mr-3 file:h-10 file:rounded-md file:border-0 file:bg-mz-bg-surface-2 file:px-3 file:text-sm file:font-medium file:text-mz-text-secondary hover:file:bg-mz-bg-surface-2">
+                        <input id="import_file" type="file" name="import_file" accept=".csv,.txt" class="block w-full text-sm text-mz-text-secondary file:mr-3 file:h-10 file:rounded-md file:border-0 file:bg-mz-bg-surface-2 file:px-3 file:text-sm file:font-medium file:text-mz-text-secondary hover:file:bg-mz-bg-surface-2">
                     </div>
-                    <p class="mt-1 text-xs text-mz-text-muted">Conserva los encabezados de la plantilla CSV actual, incluidas las columnas de existencias y mínimo de alerta. No cambies los nombres técnicos de sus columnas.</p>
+                    <p class="mt-1 text-xs text-mz-text-muted">Solo se aceptan archivos CSV o TXT. Conserva los encabezados de la plantilla CSV actual, incluidas las columnas de existencias y mínimo de alerta. No cambies los nombres técnicos de sus columnas.</p>
                 </div>
                 <div>
                     <button type="submit" class="x-button x-button-primary size-sm">

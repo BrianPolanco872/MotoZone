@@ -82,6 +82,21 @@
                         <span>Corte del día</span>
                     </a>
                 @endif
+
+                {{-- Accesos que en escritorio viven en el panel derecho; en móvil no existe. --}}
+                <a href="{{ route('pos.sales.pending') }}"
+                   class="inline-flex items-center gap-1.5 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/70 px-3.5 py-2 text-xs font-semibold text-mz-text-secondary transition-all hover:border-mz-warning/50 hover:bg-mz-warning/10 hover:text-mz-warning shadow-xs active:scale-95 xl:hidden">
+                    <x-icon name="pause" class="size-3.5 text-mz-warning" />
+                    <span>Pendientes</span>
+                </a>
+
+                @if ($permissions['returns_request'])
+                    <a href="{{ route('pos.returns.index') }}"
+                       class="inline-flex items-center gap-1.5 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/70 px-3.5 py-2 text-xs font-semibold text-mz-text-secondary transition-all hover:border-mz-accent-primary/40 hover:bg-mz-bg-surface-2 hover:text-white shadow-xs active:scale-95 xl:hidden">
+                        <x-icon name="arrow-uturn-left" class="size-3.5 text-mz-accent-primary" />
+                        <span>Devoluciones</span>
+                    </a>
+                @endif
             </div>
         </div>
     </div>
@@ -128,7 +143,7 @@
     {{-- CUERPO PRINCIPAL DEL POS: Layout de 2 columnas --}}
     <div class="mt-4 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_26rem]">
         <!-- PANEL IZQUIERDO: Búsqueda, Detalle del Carrito y Liquidación -->
-        <div class="space-y-4">
+        <div class="min-w-0 space-y-4">
             <!-- Barra de Búsqueda y Escáner -->
             <section class="rounded-2xl border border-mz-border bg-mz-bg-surface p-4 sm:p-5 shadow-xl shadow-black/20">
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -208,7 +223,7 @@
                     <span id="pos-items-count" class="rounded-full bg-mz-accent-primary/10 border border-mz-accent-primary/25 px-3 py-1 text-xs font-bold text-mz-accent-primary tabular-nums">0 artículos</span>
                 </div>
 
-                <div class="overflow-x-auto pos-scrollbar">
+                <div class="relative overflow-x-auto pos-scrollbar">
                     <table class="min-w-full divide-y divide-mz-border text-sm">
                         <thead class="bg-mz-bg-surface-2/40">
                             <tr class="text-left text-xs uppercase tracking-wider text-mz-text-muted">
@@ -234,7 +249,7 @@
                     <div class="mt-4 flex flex-wrap items-center justify-center gap-2 text-[11px] text-mz-text-muted">
                         <span class="inline-flex items-center gap-1 rounded-md bg-mz-bg-surface-2 px-2 py-0.5 border border-mz-border-light font-mono"><kbd>Enter</kbd> Buscar</span>
                         <span class="inline-flex items-center gap-1 rounded-md bg-mz-bg-surface-2 px-2 py-0.5 border border-mz-border-light font-mono"><kbd>F12</kbd> Cobrar</span>
-                        <span class="inline-flex items-center gap-1 rounded-md bg-mz-bg-surface-2 px-2 py-0.5 border border-mz-border-light font-mono"><kbd>Esc</kbd> Limpiar</span>
+                        <span class="inline-flex items-center gap-1 rounded-md bg-mz-bg-surface-2 px-2 py-0.5 border border-mz-border-light font-mono"><kbd>Esc</kbd> Cerrar diálogo</span>
                     </div>
                 </div>
             </section>
@@ -365,7 +380,7 @@
                         <kbd class="rounded-md border border-mz-accent-primary/40 bg-mz-accent-primary/20 px-2 py-0.5 font-mono text-[11px] font-bold text-mz-accent-primary shadow-xs">F12</kbd>
                     </li>
                     <li class="flex items-center justify-between text-mz-text-secondary">
-                        <span>Limpiar / Nueva venta</span>
+                        <span>Cerrar diálogo</span>
                         <kbd class="rounded-md border border-mz-border-light bg-mz-bg-surface-2 px-2 py-0.5 font-mono text-[11px] font-semibold text-white shadow-xs">Esc</kbd>
                     </li>
                     <li class="flex items-center justify-between text-mz-text-secondary">

@@ -133,28 +133,11 @@ class CashMovement extends Model
      */
     public function belongsToClosedCut(): bool
     {
-        if (! $this->sale_id) {
+        if (! $this->happened_at) {
             return false;
         }
 
-        $sale = $this->sale;
-
-        if (! $sale) {
-            return false;
-        }
-
-        $paidAt = $sale->paid_at;
-
-        if (! $paidAt) {
-            return false;
-        }
-
-        $cutDate = $paidAt->toDateString();
-
-        return DailyCut::query()
-            ->whereDate('cut_date', $cutDate)
-            ->where('scope', 'global')
-            ->exists();
+        return DailyCut::isDayClosed($this->happened_at->toDateString());
     }
 
     /**

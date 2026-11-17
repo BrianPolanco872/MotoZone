@@ -260,11 +260,17 @@
                                 @endif
                             </div>
                             @if ($card->galleryUrls() !== [])
-                                <div class="relative aspect-[16/9] w-full overflow-hidden border-t border-slate-100 bg-white p-4 lg:w-72 lg:border-l lg:border-t-0">
+                                <div @class([
+                                    'relative aspect-[16/9] w-full overflow-hidden border-t border-slate-100 bg-white p-4',
+                                    'lg:w-72 lg:border-l lg:border-t-0' => $span === 8,
+                                ])>
                                     <x-carousel :images="$card->galleryUrls()" :alt="$card->title" class="size-full" image-class="size-full object-contain transition-transform duration-300 group-hover:scale-105" data-carousel-effect="depth" />
                                 </div>
                             @else
-                                <span class="flex h-32 w-full items-center justify-center border-t border-slate-100 bg-slate-50 p-4 text-orange-600 lg:w-72 lg:border-l lg:border-t-0">
+                                <span @class([
+                                    'flex h-32 w-full items-center justify-center border-t border-slate-100 bg-slate-50 p-4 text-orange-600',
+                                    'lg:w-72 lg:border-l lg:border-t-0' => $span === 8,
+                                ])>
                                     <x-icon :name="$card->icon ?: 'tag'" class="size-12 transition-transform duration-300 group-hover:scale-110" />
                                 </span>
                             @endif

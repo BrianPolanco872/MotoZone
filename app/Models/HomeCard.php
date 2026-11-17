@@ -112,7 +112,7 @@ class HomeCard extends Model
             return route('home').'#'.$this->familyAnchor();
         }
 
-        if ($this->product) {
+        if ($this->product?->is_active) {
             return route('catalog.show', $this->product);
         }
 

@@ -126,6 +126,29 @@ class AdminUserTest extends TestCase
         $this->actingAs($employee)->get(route('admin.users.index'))->assertForbidden();
     }
 
+    public function test_employee_created_with_only_the_cut_module_can_open_their_cut_but_not_sell(): void
+    {
+        $this->actingAs($this->admin())->post(route('admin.users.store'), [
+            'name' => 'Cajero de corte',
+            'email' => 'corte@motozone.test',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+            'is_active' => '1',
+            'role' => 'empleado',
+            'modules' => ['cut'],
+        ])->assertRedirect(route('admin.users.index'));
+
+        $user = User::query()->where('email', 'corte@motozone.test')->firstOrFail();
+
+        $this->assertTrue($user->can('pos.access'));
+        $this->assertTrue($user->can('pos.cut.own'));
+        $this->assertFalse($user->can('pos.sell'));
+
+        $this->actingAs($user)->get(route('pos.cuts.mine'))->assertOk();
+        $this->postJson(route('pos.sales.store'), ['idempotency_key' => 'cut-only', 'items' => []])
+            ->assertForbidden();
+    }
+
     private function admin(): User
     {
         return User::factory()->create()->assignRole('admin');

@@ -15,8 +15,10 @@ use App\Services\DailyCutService;
 use App\Services\PresenceService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Contracts\View\View;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -120,54 +122,56 @@ class DailyCutController extends Controller
             $employee = $user;
         }
 
-        $cuts = $service->generate($date, $user, $employee);
+        return $service->withDayLock($date->toDateString(), function () use ($request, $service, $date, $user, $employee, $canManageCuts): RedirectResponse {
+            $cuts = $service->generate($date, $user, $employee);
 
-        // Cerrar el día solo corresponde al corte global del admin/encargado.
-        // Un empleado que genera su propio corte no cierra el día ni bloquea a los demás.
-        if (! $employee && $canManageCuts) {
-            $cutKey = DailyCut::keyFor($date->toDateString(), DailyCut::SCOPE_GLOBAL);
-            $globalCut = DailyCut::query()
-                ->where('cut_key', $cutKey)
-                ->orderByDesc('version')
-                ->first();
+            // Cerrar el día solo corresponde al corte global del admin/encargado.
+            // Un empleado que genera su propio corte no cierra el día ni bloquea a los demás.
+            if (! $employee && $canManageCuts) {
+                $cutKey = DailyCut::keyFor($date->toDateString(), DailyCut::SCOPE_GLOBAL);
+                $globalCut = DailyCut::query()
+                    ->where('cut_key', $cutKey)
+                    ->orderByDesc('version')
+                    ->first();
 
-            if ($globalCut) {
-                $globalCut->update(['closed_at' => now()]);
+                if ($globalCut) {
+                    $globalCut->update(['closed_at' => now()]);
 
-                // Al cerrar el día, los movimientos pasan al historial de archivados.
-                $this->cashMovements->archiveDay($date->toDateString(), $user);
+                    // Al cerrar el día, los movimientos pasan al historial de archivados.
+                    $this->cashMovements->archiveDay($date->toDateString(), $user);
+                }
             }
-        }
 
-        $this->audit->log([
-            'action' => AuditLog::ACTION_MAKE_CUT,
-            'entity_type' => 'daily_cut',
-            'entity_id' => null,
-            'before' => null,
-            'after' => [
-                'date' => $date->toDateString(),
-                'scope' => $employee ? DailyCut::SCOPE_EMPLOYEE : DailyCut::SCOPE_GLOBAL,
-                'employee_id' => $employee?->id,
-                'cuts_generated' => $cuts->count(),
-            ],
-        ]);
+            $this->audit->log([
+                'action' => AuditLog::ACTION_MAKE_CUT,
+                'entity_type' => 'daily_cut',
+                'entity_id' => null,
+                'before' => null,
+                'after' => [
+                    'date' => $date->toDateString(),
+                    'scope' => $employee ? DailyCut::SCOPE_EMPLOYEE : DailyCut::SCOPE_GLOBAL,
+                    'employee_id' => $employee?->id,
+                    'cuts_generated' => $cuts->count(),
+                ],
+            ]);
 
-        if ($request->filled('notes') && $employee) {
-            $cutKey = DailyCut::keyFor($date->toDateString(), DailyCut::SCOPE_EMPLOYEE, $employee->id);
-            DailyCut::query()
-                ->where('cut_key', $cutKey)
-                ->orderByDesc('version')
-                ->first()?->update(['notes' => $request->validated('notes')]);
-        }
+            if ($request->filled('notes') && $employee) {
+                $cutKey = DailyCut::keyFor($date->toDateString(), DailyCut::SCOPE_EMPLOYEE, $employee->id);
+                DailyCut::query()
+                    ->where('cut_key', $cutKey)
+                    ->orderByDesc('version')
+                    ->first()?->update(['notes' => $request->validated('notes')]);
+            }
 
-        $label = $employee ? "de {$employee->name}" : 'global';
+            $label = $employee ? "de {$employee->name}" : 'global';
 
-        return redirect()
-            ->route($employee ? 'pos.cuts.mine' : 'pos.cuts.index', [
-                'date' => $date->toDateString(),
-                'employee' => $employee?->id,
-            ])
-            ->with('status', "Corte {$label} del {$date->format('d/m/Y')} generado correctamente (nueva versión).");
+            return redirect()
+                ->route($employee ? 'pos.cuts.mine' : 'pos.cuts.index', [
+                    'date' => $date->toDateString(),
+                    'employee' => $employee?->id,
+                ])
+                ->with('status', "Corte {$label} del {$date->format('d/m/Y')} generado correctamente (nueva versión).");
+        });
     }
 
     /**
@@ -180,66 +184,68 @@ class DailyCutController extends Controller
         $date = Carbon::parse($request->query('date', today()->toDateString()))->toDateString();
         $force = $request->boolean('force', false);
 
-        // ¿Hay otros usuarios con sesión activa (últimos 5 minutos)?
-        $online = $this->presence->onlineUsers();
-        $othersOnline = $online->filter(fn ($u) => $u->id !== $user->id);
+        return $service->withDayLock($date, function () use ($service, $date, $user, $force): RedirectResponse {
+            // ¿Hay otros usuarios con sesión activa (últimos 5 minutos)?
+            $online = $this->presence->onlineUsers();
+            $othersOnline = $online->filter(fn ($u) => $u->id !== $user->id);
 
-        if ($othersOnline->isNotEmpty() && ! $force) {
-            $nombres = $othersOnline->pluck('name')->implode(', ');
+            if ($othersOnline->isNotEmpty() && ! $force) {
+                $nombres = $othersOnline->pluck('name')->implode(', ');
 
-            return back()
-                ->withErrors([
-                    'close_day' => "No se puede cerrar el día: hay cajeros en línea ({$nombres}). Pídele que cierren su corte o usa \"Forzar cierre\".",
-                ])
-                ->withInput();
-        }
+                return back()
+                    ->withErrors([
+                        'close_day' => "No se puede cerrar el día: hay cajeros en línea ({$nombres}). Pídele que cierren su corte o usa \"Forzar cierre\".",
+                    ])
+                    ->withInput();
+            }
 
-        // ¿Todos los empleados con actividad tienen su corte del día?
-        $breakdown = $service->employeeBreakdown($date);
-        $employees = $breakdown['employees'] ?? collect();
-        $pending = $employees->filter(fn ($row) => ! in_array($row['status'], ['done', 'closed'], true));
+            // ¿Todos los empleados con actividad tienen su corte del día?
+            $breakdown = $service->employeeBreakdown($date);
+            $employees = $breakdown['employees'] ?? collect();
+            $pending = $employees->filter(fn ($row) => ! in_array($row['status'], ['done', 'closed'], true));
 
-        if ($pending->isNotEmpty() && ! $force) {
-            $nombres = $pending->pluck('name')->implode(', ');
+            if ($pending->isNotEmpty() && ! $force) {
+                $nombres = $pending->pluck('name')->implode(', ');
 
-            return back()
-                ->withErrors([
-                    'close_day' => "Faltan cortes del día de: {$nombres}. Pídelos que cierren su corte o usa \"Forzar cierre\".",
-                ])
-                ->withInput();
-        }
+                return back()
+                    ->withErrors([
+                        'close_day' => "Faltan cortes del día de: {$nombres}. Pídelos que cierren su corte o usa \"Forzar cierre\".",
+                    ])
+                    ->withInput();
+            }
 
-        $cutKey = DailyCut::keyFor($date, DailyCut::SCOPE_GLOBAL);
-        $latest = DailyCut::query()
-            ->where('cut_key', $cutKey)
-            ->orderByDesc('version')
-            ->first();
+            $cutKey = DailyCut::keyFor($date, DailyCut::SCOPE_GLOBAL);
+            $latest = DailyCut::query()
+                ->where('cut_key', $cutKey)
+                ->orderByDesc('version')
+                ->first();
 
-        if (! $latest) {
-            return back()->withErrors(['close_day' => 'No hay corte global generado para hoy.']);
-        }
+            if (! $latest) {
+                return back()->withErrors(['close_day' => 'No hay corte global generado para hoy.']);
+            }
 
-        $latest->update(['closed_at' => now()]);
+            $latest->update(['closed_at' => now()]);
 
-        // Al cerrar el día, los movimientos pasan al historial de archivados.
-        $archived = $this->cashMovements->archiveDay($date, $user);
+            // Al cerrar el día, los movimientos pasan al historial de archivados.
+            $archived = $this->cashMovements->archiveDay($date, $user);
 
-        $this->audit->log([
-            'action' => 'cerrar_dia',
-            'entity_type' => 'daily_cut',
-            'entity_id' => $latest->id,
-            'before' => null,
-            'after' => [
-                'date' => $date,
-                'scope' => DailyCut::SCOPE_GLOBAL,
-                'force' => $force,
-                'archived_movements' => $archived,
-            ],
-        ]);
+            $this->audit->log([
+                'action' => 'cerrar_dia',
+                'entity_type' => 'daily_cut',
+                'entity_id' => $latest->id,
+                'before' => null,
+                'after' => [
+                    'date' => $date,
+                    'scope' => DailyCut::SCOPE_GLOBAL,
+                    'force' => $force,
+                    'archived_movements' => $archived,
+                ],
+            ]);
 
-        return redirect()
-            ->route('pos.cuts.index', ['date' => $date])
-            ->with('status', "Día {$date} cerrado correctamente.");
+            return redirect()
+                ->route('pos.cuts.index', ['date' => $date])
+                ->with('status', "Día {$date} cerrado correctamente.");
+        });
     }
 
     public function recordCashCounted(Request $request, DailyCut $dailyCut, DailyCutService $service): RedirectResponse
@@ -320,7 +326,7 @@ class DailyCutController extends Controller
         }
 
         $viewData = [
-            'totals' => $snapshot?->totals ?? $service->build($date, $employee),
+            'totals' => $snapshot ? ($snapshot->totals ?? []) : $service->build($date, $employee),
             'date' => $date,
             'employee' => $employee,
             'cut' => $snapshot,
@@ -328,7 +334,9 @@ class DailyCutController extends Controller
         ];
 
         if (! $employee) {
-            $viewData['breakdown'] = $service->employeeBreakdown($date->toDateString());
+            $viewData['breakdown'] = $snapshot
+                ? ($snapshot->totals['employee_breakdown'] ?? null)
+                : $service->employeeBreakdown($date->toDateString());
         }
 
         return view('pos.cuts.print', $viewData);
@@ -340,78 +348,61 @@ class DailyCutController extends Controller
      * Acepta un parámetro explícito `id` (ID del corte) o `date` + `version`
      * para localizar el corte. No filtra por fecha actual automáticamente.
      */
-    public function pdf(Request $request, DailyCutService $service)
+    public function pdf(Request $request, DailyCutService $service): Response|JsonResponse
     {
-        try {
-            $request->validate([
-                'id' => ['nullable', 'integer', 'exists:daily_cuts,id'],
-                'date' => ['nullable', 'date'],
-                'employee' => ['nullable', 'integer', 'exists:users,id'],
-                'version' => ['nullable', 'integer', 'min:1'],
-                'preview' => ['nullable', 'boolean'],
-            ]);
+        $request->validate([
+            'id' => ['nullable', 'integer'],
+            'date' => ['nullable', 'date'],
+            'employee' => ['nullable', 'integer', 'exists:users,id'],
+            'version' => ['nullable', 'integer', 'min:1'],
+            'preview' => ['nullable', 'boolean'],
+        ]);
 
-            $user = $request->user();
-            $canSeeAny = $user->can('pos.sales.day.any');
+        $user = $request->user();
+        $canSeeAny = $user->can('pos.sales.day.any');
 
-            // --- Búsqueda por ID explícito (historial de cortes globales) ---
-            if ($request->filled('id')) {
-                $snapshot = DailyCut::query()
-                    ->where('scope', DailyCut::SCOPE_GLOBAL)
-                    ->where('id', $request->integer('id'))
-                    ->first();
+        if ($request->filled('id')) {
+            $snapshot = DailyCut::query()
+                ->when(! $canSeeAny, fn ($query) => $query
+                    ->where('scope', DailyCut::SCOPE_EMPLOYEE)
+                    ->where('user_id', $user->id))
+                ->whereKey($request->integer('id'))
+                ->first();
+        } else {
+            $date = Carbon::parse($request->query('date', today()->toDateString()));
+            $employee = null;
 
-                if (! $snapshot) {
-                    return response()->json([
-                        'error' => 'Corte no encontrado',
-                        'message' => 'No se encontró un corte global con el ID especificado.',
-                    ], 404);
-                }
-
-                $date = $snapshot->cut_date;
-                $employee = null;
-            } else {
-                // --- Búsqueda por fecha y versión (sin filtrar por fecha actual) ---
-                $date = Carbon::parse($request->query('date', today()->toDateString()));
-                $employee = null;
-
-                if ($request->filled('employee')) {
-                    if (! $canSeeAny) {
-                        $employee = $user;
-                    } else {
-                        $employee = User::withTrashed()->findOrFail($request->integer('employee'));
-                    }
-                } elseif (! $canSeeAny) {
-                    $employee = $user;
-                }
-
-                if ($request->filled('version')) {
-                    $employee = null;
-                    $snapshot = DailyCut::query()
-                        ->where('cut_key', DailyCut::keyFor($date->toDateString(), DailyCut::SCOPE_GLOBAL, null))
-                        ->where('version', $request->integer('version'))
-                        ->first();
-
-                    if (! $snapshot) {
-                        return response()->json([
-                            'error' => 'Corte no encontrado',
-                            'message' => 'No se encontró un corte global para la fecha y versión especificadas.',
-                        ], 404);
-                    }
-                } else {
-                    $snapshot = $service->findLatestCut($date->toDateString(), $employee);
-
-                    if (! $snapshot) {
-                        return response()->json([
-                            'error' => 'Corte no encontrado',
-                            'message' => 'No se encontró un corte para la fecha especificada.',
-                        ], 404);
-                    }
-                }
+            if (! $canSeeAny) {
+                $employee = $user;
+            } elseif ($request->filled('employee')) {
+                $employee = User::withTrashed()->findOrFail($request->integer('employee'));
             }
 
+            if ($request->filled('version')) {
+                $snapshot = DailyCut::query()
+                    ->where('cut_key', DailyCut::keyFor($date->toDateString(), $employee ? DailyCut::SCOPE_EMPLOYEE : DailyCut::SCOPE_GLOBAL, $employee?->id))
+                    ->where('version', $request->integer('version'))
+                    ->first();
+            } else {
+                $snapshot = $service->findLatestCut($date->toDateString(), $employee);
+            }
+        }
+
+        if (! $snapshot) {
+            return response()->json([
+                'error' => 'Corte no encontrado',
+                'message' => 'No se encontró un corte para el alcance, fecha y versión especificados.',
+            ], 404);
+        }
+
+        $date = $snapshot->cut_date;
+        $employee = $snapshot->scope === DailyCut::SCOPE_EMPLOYEE
+            ? User::withTrashed()->findOrFail($snapshot->user_id)
+            : null;
+
+        try {
             $viewData = [
-                'totals' => $snapshot->totals ?? $service->build($date, $employee),
+                'totals' => $snapshot->totals ?? [],
                 'date' => $date,
                 'employee' => $employee,
                 'cut' => $snapshot,
@@ -419,13 +410,13 @@ class DailyCutController extends Controller
             ];
 
             if (! $employee) {
-                $viewData['breakdown'] = $service->employeeBreakdown($date->toDateString());
+                $viewData['breakdown'] = $snapshot->totals['employee_breakdown'] ?? null;
             }
 
             $pdf = Pdf::loadView('pos.cuts.pdf', $viewData)->setPaper('letter', 'portrait');
 
             $fechaStr = $date->format('Ymd');
-            $filename = 'corte_global_'.$fechaStr.'.pdf';
+            $filename = ($employee ? 'corte_empleado_'.$employee->id : 'corte_global').'_'.$fechaStr.'.pdf';
 
             // Contenido binario del PDF
             $pdfContent = $pdf->output();
@@ -445,10 +436,11 @@ class DailyCutController extends Controller
             return response($pdfContent, 200, $headers);
 
         } catch (\Throwable $e) {
-            // Cualquier error inesperado retorna JSON válido en lugar de HTML de error 500
+            report($e);
+
             return response()->json([
                 'error' => 'Error interno del servidor',
-                'message' => $e->getMessage(),
+                'message' => 'No se pudo generar el PDF del corte.',
             ], 500);
         }
     }

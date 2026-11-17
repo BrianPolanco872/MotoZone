@@ -30,62 +30,84 @@
 <body>
 
     @php
-        // Normalización de datos para el PDF simplificado
-        $cutDate = $date ? $date->format('d/m/Y') : date('d/m/Y');
-
-        $employees = collect($breakdown['employees'] ?? [])->map(function ($e) {
-            return (object) [
-                'name' => $e['name'] ?? '—',
-                'total_sales' => (float) ($e['sales'] ?? 0),
-                'cash_sales' => (float) ($e['cash_in'] ?? 0),
-                'expenses' => (float) ($e['cash_out'] ?? 0),
-            ];
-        });
+        $cutDate = $date->format('d/m/Y');
+        $employees = $breakdown['employees'] ?? [];
+        $cashBoxPanel = $totals['cash_box_panel'] ?? [];
+        $warning = $totals['reconciliation']['warning'] ?? $breakdown['total']['warning'] ?? null;
+        $summary = [
+            'sales' => $totals['totals']['sales'] ?? $totals['sales']['total'] ?? 0,
+            'cash_in' => $cashBoxPanel['cash_in_total'] ?? 0,
+            'cash_out' => $cashBoxPanel['cash_out'] ?? 0,
+            'should_have' => $cashBoxPanel['subtotal'] ?? $totals['should_have'] ?? $breakdown['total']['should_have'] ?? 0,
+            'difference' => $totals['reconciliation']['difference'] ?? 0,
+        ];
+        $money = fn ($value) => '$'.number_format((float) $value, 2);
     @endphp
 
     <div class="header">
         <div class="header-left">
-            <h1 class="title">Resumen de Cortes por Empleado</h1>
-            <div class="subtitle">Corte diario consolidado — {{ $cutDate }}</div>
+            <h1 class="title">{{ $employee ? 'Corte por Empleado' : 'Resumen de Cortes por Empleado' }}</h1>
+            <div class="subtitle">{{ $employee ? $employee->name : 'Corte diario consolidado' }} — {{ $cutDate }}</div>
         </div>
         <div class="header-right">
-            <div><strong>Generado:</strong> {{ date('d/m/Y H:i') }}</div>
+            <div><strong>Versión {{ $cut->version }}</strong></div>
+            <div><strong>Generado:</strong> {{ $cut->generated_at?->format('d/m/Y H:i') ?? '—' }}</div>
         </div>
     </div>
+
+    @if ($warning)
+        <p class="text-red">{{ $warning }}</p>
+    @endif
+    @if (($totals['sales']['total_mixed'] ?? 0) > 0)
+        <p>Pagos mixtos sin desglose: {{ $money($totals['sales']['total_mixed']) }}</p>
+    @endif
+
+    @if (! $employee && ! isset($breakdown))
+        <p>Desglose por empleado no disponible en este corte antiguo. Se muestran únicamente los totales guardados.</p>
+    @endif
 
     <table>
         <thead>
             <tr>
-                <th style="width: 30%;">EMPLEADO</th>
-                <th class="text-right" style="width: 17.5%;">VENTAS TOTALES</th>
-                <th class="text-right" style="width: 17.5%;">INGRESO DE DINERO</th>
-                <th class="text-right" style="width: 17.5%;">SALIDA</th>
-                <th class="text-right" style="width: 17.5%;">TOTAL EMPLEADO</th>
+                <th style="width: 25%;">EMPLEADO</th>
+                <th class="text-right" style="width: 15%;">VENTAS TOTALES</th>
+                <th class="text-right" style="width: 15%;">ENTRADAS EFECTIVO</th>
+                <th class="text-right" style="width: 15%;">SALIDAS EFECTIVO</th>
+                <th class="text-right" style="width: 15%;">DEBE HABER EN CAJA</th>
+                <th class="text-right" style="width: 15%;">DIFERENCIA</th>
             </tr>
         </thead>
         <tbody>
             @foreach($employees as $emp)
             <tr>
-                <td class="font-bold">{{ $emp->name }}</td>
-                <td class="text-right">${{ number_format($emp->total_sales, 2) }}</td>
-                <td class="text-right text-green">${{ number_format($emp->cash_sales, 2) }}</td>
-                <td class="text-right text-red">-${{ number_format(abs($emp->expenses), 2) }}</td>
-                <td class="text-right font-bold">${{ number_format(($emp->total_sales + $emp->cash_sales) - abs($emp->expenses), 2) }}</td>
+                <td class="font-bold">
+                    {{ $emp['name'] }}
+                    @if (! empty($emp['warning']))
+                        <br><span class="text-red">{{ $emp['warning'] }}</span>
+                    @endif
+                </td>
+                <td class="text-right">{{ $money($emp['sales'] ?? 0) }}</td>
+                <td class="text-right text-green">{{ $money($emp['cash_in'] ?? 0) }}</td>
+                <td class="text-right text-red">−{{ $money($emp['cash_out'] ?? 0) }}</td>
+                <td class="text-right font-bold">{{ $money($emp['should_have'] ?? 0) }}</td>
+                <td class="text-right">{{ $money($emp['difference'] ?? 0) }}</td>
             </tr>
             @endforeach
 
             <!-- TOTAL DE TODOS JUNTOS AL FINAL -->
             <tr class="total-row">
-                <td class="font-bold">TOTAL DE TODOS JUNTOS</td>
-                <td class="text-right">${{ number_format($employees->sum('total_sales'), 2) }}</td>
-                <td class="text-right text-green">${{ number_format($employees->sum('cash_sales'), 2) }}</td>
-                <td class="text-right text-red">-${{ number_format(abs($employees->sum('expenses')), 2) }}</td>
+                <td class="font-bold">{{ $employee ? 'TOTAL EMPLEADO' : 'TOTAL DE TODOS JUNTOS' }}</td>
+                <td class="text-right">{{ $money($summary['sales']) }}</td>
+                <td class="text-right text-green">{{ $money($summary['cash_in']) }}</td>
+                <td class="text-right text-red">−{{ $money($summary['cash_out']) }}</td>
                 <td class="text-right font-bold" style="color: #ea580c;">
-                    ${{ number_format(($employees->sum('total_sales') + $employees->sum('cash_sales')) - abs($employees->sum('expenses')), 2) }}
+                    {{ $money($summary['should_have']) }}
                 </td>
+                <td class="text-right">{{ $money($summary['difference']) }}</td>
             </tr>
         </tbody>
     </table>
+    <p class="subtitle">Ventas totales incluye otros medios de pago; no se suma al efectivo de caja. Diferencia: caja menos computadora.</p>
 
 </body>
 </html>

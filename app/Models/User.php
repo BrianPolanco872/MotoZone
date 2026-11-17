@@ -165,6 +165,7 @@ class User extends Authenticatable
             'label' => 'Corte del día',
             'description' => 'Generar y ver su propio corte del día.',
             'permissions' => [
+                'pos.access',
                 'pos.cut.own',
                 'pos.sales.day.own',
             ],

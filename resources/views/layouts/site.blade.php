@@ -366,11 +366,27 @@
         </div>
     </footer>
 
-    {{-- Burbuja flotante de WhatsApp --}}
-    @if ($homeWhatsappUrl)
-        <a href="{{ $homeWhatsappUrl }}" target="_blank" rel="noopener noreferrer" class="fixed bottom-5 right-5 z-40 flex size-12 items-center justify-center rounded-full bg-[#25D366] text-white shadow-lg shadow-[#25D366]/30 transition hover:bg-[#20bd5a] focus:outline-none focus:ring-2 focus:ring-[#25D366] focus:ring-offset-2" aria-label="Escríbenos por WhatsApp">
-            <x-icon name="chat" class="size-6" />
-        </a>
+    {{-- Burbujas flotantes de contacto (solo en la portada y si están activadas) --}}
+    @if ($isHomeStorefront)
+        @php
+            $showWhatsappBubble = $homePage->enabled('whatsapp_bubble') && $homeWhatsappUrl;
+            $showEmailBubble = $homePage->enabled('email_bubble') && $homeEmailUrl;
+        @endphp
+
+        @if ($showWhatsappBubble || $showEmailBubble)
+            <div class="fixed bottom-5 right-5 z-40 flex flex-col gap-3">
+                @if ($showWhatsappBubble)
+                    <a href="{{ $homeWhatsappUrl }}" target="_blank" rel="noopener noreferrer" class="flex size-12 items-center justify-center rounded-full bg-[#25D366] text-white shadow-lg shadow-[#25D366]/30 transition hover:bg-[#20bd5a] focus:outline-none focus:ring-2 focus:ring-[#25D366] focus:ring-offset-2" aria-label="Chatear en WhatsApp">
+                        <x-icon name="chat" class="size-6" />
+                    </a>
+                @endif
+                @if ($showEmailBubble)
+                    <a href="{{ $homeEmailUrl }}" class="flex size-12 items-center justify-center rounded-full bg-orange-600 text-white shadow-lg shadow-orange-600/30 transition hover:bg-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-600 focus:ring-offset-2" aria-label="Escríbenos por correo">
+                        <x-icon name="mail" class="size-6" />
+                    </a>
+                @endif
+            </div>
+        @endif
     @endif
 </body>
 </html>

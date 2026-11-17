@@ -260,6 +260,20 @@ class HomeCardTest extends TestCase
             ->assertSee(route('catalog.show', $product), false);
     }
 
+    public function test_card_linked_to_a_deactivated_product_stops_linking_to_its_page(): void
+    {
+        $product = Product::factory()->create(['is_active' => true]);
+        $card = HomeCard::factory()->create(['title' => 'Refacción descontinuada', 'product_id' => $product->id]);
+
+        $this->assertSame(route('catalog.show', $product), $card->destination());
+
+        $product->update(['is_active' => false]);
+
+        $this->assertNull($card->fresh()->destination());
+        $this->get(route('home'))->assertOk()
+            ->assertDontSee(route('catalog.show', $product), false);
+    }
+
     public function test_only_admins_can_manage_cards(): void
     {
         $card = HomeCard::factory()->create();

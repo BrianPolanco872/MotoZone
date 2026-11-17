@@ -35,6 +35,10 @@
         </p>
     </div>
 @else
+    @if ($rows->contains(fn ($row) => ! empty($row['has_unallocated_mixed'])))
+        <p role="alert" class="p-4 text-sm text-mz-warning">Hay pagos mixtos sin desglose de efectivo. El efectivo de esos pagos no está determinado.</p>
+    @endif
+
     {{-- DESGLOSE DE TODOS SUMADO: Tarjetas de métricas consolidadas para el Admin --}}
     @if ($canSeeAny)
         <div class="p-4 sm:p-5 border-b border-mz-border bg-mz-bg-surface-2/20">
@@ -66,7 +70,7 @@
                 {{-- Tarjetas y Transferencias --}}
                 <div class="rounded-xl border border-mz-border-light/60 bg-mz-bg-surface p-4 shadow-sm flex items-center justify-between">
                     <div>
-                        <p class="text-[11px] font-bold uppercase tracking-wider text-mz-text-muted">Cobros Electrónicos</p>
+                        <p class="text-[11px] font-bold uppercase tracking-wider text-mz-text-muted">Ventas Electrónicas</p>
                         <p class="mt-1 font-display text-2xl font-black tabular-nums text-mz-accent-primary">{{ $money($sumOtherPayments) }}</p>
                         <p class="text-[11px] text-mz-text-muted mt-0.5">Tarjeta y transferencias directas</p>
                     </div>
@@ -131,8 +135,7 @@
                         $isClosed = ! empty($row['is_day_closed']) || ($latestCut?->isClosed() ?? false);
                         $difference = $latestCut?->cash_counted !== null ? (float) $latestCut->difference : null;
                         $isSelf = $row['id'] === auth()->id();
-                        // Efectivo en caja = ventas en efectivo + ingresos de efectivo − salidas de efectivo.
-                        $cashInDrawer = (float) $row['cash'] + (float) ($row['cash_in'] ?? 0) - (float) ($row['cash_out'] ?? 0);
+                        $cashInDrawer = (float) ($row['should_have'] ?? 0);
                     @endphp
                     <tr class="group transition-colors duration-150 hover:bg-mz-bg-surface-2/40">
                         {{-- Empleado --}}
@@ -275,7 +278,7 @@
                         </td>
                         <td class="px-4 py-4 text-center font-display text-base font-black tabular-nums text-white">{{ $sumTickets }}</td>
                         <td class="px-4 py-4 text-right font-display text-lg font-black tabular-nums text-white">{{ $money($sumSales) }}</td>
-                        <td class="px-4 py-4 text-right font-display text-base font-bold tabular-nums text-mz-success">{{ $money($sumCash + $sumCashIn - $sumCashOut) }}</td>
+                        <td class="px-4 py-4 text-right font-display text-base font-bold tabular-nums text-mz-success">{{ $money($sumShouldHave) }}</td>
                         <td class="px-4 py-4 text-right font-display text-base font-semibold tabular-nums text-mz-text-muted">{{ $money($sumOtherPayments) }}</td>
                         <td class="px-4 py-4 text-right text-[11px] text-mz-text-muted font-medium">Arqueo global</td>
                         @if ($canViewCut)

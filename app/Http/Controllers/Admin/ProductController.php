@@ -5,15 +5,17 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\ProductRequest;
 use App\Models\Product;
-use App\Models\Sale;
-use App\Models\SaleItem;
 use App\Models\StockMovement;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class ProductController extends Controller
 {
@@ -85,85 +87,198 @@ class ProductController extends Controller
             ->with('status', 'Se actualizaron los precios e IVA de todos los productos con costo capturado.');
     }
 
-    public function clearInventory(): RedirectResponse
+    public function clearInventory(Request $request): RedirectResponse
     {
-        // Primero eliminamos movimientos y otros registros dependientes para evitar errores de integridad
-        StockMovement::query()->delete();
-        SaleItem::query()->delete();
-        Sale::query()->delete();
+        DB::transaction(function () use ($request): void {
+            $products = Product::query()
+                ->where('stock', '!=', 0)
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get();
 
-        // Ahora borramos todos los productos
-        Product::query()->delete();
+            foreach ($products as $product) {
+                $stockBefore = $product->stock;
+                $product->update(['stock' => 0]);
+
+                StockMovement::create([
+                    'product_id' => $product->id,
+                    'user_id' => $request->user()->id,
+                    'type' => StockMovement::TYPE_ADJUSTMENT,
+                    'quantity' => -$stockBefore,
+                    'stock_before' => $stockBefore,
+                    'stock_after' => 0,
+                    'note' => 'Limpieza de inventario: existencias puestas en cero.',
+                ]);
+            }
+        });
 
         return redirect()
             ->route('admin.products.index')
-            ->with('status', 'Todo el catálogo de productos y el historial asociado han sido eliminados.');
+            ->with('status', 'Todas las existencias se pusieron en cero. El catálogo y el historial se conservaron.');
     }
 
     public function import(Request $request): RedirectResponse
     {
         $request->validate([
-            'import_file' => ['required', 'file', 'mimes:csv,txt,xlsx,xls'],
+            'import_file' => ['required', 'file', 'mimes:csv,txt'],
         ]);
 
-        $path = $request->file('import_file')->getRealPath();
+        $handle = fopen($request->file('import_file')->getRealPath(), 'r');
         $header = null;
+        $rows = [];
+        $line = 1;
+
+        while (($row = fgetcsv($handle, 0, ',')) !== false) {
+            if ($header === null) {
+                $header = array_map(
+                    fn ($name): string => ltrim(strtolower(trim((string) $name)), "\u{FEFF}"),
+                    $row,
+                );
+
+                continue;
+            }
+
+            $line++;
+            $rows[] = ['line' => $line, 'data' => $this->importRow($header, $row)];
+        }
+
+        fclose($handle);
+
+        $this->assertImportHeader($header ?? []);
+
         $created = 0;
         $skipped = 0;
 
-        if (($handle = fopen($path, 'r')) !== false) {
-            while (($row = fgetcsv($handle, 0, ',')) !== false) {
-                if (! $header) {
-                    $header = $row;
+        DB::transaction(function () use ($rows, &$created, &$skipped): void {
+            foreach ($rows as $row) {
+                $sku = (string) ($row['data']['sku'] ?? $row['data']['codigo'] ?? '');
 
-                    continue;
-                }
-
-                $mappedData = [];
-                foreach ($header as $index => $colName) {
-                    $mappedData[strtolower(trim($colName))] = $row[$index] ?? null;
-                }
-
-                $sku = trim($mappedData['sku'] ?? $mappedData['codigo'] ?? '');
-
-                if ($sku === '') {
+                // Política vigente: se omiten las filas sin SKU o con un SKU ya registrado.
+                if ($sku === '' || Product::query()->where('sku', $sku)->exists()) {
                     $skipped++;
 
                     continue;
                 }
 
-                $exists = Product::query()->where('sku', $sku)->exists();
-                if ($exists) {
-                    $skipped++;
+                $attributes = $this->importAttributes($row['data']);
+                $validator = Validator::make($attributes, $this->importRules());
 
-                    continue;
+                if ($validator->fails()) {
+                    throw ValidationException::withMessages([
+                        'import_file' => array_map(
+                            fn (string $message): string => "Fila {$row['line']}: {$message}",
+                            $validator->errors()->all(),
+                        ),
+                    ]);
                 }
+
+                $validated = $validator->validated();
 
                 Product::create([
-                    'name' => trim($mappedData['nombre'] ?? $mappedData['producto'] ?? $mappedData['descripcion'] ?? ''),
+                    ...$validated,
                     'sku' => $sku,
-                    'barcode' => trim($mappedData['codigo_barras'] ?? $mappedData['barcode'] ?? null),
-                    'brand' => trim($mappedData['marca'] ?? $mappedData['brand'] ?? ''),
-                    'description' => trim($mappedData['descripcion'] ?? $mappedData['descripción'] ?? null),
-                    'cost' => (float) ($mappedData['costo'] ?? $mappedData['cost'] ?? $mappedData['precio costo'] ?? 0),
-                    'price' => (float) ($mappedData['precio_venta'] ?? $mappedData['price'] ?? $mappedData['precio venta'] ?? 0),
-                    'wholesale_price' => (float) ($mappedData['precio_mayoreo'] ?? $mappedData['wholesale_price'] ?? $mappedData['precio mayoreo'] ?? 0),
-                    'stock' => (int) ($mappedData['stock'] ?? $mappedData['inventario'] ?? 0),
-                    'min_stock' => (int) ($mappedData['min_stock'] ?? $mappedData['inventario minio'] ?? $mappedData['inventario mínimo'] ?? 0),
-                    'tax_rate' => round(((float) ($mappedData['iva'] ?? $mappedData['tax_rate'] ?? 16)) / 100, 4),
+                    'tax_rate' => round(((float) $validated['tax_rate']) / 100, 4),
                     'track_inventory' => true,
-                    'slug' => Str::slug(($sku ?: uniqid()).'-'.uniqid()),
+                    'slug' => Str::slug($sku).'-'.uniqid(),
                     'is_active' => true,
                 ]);
 
                 $created++;
             }
-            fclose($handle);
-        }
+        });
 
         return redirect()
             ->route('admin.products.index')
             ->with('status', "Importación completada: {$created} productos creados, {$skipped} omitidos (duplicados o sin SKU).");
+    }
+
+    /**
+     * @param  list<string>  $header
+     * @param  array<int, string|null>  $values
+     * @return array<string, string|null>
+     */
+    private function importRow(array $header, array $values): array
+    {
+        $data = [];
+
+        foreach ($header as $index => $column) {
+            $value = $values[$index] ?? null;
+            $value = is_string($value) ? trim($value) : $value;
+            $data[$column] = $value === '' ? null : $value;
+        }
+
+        return $data;
+    }
+
+    /**
+     * @param  list<string>  $header
+     */
+    private function assertImportHeader(array $header): void
+    {
+        $hasSku = in_array('sku', $header, true) || in_array('codigo', $header, true);
+        $hasName = array_intersect(['nombre', 'producto', 'descripcion'], $header) !== [];
+
+        if (! $hasSku || ! $hasName) {
+            throw ValidationException::withMessages([
+                'import_file' => 'El encabezado del archivo debe incluir las columnas «sku» (o «codigo») y «nombre» (o «producto»).',
+            ]);
+        }
+    }
+
+    /**
+     * @param  array<string, string|null>  $data
+     * @return array<string, mixed>
+     */
+    private function importAttributes(array $data): array
+    {
+        return [
+            'name' => $data['nombre'] ?? $data['producto'] ?? $data['descripcion'] ?? null,
+            'barcode' => $data['codigo_barras'] ?? $data['barcode'] ?? null,
+            'barcode2' => $data['codigo_barras_2'] ?? $data['barcode2'] ?? null,
+            'brand' => $data['marca'] ?? $data['brand'] ?? null,
+            'description' => $data['descripcion'] ?? null,
+            'price' => $data['precio_venta'] ?? $data['price'] ?? $data['precio venta'] ?? null,
+            'cost' => $data['costo'] ?? $data['cost'] ?? $data['precio costo'] ?? 0,
+            'wholesale_price' => $data['precio_mayoreo'] ?? $data['wholesale_price'] ?? $data['precio mayoreo'] ?? null,
+            'stock' => $data['stock'] ?? $data['inventario'] ?? 0,
+            'min_stock' => $data['min_stock'] ?? $data['inventario minio'] ?? $data['inventario mínimo'] ?? 0,
+            'tax_rate' => $data['iva'] ?? $data['tax_rate'] ?? 16,
+        ];
+    }
+
+    /**
+     * Mismas reglas que valida el alta manual de productos.
+     *
+     * @return array<string, array<int, mixed>>
+     */
+    private function importRules(): array
+    {
+        return [
+            'name' => ['required', 'string', 'max:255'],
+            'brand' => ['required', 'string', 'max:255'],
+            'description' => ['required', 'string'],
+            'barcode' => [
+                'nullable',
+                'string',
+                'max:255',
+                Rule::unique('products', 'barcode'),
+                Rule::unique('products', 'barcode2'),
+            ],
+            'barcode2' => [
+                'nullable',
+                'string',
+                'max:255',
+                'different:barcode',
+                Rule::unique('products', 'barcode2'),
+                Rule::unique('products', 'barcode'),
+            ],
+            'price' => ['required', 'numeric', 'min:0'],
+            'cost' => ['nullable', 'numeric', 'min:0'],
+            'wholesale_price' => ['nullable', 'numeric', 'min:0'],
+            'stock' => ['required', 'integer', 'min:0'],
+            'min_stock' => ['nullable', 'integer', 'min:0'],
+            'tax_rate' => ['required', 'numeric', 'between:0,100'],
+        ];
     }
 
     public function create(): View

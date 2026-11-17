@@ -10,12 +10,38 @@ use App\Models\SaleReturn;
 use App\Models\SupplierPayment;
 use App\Models\User;
 use Carbon\CarbonInterface;
+use Closure;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class DailyCutService
 {
+    /**
+     * Hold the database lock row until the business transaction commits, even if its lease expires.
+     */
+    public function withDayLock(string $date, Closure $callback): mixed
+    {
+        $store = Cache::store('database')->getStore();
+
+        return $store->getLockConnection()->transaction(function () use ($store, $date, $callback): mixed {
+            $lock = $store->lock('pos-day:'.Carbon::parse($date)->toDateString(), 120);
+
+            if (! $lock->get()) {
+                throw ValidationException::withMessages(['day' => 'Este día se está procesando. Inténtalo de nuevo.']);
+            }
+
+            try {
+                return DB::transaction($callback);
+            } finally {
+                $lock->release();
+            }
+        });
+    }
+
     /**
      * Build the daily cut totals for the whole business or one employee.
      *
@@ -30,12 +56,6 @@ class DailyCutService
         $start = Carbon::parse($date)->startOfDay();
         $end = $start->copy()->endOfDay();
 
-        $scopeFilter = function ($query) use ($employee): void {
-            if ($employee) {
-                $query->where('user_id', $employee->id);
-            }
-        };
-
         // ---------- Ventas cobradas (solo efectivo cuenta para dinero en caja) ----------
         $sales = Sale::query()
             ->paid()
@@ -45,11 +65,13 @@ class DailyCutService
             ->get();
 
         $cashSales = $sales->where('payment_method', 'cash');
-        $nonCashSales = $sales->where('payment_method', '!=', 'cash');
+        $nonCashSales = $sales->whereIn('payment_method', ['card', 'transfer']);
+        $mixedSales = $sales->where('payment_method', 'mixed');
 
         $salesTotalCash = round((float) $cashSales->sum(fn (Sale $sale): float => (float) $sale->total), 2);
         $salesTotalNonCash = round((float) $nonCashSales->sum(fn (Sale $sale): float => (float) $sale->total), 2);
-        $salesTotalAll = round($salesTotalCash + $salesTotalNonCash, 2);
+        $salesTotalMixed = round((float) $mixedSales->sum('total'), 2);
+        $salesTotalAll = round($salesTotalCash + $salesTotalNonCash + $salesTotalMixed, 2);
 
         $salesSubtotal = round((float) $sales->sum(fn (Sale $sale): float => (float) $sale->subtotal), 2);
         $salesTax = round((float) $sales->sum(fn (Sale $sale): float => (float) $sale->tax_total), 2);
@@ -58,6 +80,7 @@ class DailyCutService
         $cash = CashMovement::query()
             ->whereBetween('happened_at', [$start, $end])
             ->when($employee, fn ($query) => $query->where('user_id', $employee->id))
+            ->with('sale')
             ->get();
 
         $initial = $this->sumMovement($cash, 'in', 'initial');
@@ -84,12 +107,11 @@ class DailyCutService
         $customerPaymentsNonCash = round((float) $customerPaymentsAll->where('method', '!=', 'cash')->sum('amount'), 2);
         $customerPaymentsTotal = round($customerPaymentsCash + $customerPaymentsNonCash, 2);
 
-        // Los pagos a proveedores son egreso sin importar el método.
         $supplierPaymentsTotal = round((float) $supplierPaymentsAll->sum('amount'), 2);
 
         // Mantener la variable legacy para no romper código existente que la use.
         $customerPayments = $customerPaymentsCash;
-        $supplierPayments = $supplierPaymentsTotal;
+        $supplierPayments = round((float) $supplierPaymentsAll->where('method', 'cash')->sum('amount'), 2);
 
         // ---------- Devoluciones aprobadas ----------
         $returns = SaleReturn::query()
@@ -105,11 +127,21 @@ class DailyCutService
         // Ingresos: dinero inicial + cambio + otros ingresos + pagos de clientes
         $computerCashIn = round($initial + $change + $otherIn, 2);
         // Ventas en efectivo cobradas
-        $computerCashSales = $salesTotalCash;
+        $computerCashSales = $employee
+            ? round((float) Sale::query()->paid()->where('payment_method', 'cash')
+                ->whereBetween('paid_at', [$start, $end])
+                ->whereHas('cashMovements', fn ($query) => $query
+                    ->where('type', 'in')->where('category', 'sale')->where('user_id', $employee->id)
+                    ->whereBetween('happened_at', [$start, $end]))
+                ->sum('total'), 2)
+            : $salesTotalCash;
         // Pagos de clientes en efectivo (manual category customer_payment)
         $computerCustomerPayments = $customerPayments;
         // Egresos: devoluciones + salidas (proveedores, gastos, retiros, otros)
-        $computerRefunds = $refunds;
+        $computerRefunds = $employee
+            ? round((float) SaleReturn::query()->where('status', SaleReturn::STATUS_APPROVED)
+                ->where('approved_by', $employee->id)->whereBetween('approved_at', [$start, $end])->sum('total'), 2)
+            : $refunds;
         $computerCashOut = round($supplierPayments + $expenses + $withdrawals + $otherOut, 2);
 
         $computerSubtotal = round(
@@ -121,7 +153,11 @@ class DailyCutService
         // Incluye la categoría automática 'sale' (ventas en efectivo) y 'refund' (devoluciones)
         $cashBoxIn = round($initial + $change + $otherIn, 2);
         // Ventas en efectivo registradas como movimiento de caja (categoría 'sale')
-        $boxSalesMovements = $this->sumMovement($cash, 'in', 'sale');
+        $boxSalesMovements = $this->sumMovement(
+            $cash->filter(fn (CashMovement $movement): bool => $movement->sale?->isPaid()
+                && $movement->sale->payment_method === 'cash'),
+            'in', 'sale',
+        );
         // Pagos de clientes
         $boxCustomerPayments = $customerPayments;
         // Egresos: devoluciones (categoría 'refund') + salidas manuales
@@ -182,7 +218,12 @@ class DailyCutService
 
         // ---------- Conciliación ----------
         $difference = round($cashBoxSubtotal - $computerSubtotal, 2);
-        $isReconciled = abs($difference) < 0.005;
+        $hasUnallocatedMixed = $mixedSales->isNotEmpty() || $cash->where('type', 'in')->where('category', 'sale')
+            ->contains(fn (CashMovement $movement): bool => $movement->sale?->payment_method === 'mixed');
+        $warning = $hasUnallocatedMixed
+            ? 'Hay pagos mixtos sin desglose de efectivo. El efectivo de esos pagos no está determinado.'
+            : null;
+        $isReconciled = abs($difference) < 0.005 && ! $hasUnallocatedMixed;
 
         return [
             'date' => $start->toDateString(),
@@ -194,6 +235,7 @@ class DailyCutService
                 'tax' => $salesTax,
                 'total_cash' => $salesTotalCash,
                 'total_non_cash' => $salesTotalNonCash,
+                'total_mixed' => $salesTotalMixed,
                 'total' => $salesTotalAll,
             ],
             'computer_panel' => [
@@ -227,6 +269,8 @@ class DailyCutService
                 'cash_box_subtotal' => $cashBoxSubtotal,
                 'difference' => $difference,
                 'is_reconciled' => $isReconciled,
+                'has_unallocated_mixed' => $hasUnallocatedMixed,
+                'warning' => $warning,
             ],
             'cash_out' => [
                 'suppliers' => $supplierPayments,
@@ -265,7 +309,7 @@ class DailyCutService
             'cash_counted' => $amount,
             'cash_counted_at' => now(),
             'difference' => $difference,
-            'is_reconciled' => abs($difference) < 0.005,
+            'is_reconciled' => abs($difference) < 0.005 && empty($totals['reconciliation']['has_unallocated_mixed']),
             'reason' => trim($reason) ?: $cut->reason,
         ]);
 
@@ -300,12 +344,24 @@ class DailyCutService
             return collect([$cut]);
         }
 
+        $globalTotals = $this->build($start);
+        $breakdown = $this->employeeBreakdown($cutDate);
+        $globalTotals['employee_breakdown'] = [
+            'employees' => $breakdown['employees']->map(function (array $row): array {
+                unset($row['latest_cut']);
+                $row['closed_at'] = $row['closed_at']?->toIso8601String();
+
+                return $row;
+            })->values()->all(),
+            'total' => $breakdown['total'],
+        ];
+
         // Global cut (new version)
         $this->storeVersion(
             $cutDate,
             DailyCut::SCOPE_GLOBAL,
             null,
-            $this->build($start),
+            $globalTotals,
             $generatedBy,
             notes: 'Corte global generado el '.$start->format('d/m/Y')
         );
@@ -323,14 +379,17 @@ class DailyCutService
                     ->pluck('user_id')
             );
 
-        $returnUserIds = SaleReturn::query()
+        $approvedReturns = SaleReturn::query()
             ->where('status', SaleReturn::STATUS_APPROVED)
             ->whereBetween('approved_at', [$start, $end])
             ->with('sale')
-            ->get()
-            ->pluck('sale.user_id');
+            ->get();
 
-        $employeeIds = $employeeIds->merge($returnUserIds)->filter()->unique()->values();
+        $employeeIds = $employeeIds->merge($approvedReturns->pluck('sale.user_id'))
+            ->merge($approvedReturns->pluck('approved_by'))
+            ->merge(CustomerPayment::query()->whereBetween('happened_at', [$start, $end])->pluck('user_id'))
+            ->merge(SupplierPayment::query()->whereBetween('happened_at', [$start, $end])->pluck('user_id'))
+            ->filter()->unique()->values();
 
         foreach ($employeeIds as $employeeId) {
             $employee = User::withTrashed()->find($employeeId);
@@ -568,6 +627,10 @@ class DailyCutService
                     ->pluck('user_id')
             )
             ->merge($allRoles)
+            ->merge(CustomerPayment::query()->whereBetween('happened_at', [$start, $end])->pluck('user_id'))
+            ->merge(SupplierPayment::query()->whereBetween('happened_at', [$start, $end])->pluck('user_id'))
+            ->merge(SaleReturn::query()->where('status', SaleReturn::STATUS_APPROVED)
+                ->whereBetween('approved_at', [$start, $end])->pluck('approved_by'))
             ->filter()
             ->unique()
             ->values();
@@ -585,8 +648,8 @@ class DailyCutService
             $isClosed = $latest ? $latest->isClosed() : false;
 
             $totalSales = (float) ($totals['sales']['total'] ?? 0);
-            $cashSales = (float) ($totals['sales']['total_cash'] ?? 0);
-            $otherPayments = max(0, round($totalSales - $cashSales, 2));
+            $cashSales = (float) ($totals['cash_box_panel']['sales_movements'] ?? 0);
+            $otherPayments = (float) ($totals['sales']['total_non_cash'] ?? 0);
 
             return [
                 'id' => $employee->id,
@@ -600,10 +663,15 @@ class DailyCutService
                 'sales' => $totalSales,
                 'cash' => $cashSales,
                 'other_payments' => $otherPayments,
-                'refunds' => (float) ($totals['returns']['total'] ?? 0),
+                'refunds' => (float) ($totals['cash_box_panel']['refunds'] ?? 0),
                 'cash_in' => (float) ($totals['computer_panel']['cash_in_total'] ?? 0),
                 'cash_out' => (float) ($totals['cash_out']['total'] ?? 0),
-                'should_have' => (float) ($totals['computer_panel']['subtotal'] ?? 0),
+                'customer_payments' => (float) ($totals['cash_box_panel']['customer_payments'] ?? 0),
+                'should_have' => (float) ($totals['cash_box_panel']['subtotal'] ?? 0),
+                'difference' => (float) ($totals['reconciliation']['difference'] ?? 0),
+                'is_reconciled' => (bool) ($totals['reconciliation']['is_reconciled'] ?? false),
+                'has_unallocated_mixed' => (bool) ($totals['reconciliation']['has_unallocated_mixed'] ?? false),
+                'warning' => $totals['reconciliation']['warning'] ?? null,
             ];
         });
 
@@ -613,8 +681,8 @@ class DailyCutService
         $globalComputer = $global['computer_panel'] ?? [];
 
         $globalSalesTotal = (float) ($globalSales['total'] ?? ($globalTotals['sales'] ?? 0));
-        $globalCashSales = (float) ($globalSales['total_cash'] ?? 0);
-        $globalOtherPayments = max(0, round($globalSalesTotal - $globalCashSales, 2));
+        $globalCashSales = (float) ($global['cash_box_panel']['sales_movements'] ?? 0);
+        $globalOtherPayments = (float) ($globalSales['total_non_cash'] ?? 0);
 
         return [
             'employees' => $rows,
@@ -623,12 +691,17 @@ class DailyCutService
                 'sales' => $globalSalesTotal,
                 'cash' => $globalCashSales,
                 'other_payments' => $globalOtherPayments,
-                'refunds' => (float) ($globalTotals['refunds'] ?? 0),
+                'refunds' => (float) ($global['cash_box_panel']['refunds'] ?? 0),
                 'net_sales' => (float) ($globalTotals['net_sales'] ?? 0),
                 'profit' => (float) ($globalTotals['profit'] ?? 0),
                 'cash_in' => (float) ($globalComputer['cash_in_total'] ?? 0),
                 'cash_out' => (float) ($globalComputer['cash_out'] ?? 0),
-                'should_have' => (float) ($globalComputer['subtotal'] ?? 0),
+                'customer_payments' => (float) ($global['cash_box_panel']['customer_payments'] ?? 0),
+                'should_have' => (float) ($global['cash_box_panel']['subtotal'] ?? 0),
+                'difference' => (float) ($global['reconciliation']['difference'] ?? 0),
+                'is_reconciled' => (bool) ($global['reconciliation']['is_reconciled'] ?? false),
+                'has_unallocated_mixed' => (bool) ($global['reconciliation']['has_unallocated_mixed'] ?? false),
+                'warning' => $global['reconciliation']['warning'] ?? null,
             ],
         ];
     }

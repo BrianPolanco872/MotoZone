@@ -34,10 +34,10 @@
                         <th scope="col" class="px-4 py-3 text-center">Presencia</th>
                         <th scope="col" class="px-4 py-3 text-center">Estado del día</th>
                         <th scope="col" class="px-4 py-3 text-right">Tickets</th>
-                        <th scope="col" class="px-4 py-3 text-right font-bold text-mz-text-primary">Ventas Totales</th>
-                        <th scope="col" class="px-4 py-3 text-right text-emerald-400">Efectivo</th>
-                        <th scope="col" class="px-4 py-3 text-right text-cyan-400">Electrónico</th>
-                        <th scope="col" class="px-4 py-3 text-right text-rose-400">Devoluciones</th>
+                        <th scope="col" class="px-4 py-3 text-right font-bold text-mz-text-primary">Ventas del vendedor</th>
+                        <th scope="col" class="px-4 py-3 text-right text-emerald-400">Efectivo cobrado</th>
+                        <th scope="col" class="px-4 py-3 text-right text-cyan-400">Ventas electrónicas</th>
+                        <th scope="col" class="px-4 py-3 text-right text-rose-400">Devoluciones pagadas</th>
                         <th scope="col" class="px-4 py-3 text-right text-amber-400">Salidas</th>
                         <th scope="col" class="px-4 py-3 text-right font-bold text-mz-accent-primary">En Gaveta</th>
                         <th scope="col" class="px-4 py-3 text-right">Corte</th>
