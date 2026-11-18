@@ -4,6 +4,10 @@
 @section('subtitle', 'Inventario y precios de productos')
 
 @section('content')
+    @if (session('error'))
+        <x-alert variant="error">{{ session('error') }}</x-alert>
+    @endif
+
     <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
             <p class="text-sm text-mz-text-secondary">
@@ -45,7 +49,7 @@
                     </button>
                 </div>
                 <div>
-                    <button type="button" onclick="if(confirm('¿Estás seguro de limpiar TODO el inventario? Todas las existencias pasarán a cero.')) { document.getElementById('clear-inventory-form').submit(); }" class="x-button x-button-danger size-sm w-full">
+                    <button type="button" onclick="if(confirm('¿Eliminar TODOS los productos registrados? Esta acción no se puede deshacer.')) { document.getElementById('clear-inventory-form').submit(); }" class="x-button x-button-danger size-sm w-full">
                         <x-icon name="trash" class="size-4" />
                         Limpiar inventario
                     </button>
@@ -64,9 +68,19 @@
                 <div class="flex-1">
                     <label for="import_file" class="block text-xs font-semibold uppercase tracking-[0.12em] text-mz-text-muted">Importar productos CSV</label>
                     <div class="mt-1.5 flex items-center gap-2">
-                        <input id="import_file" type="file" name="import_file" accept=".csv,.txt" class="block w-full text-sm text-mz-text-secondary file:mr-3 file:h-10 file:rounded-md file:border-0 file:bg-mz-bg-surface-2 file:px-3 file:text-sm file:font-medium file:text-mz-text-secondary hover:file:bg-mz-bg-surface-2">
+                        <input id="import_file" type="file" name="import_file" accept=".csv,.txt" required aria-describedby="import-help{{ $errors->has('import_file') ? ' import-errors' : '' }}" aria-invalid="{{ $errors->has('import_file') ? 'true' : 'false' }}" class="block w-full text-sm text-mz-text-secondary file:mr-3 file:h-10 file:rounded-md file:border-0 file:bg-mz-bg-surface-2 file:px-3 file:text-sm file:font-medium file:text-mz-text-secondary hover:file:bg-mz-bg-surface-2">
                     </div>
-                    <p class="mt-1 text-xs text-mz-text-muted">Solo se aceptan archivos CSV o TXT. Conserva los encabezados de la plantilla CSV actual, incluidas las columnas de existencias y mínimo de alerta. No cambies los nombres técnicos de sus columnas.</p>
+                    <p id="import-help" class="mt-1 text-xs text-mz-text-muted">CSV UTF-8 o TXT separado por comas o punto y coma. Para productos nuevos: codigo (o sku), nombre y precio_venta. Opcionales: marca, descripcion, stock (existencias), min_stock (mínimo de alerta), codigo_barras, codigo_barras_2, costo, precio_mayoreo e iva. El código original se conserva como SKU y se guarda como código de barras principal si no indicas codigo_barras. El segundo código solo se guarda si tú lo proporcionas. Al reimportar, solo se completan códigos principales vacíos: no se modifican precios, existencias, segundo código ni otros datos. Si ya hay código principal, el producto se omite. Haz un respaldo antes de reparar mediante reimportación. Puedes completar marca y descripción después. Usa punto decimal, sin símbolos de moneda.</p>
+                    @if ($errors->has('import_file'))
+                        <x-alert variant="error" id="import-errors" class="mt-2">
+                            <p>No se importó ningún producto. Corrige el archivo y vuelve a seleccionarlo.</p>
+                            <ul>
+                                @foreach ($errors->get('import_file') as $message)
+                                    <li>{{ $message }}</li>
+                                @endforeach
+                            </ul>
+                        </x-alert>
+                    @endif
                 </div>
                 <div>
                     <button type="submit" class="x-button x-button-primary size-sm">
@@ -178,7 +192,7 @@
                                         <x-icon name="pencil" class="size-3.5" />
                                         Editar
                                     </a>
-                                    <form action="{{ route('admin.products.destroy', $product) }}" method="POST" onsubmit="return confirm('¿Estás seguro de eliminar el producto \"{{ $product->name }}\"? Esta acción no se puede deshacer.')" class="ml-1">
+                                    <form action="{{ route('admin.products.destroy', $product) }}" method="POST" data-confirm="¿Estás seguro de eliminar el producto &quot;{{ $product->name }}&quot;? Esta acción no se puede deshacer." onsubmit="return confirm(this.dataset.confirm)" class="ml-1">
                                         @csrf
                                         @method('DELETE')
                                         <button type="submit" class="x-button x-button-ghost size-xs text-mz-error" aria-label="Eliminar {{ $product->name }}">

@@ -30,8 +30,8 @@ class ProductRequest extends FormRequest
 
         return [
             'name' => ['required', 'string', 'max:255'],
-            'brand' => ['required', 'string', 'max:255'],
-            'description' => ['required', 'string'],
+            'brand' => ['nullable', 'string', 'max:255'],
+            'description' => ['nullable', 'string'],
             'barcode' => [
                 'nullable',
                 'string',
@@ -67,8 +67,6 @@ class ProductRequest extends FormRequest
     {
         return [
             'name.required' => 'El nombre del producto es obligatorio.',
-            'brand.required' => 'La marca es obligatoria.',
-            'description.required' => 'La descripción es obligatoria.',
             'barcode.unique' => 'Ya existe un producto con ese código de barras.',
             'barcode2.unique' => 'Ese código de barras ya está registrado en otro producto.',
             'barcode2.different' => 'El segundo código debe ser diferente del primero.',

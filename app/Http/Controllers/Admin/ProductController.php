@@ -6,8 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\ProductRequest;
 use App\Models\Product;
 use App\Models\StockMovement;
+use App\Services\AuditLogService;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -87,48 +89,63 @@ class ProductController extends Controller
             ->with('status', 'Se actualizaron los precios e IVA de todos los productos con costo capturado.');
     }
 
-    public function clearInventory(Request $request): RedirectResponse
+    public function clearInventory(): RedirectResponse
     {
-        DB::transaction(function () use ($request): void {
-            $products = Product::query()
-                ->where('stock', '!=', 0)
-                ->orderBy('id')
-                ->lockForUpdate()
-                ->get();
+        try {
+            $deletedProducts = DB::transaction(function (): int {
+                StockMovement::query()
+                    ->where('type', StockMovement::TYPE_ADJUSTMENT)
+                    ->whereNull('sale_id')
+                    ->where('note', 'Limpieza de inventario: existencias puestas en cero.')
+                    ->where('stock_after', 0)
+                    ->whereRaw('quantity = -stock_before')
+                    ->delete();
 
-            foreach ($products as $product) {
-                $stockBefore = $product->stock;
-                $product->update(['stock' => 0]);
-
-                StockMovement::create([
-                    'product_id' => $product->id,
-                    'user_id' => $request->user()->id,
-                    'type' => StockMovement::TYPE_ADJUSTMENT,
-                    'quantity' => -$stockBefore,
-                    'stock_before' => $stockBefore,
-                    'stock_after' => 0,
-                    'note' => 'Limpieza de inventario: existencias puestas en cero.',
-                ]);
+                return Product::query()->delete();
+            });
+        } catch (QueryException $exception) {
+            if ($exception->getCode() !== '23000') {
+                throw $exception;
             }
-        });
+
+            return redirect()
+                ->route('admin.products.index')
+                ->with('error', 'No se eliminó ningún producto porque existen movimientos asociados.');
+        }
 
         return redirect()
             ->route('admin.products.index')
-            ->with('status', 'Todas las existencias se pusieron en cero. El catálogo y el historial se conservaron.');
+            ->with('status', "Se eliminaron {$deletedProducts} productos del inventario.");
     }
 
-    public function import(Request $request): RedirectResponse
+    public function import(Request $request, AuditLogService $audit): RedirectResponse
     {
         $request->validate([
             'import_file' => ['required', 'file', 'mimes:csv,txt'],
+        ], [
+            'import_file.required' => 'Selecciona un archivo CSV para importar.',
+            'import_file.file' => 'El archivo seleccionado no es válido.',
+            'import_file.mimes' => 'Solo se aceptan archivos CSV o TXT, no archivos de Excel XLS/XLSX.',
+            'import_file.uploaded' => 'No se pudo subir el archivo. Revisa el límite de tamaño del servidor.',
         ]);
 
+        if (! function_exists('set_time_limit') || ! set_time_limit(300)) {
+            throw ValidationException::withMessages([
+                'import_file' => 'El servidor no permite ampliar el tiempo de importación. Solicita habilitar set_time_limit en PHP antes de reintentar.',
+            ]);
+        }
+
         $handle = fopen($request->file('import_file')->getRealPath(), 'r');
+        $headerOffset = fread($handle, 3) === "\xEF\xBB\xBF" ? 3 : 0;
+        fseek($handle, $headerOffset);
+        $headerLine = fgets($handle) ?: '';
+        $delimiter = count(str_getcsv($headerLine, ';')) > count(str_getcsv($headerLine, ',')) ? ';' : ',';
+        fseek($handle, $headerOffset);
         $header = null;
         $rows = [];
         $line = 1;
 
-        while (($row = fgetcsv($handle, 0, ',')) !== false) {
+        while (($row = fgetcsv($handle, 0, $delimiter)) !== false) {
             if ($header === null) {
                 $header = array_map(
                     fn ($name): string => ltrim(strtolower(trim((string) $name)), "\u{FEFF}"),
@@ -147,32 +164,74 @@ class ProductController extends Controller
         $this->assertImportHeader($header ?? []);
 
         $created = 0;
+        $completed = 0;
         $skipped = 0;
+        $rules = $this->importRules();
+        $messages = [
+            'barcode.unique' => 'El código principal ya está registrado en el primer o segundo campo de un producto. Revisa el conflicto; no se moverá ningún segundo código automáticamente.',
+            'barcode2.unique' => 'El segundo código ya está registrado en el primer o segundo campo de un producto.',
+            'barcode2.different' => 'El segundo código debe ser diferente del principal.',
+        ];
+        $validator = Validator::make([], $rules, $messages);
+        $barcodeValidator = Validator::make([], ['barcode' => $rules['barcode']], $messages);
 
-        DB::transaction(function () use ($rows, &$created, &$skipped): void {
+        DB::transaction(function () use ($rows, $validator, $barcodeValidator, $audit, &$created, &$completed, &$skipped): void {
             foreach ($rows as $row) {
                 $sku = (string) ($row['data']['sku'] ?? $row['data']['codigo'] ?? '');
 
-                // Política vigente: se omiten las filas sin SKU o con un SKU ya registrado.
-                if ($sku === '' || Product::query()->where('sku', $sku)->exists()) {
+                if ($sku === '') {
                     $skipped++;
 
                     continue;
                 }
 
-                $attributes = $this->importAttributes($row['data']);
-                $validator = Validator::make($attributes, $this->importRules());
+                $product = Product::query()->where('sku', $sku)->lockForUpdate()->first();
 
-                if ($validator->fails()) {
+                if ($product !== null && $product->barcode !== null && $product->barcode !== '') {
+                    $skipped++;
+
+                    continue;
+                }
+
+                $explicitBarcode = $row['data']['codigo_barras'] ?? $row['data']['barcode'] ?? null;
+                $ambiguousCode = isset($row['data']['sku'], $row['data']['codigo'])
+                    && $row['data']['sku'] !== $row['data']['codigo'];
+                $generatedSku = Str::startsWith($sku, 'AUTO-') && Str::isUuid(substr($sku, 5));
+
+                if ($explicitBarcode === null && ($ambiguousCode || $generatedSku)) {
+                    throw ValidationException::withMessages([
+                        'import_file' => "Fila {$row['line']}: indica codigo_barras explícitamente; el SKU es interno o las columnas sku y codigo son distintas.",
+                    ]);
+                }
+
+                $rowValidator = $product === null ? $validator : $barcodeValidator;
+                $rowValidator->setData($this->importAttributes($row['data']));
+
+                if ($rowValidator->fails()) {
                     throw ValidationException::withMessages([
                         'import_file' => array_map(
                             fn (string $message): string => "Fila {$row['line']}: {$message}",
-                            $validator->errors()->all(),
+                            $rowValidator->errors()->all(),
                         ),
                     ]);
                 }
 
-                $validated = $validator->validated();
+                $validated = $rowValidator->validated();
+
+                if ($product !== null) {
+                    $before = $product->only(['barcode']);
+                    $product->update(['barcode' => $validated['barcode']]);
+                    $audit->log([
+                        'action' => 'completar_codigo_barras',
+                        'entity_type' => 'product',
+                        'entity_id' => $product->id,
+                        'before' => $before,
+                        'after' => $product->only(['barcode']),
+                    ]);
+                    $completed++;
+
+                    continue;
+                }
 
                 Product::create([
                     ...$validated,
@@ -189,7 +248,7 @@ class ProductController extends Controller
 
         return redirect()
             ->route('admin.products.index')
-            ->with('status', "Importación completada: {$created} productos creados, {$skipped} omitidos (duplicados o sin SKU).");
+            ->with('status', "Importación completada: {$created} productos creados, {$completed} códigos principales completados, {$skipped} omitidos (sin SKU o con código principal existente).");
     }
 
     /**
@@ -233,10 +292,10 @@ class ProductController extends Controller
     {
         return [
             'name' => $data['nombre'] ?? $data['producto'] ?? $data['descripcion'] ?? null,
-            'barcode' => $data['codigo_barras'] ?? $data['barcode'] ?? null,
+            'barcode' => $data['codigo_barras'] ?? $data['barcode'] ?? $data['sku'] ?? $data['codigo'] ?? null,
             'barcode2' => $data['codigo_barras_2'] ?? $data['barcode2'] ?? null,
-            'brand' => $data['marca'] ?? $data['brand'] ?? null,
-            'description' => $data['descripcion'] ?? null,
+            'brand' => $data['marca'] ?? $data['brand'] ?? '',
+            'description' => $data['descripcion'] ?? '',
             'price' => $data['precio_venta'] ?? $data['price'] ?? $data['precio venta'] ?? null,
             'cost' => $data['costo'] ?? $data['cost'] ?? $data['precio costo'] ?? 0,
             'wholesale_price' => $data['precio_mayoreo'] ?? $data['wholesale_price'] ?? $data['precio mayoreo'] ?? null,
@@ -247,7 +306,7 @@ class ProductController extends Controller
     }
 
     /**
-     * Mismas reglas que valida el alta manual de productos.
+     * Reglas de importación; marca y descripción pueden completarse después.
      *
      * @return array<string, array<int, mixed>>
      */
@@ -255,10 +314,10 @@ class ProductController extends Controller
     {
         return [
             'name' => ['required', 'string', 'max:255'],
-            'brand' => ['required', 'string', 'max:255'],
-            'description' => ['required', 'string'],
+            'brand' => ['nullable', 'string', 'max:255'],
+            'description' => ['nullable', 'string'],
             'barcode' => [
-                'nullable',
+                'required',
                 'string',
                 'max:255',
                 Rule::unique('products', 'barcode'),
@@ -354,6 +413,8 @@ class ProductController extends Controller
             $data['sku'] = 'AUTO-'.Str::uuid()->toString();
         }
 
+        $data['brand'] = $request->validated('brand', $product?->brand ?? '') ?? '';
+        $data['description'] = $request->validated('description', $product?->description ?? '') ?? '';
         $data['slug'] = $this->uniqueSlug($data['name'], $product);
         $data['tax_rate'] = round(((float) $request->validated('tax_rate')) / 100, 4);
 

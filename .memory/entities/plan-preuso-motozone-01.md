@@ -34,6 +34,8 @@ type: plan
 
 ## Lote 1 — Evitar pérdida de datos (#1, #2)
 
+- Decisión posterior del usuario (2026-11-17): solo la semántica de Limpiar inventario descrita en #1 se sustituye por borrado de products mediante plan-productos-limpiar-tabla-01 y fix-productos-limpiar-tabla-01. Petición reiterada para datos de desarrollo sin movimientos; no cambia destroy, no permite eliminar historial ni desactivar FKs. Los estados y pruebas originales siguientes documentan la implementación anterior, no el contrato vigente de esa acción.
+
 1. #1: reemplazar el borrado de catálogo/ventas por puesta a cero de existencias conforme a la confirmación. Mantener productos, SKU, precios, ventas, partidas, caja, devoluciones y cortes. Usar transacción y registrar el ajuste de inventario siguiendo el patrón de StockMovement existente; coordinar filas de producto con las ventas para no sobrescribir descuentos concurrentes.
 2. #2: validar referencias que impiden eliminar al empleado antes de la primera escritura y envolver la operación completa en transacción. Si una restricción impide el borrado, devolver error comprensible sin perder ningún registro. No rediseñar la política actual de baja ni convertir eliminaciones en desactivaciones sin aprobación.
 3. Probar el éxito de #1 con catálogo e historial, y el rechazo de #2 con requested_by en devolución de venta ajena; inyectar un fallo tardío para demostrar rollback completo.
@@ -77,6 +79,15 @@ type: plan
 - Límite explícito: payment_method=mixed no guarda reparto efectivo/electrónico. No inventar ese reparto, presentar todo como efectivo ni afirmar validado. Si el uso real requiere cobro mixto desglosado, pedir la regla y autorización de diseño en sesión separada antes de añadir campos o ampliar funcionalidad. Registrar ese subcaso como pendiente, no marcar todo medio de pago validado.
 
 ## Lote 5 — Importación, borrado y permisos (#12, #13, #16)
+
+- Verificación limitada aprobada en esta conversación el 2026-11-17: usuario confirma ejecutar pruebas de limpiar inventario y eliminar producto, y comunica que Eliminar no funciona. No autoriza borrar productos reales ni cambiar limpiar inventario por borrado masivo.
+- Ajuste mínimo necesario comunicado antes de editar: la confirmación de resources/views/admin/products/index.blade.php interpola el nombre en JavaScript dentro de un atributo HTML con comillas escapadas mediante barra invertida; esa barra no escapa comillas HTML y el atributo se corta. Corregir solo el formulario individual pasando el mensaje escapado mediante data-confirm y usando return confirm(this.dataset.confirm). Conservar DELETE, CSRF, ruta, permisos y bloqueo por historial. Añadir regresión de HTML parseado en tests/Feature/AdminProductTest.php con nombre que contiene comillas/apóstrofo. No modificar controladores ni habilitar borrado de historial.
+- Baseline de la verificación 2026-11-17: aislamiento efectivo comprobado testing/sqlite/:memory: sin config cacheada; 6 pruebas existentes de limpieza/borrado correctas, 65 aserciones. Esto verifica endpoints, no el botón en navegador.
+- Estado: IMPLEMENTADO (solo ampliación mínima de confirmación de borrado y verificación solicitada el 2026-11-17; no declara finalizados los demás lotes del plan).
+- Cambios aplicados: formulario individual usa data-confirm escapado y confirm(this.dataset.confirm), sin interpolar nombres dentro de JavaScript; añadida prueba HTTP de formulario parseado con nombre que incluye comillas/apóstrofo. Se conservan restricciones de historial y semántica de limpiar inventario.
+- Desviaciones del plan original: defecto adicional del caller HTML de borrado detectado durante la verificación autorizada, comunicado y registrado antes de editar; modificación limitada a vista y prueba de Productos. Sin cambios a datos, permisos o borrado masivo.
+- Verificación de ampliación: regresión roja reprodujo handler HTML truncado; tras el fix 7 pruebas dirigidas/69 aserciones correctas en SQLite :memory:. Pint, php -l de prueba y diff --check correctos. Sin clic de navegador, suite completa, build ni acceso al inventario real.
+- Implementado en: fix-productos-confirmacion-eliminar-01.
 
 1. #12: limitar formulario/servidor a CSV/TXT realmente soportado; validar encabezados y filas con reglas compatibles con ProductRequest, incluido segundo código y unicidad cruzada si está presente. Normalizar vacíos a null y envolver toda la carga en transacción; ante error informar fila/campo y no guardar carga parcial. Mantener la política actual documentada para omitir SKU existente, sin cambiarla silenciosamente.
 2. #13: definir stockMovements(): HasMany en Product siguiendo saleItems; probar borrado sin historial y rechazo cuando existen ventas o movimientos.

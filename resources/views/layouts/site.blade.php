@@ -18,9 +18,7 @@
     $footerInstagram = $homePage->instagramUrl();
     $footerCopyright = $homePage->copyrightText();
 
-    $footerCategories = isset($categoryCards) && $categoryCards->isNotEmpty()
-        ? $categoryCards->take(5)
-        : \App\Models\Category::query()->where('is_active', true)->whereHas('products', fn ($q) => $q->active())->orderBy('name')->take(5)->get();
+    $footerCategories = ($categoryCards ?? collect())->take(5);
 @endphp
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="scroll-smooth">

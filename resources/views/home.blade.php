@@ -27,7 +27,6 @@
         ? collect(range(1, 3))->filter(fn ($position) => $homePage->text('metric_'.$position.'_value') !== '' && $homePage->text('metric_'.$position.'_label') !== '')
         : collect();
     $benefitIcons = ['store', 'check', 'shield', 'chat'];
-    $categorySpans = [5, 3, 4, 4, 8];
     $metricAccents = ['#ea580c', '#16a34a', '#0284c7'];
     $homeActiveCategories = $categoryCards->where('is_active', true)->count();
 @endphp
@@ -223,59 +222,50 @@
                     <button type="button" class="home-category-reset hidden items-center gap-1 rounded-full border border-orange-300 bg-orange-50 px-3.5 py-2 text-xs font-bold text-orange-700 shadow-sm hover:bg-orange-100" data-home-category-reset><x-icon name="x" class="size-3.5" /> Mostrar todas</button>
                 </div>
 
-                <div class="home-card-grid mt-8 grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-12">
-                    @foreach ($categoryCards as $card)
-                        @php($destination = $card->destination())
-                        @php($span = $categorySpans[$loop->index % count($categorySpans)])
-                        <article data-home-category-card="{{ $loop->index }}" data-home-category-layout="{{ $span }}" @class([
-                            'home-category-card group flex flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-orange-500/50 hover:shadow-xl focus-within:-translate-y-1 focus-within:border-orange-500/50 focus-within:shadow-xl',
-                            'lg:col-span-5' => $span === 5,
-                            'lg:col-span-3' => $span === 3,
-                            'lg:col-span-4' => $span === 4,
-                            'lg:col-span-8 lg:flex-row lg:items-stretch' => $span === 8,
-                        ])>
-                            <div class="home-category-card-content flex min-w-0 flex-1 flex-col p-6">
-                                <div class="flex items-center justify-between gap-3">
-                                    <span class="flex size-11 items-center justify-center rounded-xl bg-orange-100 text-orange-600 shadow-sm">
-                                        <x-icon :name="$card->icon ?: 'tag'" class="size-5" />
-                                    </span>
-                                    @if ($card->linkedProducts->isNotEmpty())
-                                        <span class="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-700">
-                                            {{ $card->linkedProducts->count() }} productos
+                <div class="mt-8 !bg-slate-100 border border-slate-300/80 rounded-2xl p-6 sm:p-8">
+                    <div class="grid auto-rows-fr grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                        @foreach ($categoryCards as $card)
+                            @php($destination = $card->destination())
+                            <article data-home-category-card="{{ $loop->index }}" class="group !bg-white flex w-full min-w-0 flex-col justify-between h-full overflow-hidden rounded-xl border border-slate-200 border-t-4 border-t-orange-500 p-5 shadow-sm hover:shadow-md hover:border-orange-500 transition-all duration-300 focus-within:border-orange-500 focus-within:shadow-md">
+                                <div class="flex w-full min-w-0 flex-1 flex-col pb-4">
+                                    <div class="flex w-full min-w-0 flex-wrap items-center justify-between gap-3">
+                                        <span class="flex size-10 shrink-0 items-center justify-center rounded-lg border border-orange-100 bg-orange-50 text-orange-600">
+                                            <x-icon :name="$card->icon ?: 'tag'" class="size-5" />
+                                        </span>
+                                        <span class="min-w-0 rounded-full border border-orange-100 bg-orange-50 px-3 py-1 text-xs font-semibold text-orange-700">
+                                            @if ($card->linkedProducts->isNotEmpty())
+                                                {{ $card->linkedProducts->count() }} productos
+                                            @else
+                                                Categoría
+                                            @endif
+                                        </span>
+                                    </div>
+                                    @if (! $card->exists)
+                                        <p class="mt-3 text-[11px] font-bold uppercase tracking-wide text-orange-700">Ejemplo</p>
+                                    @endif
+                                    <h3 class="font-display mt-3 min-h-12 w-full min-w-0 text-base leading-6 font-bold tracking-tight text-slate-900 uppercase">{{ $card->title }}</h3>
+                                    <p class="mt-1.5 line-clamp-2 min-h-12 w-full min-w-0 text-sm leading-relaxed text-slate-600">{{ $card->description }}</p>
+                                    <div class="mt-auto min-h-14 pt-3">
+                                        @if ($destination)
+                                            <a href="{{ $destination }}" class="inline-flex min-h-11 max-w-full items-center gap-2 rounded-lg text-sm font-semibold text-slate-700 transition-colors group-hover:text-orange-600 focus-visible:text-orange-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600">
+                                                <span class="min-w-0">{{ $card->link_label ?: 'Ver categoría' }}</span>
+                                                <x-icon name="arrow-right" class="size-4 shrink-0" />
+                                            </a>
+                                        @endif
+                                    </div>
+                                </div>
+                                <div class="!h-48 w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-100 shrink-0">
+                                    @if ($card->galleryUrls() !== [])
+                                        <x-carousel :images="$card->galleryUrls()" :alt="$card->title" class="!h-full w-full [&>[data-carousel-track]]:!h-full [&>[data-carousel-track]]:overflow-y-hidden" :image-class="'!h-full !w-full object-cover block '.($card->title === 'Accesorios y Cascos' ? 'object-top' : 'object-center').' transition-transform duration-500 group-hover:scale-105'" />
+                                    @else
+                                        <span class="flex h-full w-full items-center justify-center text-orange-600">
+                                            <x-icon :name="$card->icon ?: 'tag'" class="size-12 transition-transform duration-500 group-hover:scale-105" />
                                         </span>
                                     @endif
                                 </div>
-                                @if (! $card->exists)
-                                    <p class="mt-3 text-[11px] font-bold uppercase tracking-wide text-orange-700">Ejemplo</p>
-                                @endif
-                                <h3 class="font-display mt-4 text-xl font-bold uppercase tracking-tight text-slate-900 transition-colors group-hover:text-orange-600">{{ $card->title }}</h3>
-                                @if ($card->description)
-                                    <p class="mt-2 text-sm leading-relaxed text-slate-600">{{ $card->description }}</p>
-                                @endif
-                                @if ($destination)
-                                    <a href="{{ $destination }}" class="mt-auto inline-flex min-h-11 items-center justify-center gap-2 self-start rounded-xl bg-orange-600 px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-white shadow-md shadow-orange-600/20 transition-all duration-200 hover:-translate-y-0.5 hover:gap-3 hover:bg-orange-500 hover:shadow-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600">
-                                        {{ $card->link_label ?: 'Ver categoría' }}
-                                        <x-icon name="arrow-right" class="size-4" />
-                                    </a>
-                                @endif
-                            </div>
-                            @if ($card->galleryUrls() !== [])
-                                <div @class([
-                                    'relative aspect-[16/9] w-full overflow-hidden border-t border-slate-100 bg-white p-4',
-                                    'lg:w-72 lg:border-l lg:border-t-0' => $span === 8,
-                                ])>
-                                    <x-carousel :images="$card->galleryUrls()" :alt="$card->title" class="size-full" image-class="size-full object-contain transition-transform duration-300 group-hover:scale-105" data-carousel-effect="depth" />
-                                </div>
-                            @else
-                                <span @class([
-                                    'flex h-32 w-full items-center justify-center border-t border-slate-100 bg-slate-50 p-4 text-orange-600',
-                                    'lg:w-72 lg:border-l lg:border-t-0' => $span === 8,
-                                ])>
-                                    <x-icon :name="$card->icon ?: 'tag'" class="size-12 transition-transform duration-300 group-hover:scale-110" />
-                                </span>
-                            @endif
-                        </article>
-                    @endforeach
+                            </article>
+                        @endforeach
+                    </div>
                 </div>
 
                 @foreach ($categoryCards as $card)

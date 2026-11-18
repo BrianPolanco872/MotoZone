@@ -38,14 +38,14 @@
                     </div>
 
                     <div>
-                        <label for="brand" class="{{ $labelClass }}">Marca</label>
-                        <input id="brand" name="brand" type="text" value="{{ old('brand', $product->brand) }}" required class="mz-input mt-1.5 h-11 w-full" placeholder="DID">
+                        <label for="brand" class="{{ $labelClass }}">Marca (opcional)</label>
+                        <input id="brand" name="brand" type="text" value="{{ old('brand', $product->brand) }}" class="mz-input mt-1.5 h-11 w-full" placeholder="DID">
                         @error('brand') <p class="{{ $errorClass }}">{{ $message }}</p> @enderror
                     </div>
 
                     <div class="sm:col-span-2">
-                        <label for="description" class="{{ $labelClass }}">Descripción</label>
-                        <textarea id="description" name="description" rows="4" required class="mz-input mt-1.5 w-full min-h-[100px]" placeholder="Describe la pieza, compatibilidad y materiales.">{{ old('description', $product->description) }}</textarea>
+                        <label for="description" class="{{ $labelClass }}">Descripción (opcional)</label>
+                        <textarea id="description" name="description" rows="4" class="mz-input mt-1.5 w-full min-h-[100px]" placeholder="Describe la pieza, compatibilidad y materiales.">{{ old('description', $product->description) }}</textarea>
                         @error('description') <p class="{{ $errorClass }}">{{ $message }}</p> @enderror
                     </div>
                 </div>

@@ -2,22 +2,23 @@
 
 namespace Tests\Feature;
 
+use App\Models\AuditLog;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\StockMovement;
 use App\Models\User;
 use App\Services\DailyCutService;
-use App\Services\ReturnService;
 use App\Services\SaleService;
 use Database\Seeders\RolePermissionSeeder;
+use DOMDocument;
+use DOMElement;
+use DOMXPath;
 use Illuminate\Database\Eloquent\Factories\Sequence;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\TestWith;
-use RuntimeException;
 use Tests\TestCase;
 
 class AdminProductTest extends TestCase
@@ -59,6 +60,63 @@ class AdminProductTest extends TestCase
         $this->assertSame('0.1600', $product->tax_rate);
         $this->assertSame('kit-de-arrastre-de-prueba', $product->slug);
         $this->assertTrue($product->is_active);
+    }
+
+    /**
+     * @param  array{brand?: string, description?: string}  $optionalFields
+     */
+    #[TestWith([[]])]
+    #[TestWith([['brand' => '', 'description' => '']])]
+    public function test_admin_can_create_product_without_brand_and_description(array $optionalFields): void
+    {
+        $this->actingAs($this->admin())->post(route('admin.products.store'), [
+            'name' => 'Producto incompleto',
+            'price' => 100,
+            'tax_rate' => 16,
+            'stock' => 2,
+            ...$optionalFields,
+        ])
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseCount('products', 1);
+        $this->assertDatabaseHas('products', [
+            'name' => 'Producto incompleto',
+            'brand' => '',
+            'description' => '',
+            'stock' => 2,
+        ]);
+    }
+
+    /**
+     * @param  array{brand?: string, description?: string}  $optionalFields
+     */
+    #[TestWith([[], 'Marca original', 'Descripción original'])]
+    #[TestWith([['brand' => '', 'description' => ''], '', ''])]
+    #[TestWith([['brand' => 'NGK', 'description' => 'Descripción nueva'], 'NGK', 'Descripción nueva'])]
+    public function test_admin_can_preserve_clear_or_fill_optional_product_fields(array $optionalFields, string $expectedBrand, string $expectedDescription): void
+    {
+        $product = Product::factory()->create([
+            'brand' => 'Marca original',
+            'description' => 'Descripción original',
+        ]);
+
+        $this->actingAs($this->admin())->put(route('admin.products.update', $product), [
+            'name' => 'Producto actualizado',
+            'price' => 100,
+            'tax_rate' => 16,
+            'stock' => 2,
+            ...$optionalFields,
+        ])
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('products', [
+            'id' => $product->id,
+            'name' => 'Producto actualizado',
+            'brand' => $expectedBrand,
+            'description' => $expectedDescription,
+        ]);
     }
 
     public function test_product_slug_gets_a_suffix_when_name_is_repeated(): void
@@ -242,18 +300,32 @@ class AdminProductTest extends TestCase
         $category = Category::factory()->create();
         $product = Product::factory()->for($category)->create();
 
-        $this->actingAs($admin)
+        $createResponse = $this->actingAs($admin)
             ->get(route('admin.products.create'))
             ->assertOk()
             ->assertSee('Nuevo producto')
             ->assertSee('Código de barras 2')
             ->assertSee('Tasa de IVA');
 
-        $this->actingAs($admin)
+        $editResponse = $this->actingAs($admin)
             ->get(route('admin.products.edit', $product))
             ->assertOk()
             ->assertSee('Editar producto')
             ->assertSee($product->name);
+
+        foreach ([$createResponse, $editResponse] as $response) {
+            $response->assertSee('Marca (opcional)')->assertSee('Descripción (opcional)');
+            $document = new DOMDocument;
+            $document->loadHTML('<?xml encoding="UTF-8">'.$response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+            $xpath = new DOMXPath($document);
+
+            foreach (['brand', 'description'] as $field) {
+                $input = $xpath->query('//*[@name="'.$field.'"]')->item(0);
+
+                $this->assertInstanceOf(DOMElement::class, $input);
+                $this->assertFalse($input->hasAttribute('required'));
+            }
+        }
     }
 
     public function test_employee_cannot_manage_products(): void
@@ -388,91 +460,108 @@ class AdminProductTest extends TestCase
 
     #[TestWith(['admin'])]
     #[TestWith(['empleado'])]
-    public function test_clearing_inventory_zeros_stock_and_preserves_catalog_and_history(string $role): void
+    public function test_clearing_inventory_deletes_all_products_and_preserves_other_records(string $role): void
     {
         $this->freezeTime();
         $operator = User::factory()->create()->assignRole($role);
         $operator->givePermissionTo('admin.products.manage');
-        $product = Product::factory()->create(['stock' => 6, 'price' => 100]);
-        $untracked = Product::factory()->create(['stock' => 3, 'track_inventory' => false]);
-        $inactive = Product::factory()->create(['stock' => 2, 'is_active' => false]);
-        $empty = Product::factory()->outOfStock()->create();
-        $sale = app(SaleService::class)->create($operator, [
+        Product::factory()->create(['stock' => 6, 'price' => 100]);
+        Product::factory()->create(['stock' => 3, 'track_inventory' => false]);
+        Product::factory()->create(['stock' => 2, 'is_active' => false]);
+        Product::factory()->outOfStock()->create();
+        app(SaleService::class)->create($operator, [
             'idempotency_key' => 'inventory-history',
-            'items' => [['product_id' => $product->id, 'quantity' => 1]],
-        ]);
-        app(ReturnService::class)->request($operator, [
-            'sale_id' => $sale->id,
-            'reason' => 'Solicitud anterior a la limpieza',
-            'items' => [['sale_item_id' => $sale->items->first()->id, 'quantity' => 1]],
+            'items' => [['is_custom' => true, 'custom_name' => 'Servicio de prueba', 'custom_price' => 100, 'quantity' => 1]],
         ]);
         app(DailyCutService::class)->generate(today(), $operator);
-        $productBefore = $product->fresh()->only([
-            'id', 'name', 'sku', 'barcode', 'barcode2', 'category_id', 'slug', 'price',
-            'cost', 'wholesale_price', 'tax_rate', 'image_path', 'track_inventory', 'is_active',
-        ]);
-        $stockMovement = StockMovement::query()->firstOrFail();
-        $stockMovementBefore = $stockMovement->getAttributes();
         $history = [];
-        foreach (['sales', 'sale_items', 'cash_movements', 'sale_returns', 'sale_return_items', 'daily_cuts', 'audit_logs'] as $table) {
+        foreach (['categories', 'sales', 'sale_items', 'cash_movements', 'sale_returns', 'sale_return_items', 'daily_cuts', 'audit_logs'] as $table) {
             $history[$table] = DB::table($table)->orderBy('id')->get()->toJson();
         }
 
         $this->actingAs($operator)->post(route('admin.products.clearInventory'))
             ->assertRedirect(route('admin.products.index'))
             ->assertSessionHasNoErrors()
-            ->assertSessionHas('status', 'Todas las existencias se pusieron en cero. El catálogo y el historial se conservaron.');
+            ->assertSessionHas('status', 'Se eliminaron 4 productos del inventario.');
 
-        $this->assertDatabaseCount('products', 4);
-        foreach ([$product, $untracked, $inactive, $empty] as $item) {
-            $this->assertSame(0, $item->fresh()->stock);
-        }
-        $this->assertSame($productBefore, $product->fresh()->only(array_keys($productBefore)));
-        $this->assertSame($stockMovementBefore, $stockMovement->fresh()->getAttributes());
+        $this->assertDatabaseCount('products', 0);
+        $this->assertDatabaseCount('stock_movements', 0);
         foreach ($history as $table => $rows) {
             $this->assertSame($rows, DB::table($table)->orderBy('id')->get()->toJson(), $table);
         }
-        $this->assertSame(3, StockMovement::query()->where('type', StockMovement::TYPE_ADJUSTMENT)->count());
-        foreach ([[$product, 5], [$untracked, 3], [$inactive, 2]] as [$item, $stockBefore]) {
-            $this->assertDatabaseHas('stock_movements', [
-                'product_id' => $item->id,
-                'user_id' => $operator->id,
-                'sale_id' => null,
-                'type' => StockMovement::TYPE_ADJUSTMENT,
-                'quantity' => -$stockBefore,
-                'stock_before' => $stockBefore,
-                'stock_after' => 0,
-            ]);
-        }
     }
 
-    public function test_clearing_already_empty_inventory_does_not_add_adjustments(): void
+    public function test_clearing_already_empty_inventory_succeeds_without_creating_movements(): void
     {
-        $product = Product::factory()->outOfStock()->create();
-
         $this->actingAs($this->admin())->post(route('admin.products.clearInventory'))
             ->assertRedirect(route('admin.products.index'))
-            ->assertSessionHasNoErrors();
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('status', 'Se eliminaron 0 productos del inventario.');
 
-        $this->assertModelExists($product);
-        $this->assertSame(0, $product->fresh()->stock);
+        $this->assertDatabaseCount('products', 0);
         $this->assertDatabaseCount('stock_movements', 0);
     }
 
-    public function test_clearing_inventory_rolls_back_every_product_when_an_adjustment_fails(): void
+    public function test_clearing_inventory_removes_adjustments_created_by_the_old_clear_button(): void
     {
-        $products = Product::factory()->count(2)->sequence(['stock' => 4], ['stock' => 7])->create();
-        $productsBefore = DB::table('products')->orderBy('id')->get()->toJson();
-        Event::listen('eloquent.creating: '.StockMovement::class, function (StockMovement $movement) use ($products): void {
-            if ($movement->product_id === $products->last()->id) {
-                throw new RuntimeException('Simulated adjustment failure');
-            }
-        });
+        $admin = $this->admin();
+        $products = Product::factory()->count(2)->outOfStock()->create();
+        foreach ($products as $product) {
+            StockMovement::create([
+                'product_id' => $product->id,
+                'user_id' => $admin->id,
+                'type' => StockMovement::TYPE_ADJUSTMENT,
+                'quantity' => -5,
+                'stock_before' => 5,
+                'stock_after' => 0,
+                'note' => 'Limpieza de inventario: existencias puestas en cero.',
+            ]);
+        }
 
-        $this->actingAs($this->admin())->post(route('admin.products.clearInventory'))->assertServerError();
+        $this->actingAs($admin)->post(route('admin.products.clearInventory'))
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHas('status', 'Se eliminaron 2 productos del inventario.');
+
+        $this->assertDatabaseCount('products', 0);
+        $this->assertDatabaseCount('stock_movements', 0);
+    }
+
+    #[TestWith(['Movimiento que debe conservarse'])]
+    #[TestWith(['Limpieza de inventario: existencias puestas en cero.'])]
+    public function test_clearing_inventory_keeps_every_product_when_a_foreign_key_blocks_deletion(string $note): void
+    {
+        $admin = $this->admin();
+        $products = Product::factory()->count(2)->sequence(['stock' => 0], ['stock' => 7])->create();
+        StockMovement::create([
+            'product_id' => $products->first()->id,
+            'user_id' => $admin->id,
+            'type' => StockMovement::TYPE_ADJUSTMENT,
+            'quantity' => -4,
+            'stock_before' => 4,
+            'stock_after' => 0,
+            'note' => 'Limpieza de inventario: existencias puestas en cero.',
+        ]);
+        StockMovement::create([
+            'product_id' => $products->last()->id,
+            'user_id' => $admin->id,
+            'type' => StockMovement::TYPE_ADJUSTMENT,
+            'quantity' => 7,
+            'stock_before' => 0,
+            'stock_after' => 7,
+            'note' => $note,
+        ]);
+        $productsBefore = DB::table('products')->orderBy('id')->get()->toJson();
+        $movementsBefore = DB::table('stock_movements')->orderBy('id')->get()->toJson();
+
+        $this->actingAs($admin)->post(route('admin.products.clearInventory'))
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHas('error', 'No se eliminó ningún producto porque existen movimientos asociados.');
 
         $this->assertSame($productsBefore, DB::table('products')->orderBy('id')->get()->toJson());
-        $this->assertDatabaseCount('stock_movements', 0);
+        $this->assertSame($movementsBefore, DB::table('stock_movements')->orderBy('id')->get()->toJson());
+        $this->get(route('admin.products.index'))
+            ->assertOk()
+            ->assertSee('No se eliminó ningún producto porque existen movimientos asociados.');
     }
 
     public function test_employee_without_product_permission_cannot_clear_inventory(): void
@@ -484,6 +573,22 @@ class AdminProductTest extends TestCase
 
         $this->assertSame(4, $product->fresh()->stock);
         $this->assertDatabaseCount('stock_movements', 0);
+    }
+
+    public function test_product_delete_confirmation_preserves_names_with_quotes(): void
+    {
+        $product = Product::factory()->create(['name' => 'Kit d\'arrastre "Premium"']);
+
+        $response = $this->actingAs($this->admin())->get(route('admin.products.index'));
+
+        $response->assertOk();
+        $document = new DOMDocument;
+        $document->loadHTML('<?xml encoding="UTF-8">'.$response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+        $form = (new DOMXPath($document))->query('//form[@action="'.route('admin.products.destroy', $product).'"]')->item(0);
+
+        $this->assertInstanceOf(DOMElement::class, $form);
+        $this->assertSame('return confirm(this.dataset.confirm)', $form->getAttribute('onsubmit'));
+        $this->assertSame('¿Estás seguro de eliminar el producto "Kit d\'arrastre "Premium""? Esta acción no se puede deshacer.', $form->getAttribute('data-confirm'));
     }
 
     public function test_product_without_history_is_deleted_but_product_with_stock_movements_is_kept(): void
@@ -515,12 +620,14 @@ class AdminProductTest extends TestCase
         $this->assertDatabaseCount('products', 1);
     }
 
-    public function test_import_creates_rows_without_barcode_as_null(): void
+    #[TestWith(['sku'])]
+    #[TestWith(['codigo'])]
+    public function test_import_uses_original_codes_as_primary_barcodes(string $codeHeader): void
     {
         $csv = implode("\n", [
-            'sku,nombre,marca,descripcion,precio_venta,stock,codigo_barras',
-            'IMP-001,Producto uno,Marca,Descripción uno,10,2,',
-            'IMP-002,Producto dos,Marca,Descripción dos,20,3,',
+            $codeHeader.',nombre,marca,descripcion,precio_venta,stock,codigo_barras',
+            '00012345,Producto uno,Marca,Descripción uno,10,2,',
+            '00(ABC)+123,Producto dos,Marca,Descripción dos,20,3,',
         ]);
 
         $this->actingAs($this->admin())
@@ -531,8 +638,139 @@ class AdminProductTest extends TestCase
             ->assertSessionHasNoErrors();
 
         $this->assertDatabaseCount('products', 2);
-        $this->assertDatabaseHas('products', ['sku' => 'IMP-001', 'barcode' => null, 'stock' => 2]);
-        $this->assertDatabaseHas('products', ['sku' => 'IMP-002', 'barcode' => null, 'stock' => 3]);
+        $this->assertDatabaseHas('products', ['sku' => '00012345', 'barcode' => '00012345', 'barcode2' => null, 'stock' => 2]);
+        $this->assertDatabaseHas('products', ['sku' => '00(ABC)+123', 'barcode' => '00(ABC)+123', 'barcode2' => null, 'stock' => 3]);
+    }
+
+    #[TestWith([',', false])]
+    #[TestWith([';', false])]
+    #[TestWith([',', true])]
+    #[TestWith([';', true])]
+    public function test_import_accepts_excel_csv_delimiters_and_quoted_headers_with_bom(string $delimiter, bool $withBom): void
+    {
+        $csv = ($withBom ? "\xEF\xBB\xBF" : '').implode("\r\n", [
+            implode($delimiter, ['"codigo"', '"nombre"', '"marca"', '"descripcion"', '"precio_venta"', '"stock"']),
+            implode($delimiter, ['IMP-EXCEL', '"Bujía, estándar; especial"', 'NGK', '"Para motor, serie; A"', '85.50', '20']),
+        ]);
+
+        $this->actingAs($this->admin())
+            ->post(route('admin.products.import'), [
+                'import_file' => UploadedFile::fake()->createWithContent('productos.csv', $csv),
+            ])
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('status', 'Importación completada: 1 productos creados, 0 códigos principales completados, 0 omitidos (sin SKU o con código principal existente).');
+
+        $this->assertDatabaseCount('products', 1);
+        $this->assertDatabaseHas('products', [
+            'sku' => 'IMP-EXCEL',
+            'name' => 'Bujía, estándar; especial',
+            'description' => 'Para motor, serie; A',
+            'price' => 85.50,
+            'stock' => 20,
+        ]);
+    }
+
+    #[TestWith(["codigo,nombre,precio_venta,stock\nIMP-OPTIONAL,Producto,10,2"])]
+    #[TestWith(["codigo,nombre,marca,descripcion,precio_venta,stock\nIMP-OPTIONAL,Producto,,,10,2"])]
+    public function test_import_accepts_missing_or_empty_brand_and_description(string $csv): void
+    {
+        $this->actingAs($this->admin())
+            ->post(route('admin.products.import'), [
+                'import_file' => UploadedFile::fake()->createWithContent('productos.csv', $csv),
+            ])
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseCount('products', 1);
+        $this->assertDatabaseHas('products', [
+            'sku' => 'IMP-OPTIONAL',
+            'name' => 'Producto',
+            'brand' => '',
+            'description' => '',
+            'price' => 10,
+            'stock' => 2,
+        ]);
+    }
+
+    public function test_import_displays_all_row_errors_without_saving_products(): void
+    {
+        $csv = "codigo,nombre,marca,descripcion,precio_venta,stock\nIMP-ERROR,,,,,-1";
+
+        $this->actingAs($this->admin())
+            ->from(route('admin.products.index'))
+            ->post(route('admin.products.import'), [
+                'import_file' => UploadedFile::fake()->createWithContent('productos.csv', $csv),
+            ])
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHasErrors('import_file');
+
+        $messages = session('errors')->get('import_file');
+        $this->assertCount(3, $messages);
+        $response = $this->get(route('admin.products.index'))
+            ->assertOk()
+            ->assertSee('No se importó ningún producto. Corrige el archivo y vuelve a seleccionarlo.');
+
+        foreach ($messages as $message) {
+            $this->assertStringContainsString('Fila 2', $message);
+            $response->assertSee($message);
+        }
+
+        $this->assertDatabaseCount('products', 0);
+    }
+
+    public function test_import_displays_missing_file_error_and_requires_file_selection(): void
+    {
+        $this->actingAs($this->admin())
+            ->from(route('admin.products.index'))
+            ->post(route('admin.products.import'))
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHasErrors(['import_file' => 'Selecciona un archivo CSV para importar.']);
+
+        $response = $this->get(route('admin.products.index'))
+            ->assertOk()
+            ->assertSee('Selecciona un archivo CSV para importar.');
+        $document = new DOMDocument;
+        $document->loadHTML('<?xml encoding="UTF-8">'.$response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+        $input = (new DOMXPath($document))->query('//input[@name="import_file"]')->item(0);
+
+        $this->assertInstanceOf(DOMElement::class, $input);
+        $this->assertTrue($input->hasAttribute('required'));
+        $this->assertSame('true', $input->getAttribute('aria-invalid'));
+        $this->assertDatabaseCount('products', 0);
+    }
+
+    public function test_import_does_not_carry_values_from_the_previous_row(): void
+    {
+        $csv = implode("\n", [
+            'codigo,nombre,marca,descripcion,precio_venta,stock,codigo_barras,iva',
+            'IMP-FIRST,Primero,NGK,Descripción primero,85.50,20,BAR-FIRST,8',
+            'IMP-NEXT,Segundo,,,10,2,,',
+        ]);
+
+        $this->actingAs($this->admin())
+            ->post(route('admin.products.import'), [
+                'import_file' => UploadedFile::fake()->createWithContent('productos.csv', $csv),
+            ])
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseCount('products', 2);
+        $this->assertDatabaseHas('products', [
+            'sku' => 'IMP-FIRST',
+            'barcode' => 'BAR-FIRST',
+            'tax_rate' => 0.08,
+        ]);
+        $this->assertDatabaseHas('products', [
+            'sku' => 'IMP-NEXT',
+            'name' => 'Segundo',
+            'brand' => '',
+            'description' => '',
+            'barcode' => 'IMP-NEXT',
+            'price' => 10,
+            'stock' => 2,
+            'tax_rate' => 0.16,
+        ]);
     }
 
     public function test_import_saves_nothing_when_a_later_row_is_invalid(): void
@@ -604,11 +842,12 @@ class AdminProductTest extends TestCase
 
     public function test_import_keeps_skipping_rows_with_an_existing_sku(): void
     {
-        Product::factory()->create(['sku' => 'IMP-001']);
+        $existing = Product::factory()->create(['sku' => 'IMP-001', 'barcode' => 'EXISTING', 'barcode2' => 'SECOND']);
+        $before = $existing->fresh()->getAttributes();
         $csv = implode("\n", [
-            'sku,nombre,marca,descripcion,precio_venta,stock',
-            'IMP-001,Producto uno,Marca,Descripción uno,10,2',
-            'IMP-002,Producto dos,Marca,Descripción dos,20,3',
+            'sku,nombre,marca,descripcion,precio_venta,stock,codigo_barras',
+            'IMP-001,Producto uno,Marca,Descripción uno,10,2,DO-NOT-REPLACE',
+            'IMP-002,Producto dos,Marca,Descripción dos,20,3,',
         ]);
 
         $this->actingAs($this->admin())
@@ -621,6 +860,124 @@ class AdminProductTest extends TestCase
         $this->assertDatabaseCount('products', 2);
         $this->assertDatabaseHas('products', ['sku' => 'IMP-002']);
         $this->assertSame(1, Product::query()->where('sku', 'IMP-001')->count());
+        $this->assertSame($before, $existing->fresh()->getAttributes());
+    }
+
+    public function test_import_prioritizes_explicit_barcodes_over_ambiguous_or_generated_sku(): void
+    {
+        $sku = 'AUTO-550e8400-e29b-41d4-a716-446655440000';
+        $csv = "sku,codigo,nombre,precio_venta,codigo_barras,codigo_barras_2\n{$sku},00012345,Producto,10,00098765,ALT(02)+#";
+
+        $this->actingAs($this->admin())->post(route('admin.products.import'), [
+            'import_file' => UploadedFile::fake()->createWithContent('productos.csv', $csv),
+        ])->assertRedirect(route('admin.products.index'))->assertSessionHasNoErrors();
+
+        $this->assertDatabaseCount('products', 1);
+        $this->assertDatabaseHas('products', [
+            'sku' => $sku,
+            'barcode' => '00098765',
+            'barcode2' => 'ALT(02)+#',
+        ]);
+    }
+
+    #[TestWith(['sku,nombre,precio_venta', 'AUTO-550e8400-e29b-41d4-a716-446655440000,Producto,10'])]
+    #[TestWith(['sku,codigo,nombre,precio_venta', 'INTERNO,00012345,Producto,10'])]
+    public function test_import_requires_explicit_barcode_for_ambiguous_or_generated_sku(string $header, string $row): void
+    {
+        $this->actingAs($this->admin())
+            ->from(route('admin.products.index'))
+            ->post(route('admin.products.import'), [
+                'import_file' => UploadedFile::fake()->createWithContent('productos.csv', $header."\n".$row),
+            ])
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHasErrors('import_file');
+
+        $this->assertStringContainsString('Fila 2: indica codigo_barras explícitamente', session('errors')->first('import_file'));
+        $this->assertDatabaseCount('products', 0);
+    }
+
+    #[TestWith([null])]
+    #[TestWith([''])]
+    public function test_reimport_only_completes_empty_primary_barcode_and_is_idempotent(?string $previousBarcode): void
+    {
+        $admin = $this->admin();
+        $product = Product::factory()->create([
+            'sku' => '00012345',
+            'barcode' => $previousBarcode,
+            'barcode2' => 'MANUAL-SECOND',
+        ]);
+        $before = $product->fresh()->getAttributes();
+        $csv = "codigo,nombre,precio_venta,stock,codigo_barras_2\n00012345,NO CAMBIAR,-1,-1,NO-REEMPLAZAR";
+
+        $this->actingAs($admin)->post(route('admin.products.import'), [
+            'import_file' => UploadedFile::fake()->createWithContent('productos.csv', $csv),
+        ])
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('status', 'Importación completada: 0 productos creados, 1 códigos principales completados, 0 omitidos (sin SKU o con código principal existente).');
+
+        $this->assertDatabaseCount('products', 1);
+        $after = $product->fresh()->getAttributes();
+        $this->assertSame('00012345', $after['barcode']);
+        $unchanged = $after;
+        unset($before['barcode'], $before['updated_at'], $unchanged['barcode'], $unchanged['updated_at']);
+        $this->assertSame($before, $unchanged);
+        $log = AuditLog::query()->where('action', 'completar_codigo_barras')->firstOrFail();
+        $this->assertSame($product->id, $log->entity_id);
+        $this->assertSame($admin->id, $log->user_id);
+        $this->assertSame(['barcode' => $previousBarcode], $log->before);
+        $this->assertSame(['barcode' => '00012345'], $log->after);
+
+        $this->post(route('admin.products.import'), [
+            'import_file' => UploadedFile::fake()->createWithContent('productos.csv', $csv),
+        ])
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('status', 'Importación completada: 0 productos creados, 0 códigos principales completados, 1 omitidos (sin SKU o con código principal existente).');
+
+        $this->assertSame($after, $product->fresh()->getAttributes());
+        $this->assertSame(1, AuditLog::query()->where('action', 'completar_codigo_barras')->count());
+    }
+
+    #[TestWith(['barcode'])]
+    #[TestWith(['barcode2'])]
+    #[TestWith(['same_product_barcode2'])]
+    public function test_reimport_rolls_back_creations_repairs_and_audit_on_barcode_conflict(string $conflictField): void
+    {
+        Product::factory()->create(['sku' => 'REPAIR-FIRST', 'barcode' => null, 'barcode2' => null]);
+        Product::factory()->create([
+            'sku' => 'REPAIR-CONFLICT',
+            'barcode' => null,
+            'barcode2' => $conflictField === 'same_product_barcode2' ? 'DUPLICATE' : null,
+        ]);
+
+        if ($conflictField !== 'same_product_barcode2') {
+            Product::factory()->create([
+                'barcode' => $conflictField === 'barcode' ? 'DUPLICATE' : null,
+                'barcode2' => $conflictField === 'barcode2' ? 'DUPLICATE' : null,
+            ]);
+        }
+
+        $before = DB::table('products')->orderBy('id')->get()->toJson();
+        $csv = implode("\n", [
+            'codigo,nombre,precio_venta,codigo_barras',
+            'NEW-ONE,Nuevo,10,',
+            'REPAIR-FIRST,No cambiar,10,',
+            'REPAIR-CONFLICT,No cambiar,10,DUPLICATE',
+        ]);
+
+        $this->actingAs($this->admin())
+            ->from(route('admin.products.index'))
+            ->post(route('admin.products.import'), [
+                'import_file' => UploadedFile::fake()->createWithContent('productos.csv', $csv),
+            ])
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHasErrors('import_file');
+
+        $this->assertStringContainsString('Fila 4', session('errors')->first('import_file'));
+        $this->assertStringContainsString('El código principal ya está registrado', session('errors')->first('import_file'));
+        $this->assertSame($before, DB::table('products')->orderBy('id')->get()->toJson());
+        $this->assertSame(0, AuditLog::query()->where('action', 'completar_codigo_barras')->count());
     }
 
     private function admin(): User
