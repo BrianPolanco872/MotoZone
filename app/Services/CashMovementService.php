@@ -17,7 +17,7 @@ class CashMovementService
      * Create a manual cash movement, or a customer/supplier payment when the
      * category corresponds to one of those dedicated tables.
      *
-     * @param  array{type?: string, category: string, amount: float|string, concept?: string, method?: string, customer_name?: string, customer_id?: int, supplier_name?: string, supplier_id?: int, reason?: string}  $data
+     * @param  array{type?: string, category: string, amount: float|string, concept?: string, method?: string, customer_name?: string, customer_id?: int, customer_credit_id?: int, idempotency_key?: string, happened_at?: \DateTimeInterface|string, supplier_name?: string, supplier_id?: int, reason?: string}  $data
      * @return CashMovement|CustomerPayment|SupplierPayment
      */
     public function create(User $user, array $data)
@@ -44,6 +44,8 @@ class CashMovementService
                 'reason' => $data['reason'] ?? null,
                 'customer_name' => $data['customer_name'] ?? '',
                 'customer_id' => $data['customer_id'] ?? null,
+                'customer_credit_id' => $data['customer_credit_id'] ?? null,
+                'idempotency_key' => $data['idempotency_key'] ?? null,
                 'happened_at' => $data['happened_at'] ?? now(),
             ]);
 

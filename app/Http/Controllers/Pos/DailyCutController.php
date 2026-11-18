@@ -70,6 +70,8 @@ class DailyCutController extends Controller
             'readOnly' => false,
             'canSeeAny' => $canSeeAny,
             'globalDayClosed' => DailyCut::isDayClosed($date->toDateString()),
+            'cashCustomerPayments' => $service->customerPaymentsForCut($date->toDateString(), $employee)
+                ->where('method', 'cash')->values(),
         ];
 
         // En el corte global, el admin ve el desglose por empleado y la sumatoria final.
@@ -99,6 +101,8 @@ class DailyCutController extends Controller
             'readOnly' => true,
             'canSeeAny' => false,
             'globalDayClosed' => DailyCut::isDayClosed($date->toDateString()),
+            'cashCustomerPayments' => $service->customerPaymentsForCut($date->toDateString(), $employee)
+                ->where('method', 'cash')->values(),
         ]);
     }
 
@@ -618,53 +622,57 @@ class DailyCutController extends Controller
         $user = $request->user();
         $date = Carbon::parse($request->input('date', today('America/Mexico_City')->toDateString()))->toDateString();
 
-        // Evitar doble cierre: ¿ya existe un corte cerrado para este empleado hoy?
-        $latest = DailyCut::latestVersion($date, $user);
+        // Comparte el bloqueo diario con las altas y abonos de cartera: ningún
+        // pago confirmado puede insertarse entre el snapshot y el cierre.
+        return $service->withDayLock($date, function () use ($service, $date, $user): RedirectResponse {
+            // Evitar doble cierre: ¿ya existe un corte cerrado para este empleado hoy?
+            $latest = DailyCut::latestVersion($date, $user);
 
-        if ($latest && $latest->isClosed()) {
-            return back()->withErrors(['close_my_day' => 'Ya cerraste el día para esta fecha. No se permite doble cierre.']);
-        }
+            if ($latest && $latest->isClosed()) {
+                return back()->withErrors(['close_my_day' => 'Ya cerraste el día para esta fecha. No se permite doble cierre.']);
+            }
 
-        // Generamos una nueva versión con los totales actuales. Si ya existía una
-        // versión abierta (por ejemplo, después de "Reabrir venta"), esto evita
-        // cerrar un snapshot con totales obsoletos.
-        $cuts = $service->generate($date, $user, $user);
-        $latest = $cuts->first();
+            // Generamos una nueva versión con los totales actuales. Si ya existía una
+            // versión abierta (por ejemplo, después de "Reabrir venta"), esto evita
+            // cerrar un snapshot con totales obsoletos.
+            $cuts = $service->generate($date, $user, $user);
+            $latest = $cuts->first();
 
-        $latest->update(['closed_at' => now()]);
+            $latest->update(['closed_at' => now()]);
 
-        // Estampar daily_cut_id en abonos y pagos del turno que aún no tengan corte asignado.
-        $start = Carbon::parse($date)->startOfDay();
-        $end = $start->copy()->endOfDay();
+            // Estampar daily_cut_id en abonos y pagos del turno que aún no tengan corte asignado.
+            $start = Carbon::parse($date)->startOfDay();
+            $end = $start->copy()->endOfDay();
 
-        CustomerPayment::query()
-            ->whereNull('daily_cut_id')
-            ->where('user_id', $user->id)
-            ->whereBetween('happened_at', [$start, $end])
-            ->update(['daily_cut_id' => $latest->id]);
+            CustomerPayment::query()
+                ->whereNull('daily_cut_id')
+                ->where('user_id', $user->id)
+                ->whereBetween('happened_at', [$start, $end])
+                ->update(['daily_cut_id' => $latest->id]);
 
-        SupplierPayment::query()
-            ->whereNull('daily_cut_id')
-            ->where('user_id', $user->id)
-            ->whereBetween('happened_at', [$start, $end])
-            ->update(['daily_cut_id' => $latest->id]);
+            SupplierPayment::query()
+                ->whereNull('daily_cut_id')
+                ->where('user_id', $user->id)
+                ->whereBetween('happened_at', [$start, $end])
+                ->update(['daily_cut_id' => $latest->id]);
 
-        $this->audit->log([
-            'action' => 'cerrar_mi_dia',
-            'entity_type' => 'daily_cut',
-            'entity_id' => $latest->id,
-            'before' => null,
-            'after' => [
-                'date' => $date,
-                'scope' => DailyCut::SCOPE_EMPLOYEE,
-                'employee_id' => $user->id,
-                'cut_id' => $latest->id,
-            ],
-        ]);
+            $this->audit->log([
+                'action' => 'cerrar_mi_dia',
+                'entity_type' => 'daily_cut',
+                'entity_id' => $latest->id,
+                'before' => null,
+                'after' => [
+                    'date' => $date,
+                    'scope' => DailyCut::SCOPE_EMPLOYEE,
+                    'employee_id' => $user->id,
+                    'cut_id' => $latest->id,
+                ],
+            ]);
 
-        return redirect()
-            ->route('pos.cuts.mine', ['date' => $date])
-            ->with('status', "Día {$date} cerrado correctamente. Tu turno quedó finalizado; usa «Reabrir venta» si necesitas cobrar de nuevo.");
+            return redirect()
+                ->route('pos.cuts.mine', ['date' => $date])
+                ->with('status', "Día {$date} cerrado correctamente. Tu turno quedó finalizado; usa «Reabrir venta» si necesitas cobrar de nuevo.");
+        });
     }
 
     /**
@@ -751,6 +759,7 @@ class DailyCutController extends Controller
                     'fecha' => $p->happened_at?->format('d/m/Y'),
                     'hora' => $p->happened_at?->format('H:i'),
                     'cliente' => $p->customer_name,
+                    'deudor' => $p->credit?->customer_name ?? $p->customer_name,
                     'monto' => (float) $p->amount,
                     'metodo' => $p->method,
                     'motivo' => $p->reason,

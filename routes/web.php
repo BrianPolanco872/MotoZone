@@ -12,6 +12,7 @@ use App\Http\Controllers\CatalogController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\Pos\BitacoraController as PosBitacoraController;
 use App\Http\Controllers\Pos\CashMovementController as PosCashMovementController;
+use App\Http\Controllers\Pos\CustomerCreditController as PosCustomerCreditController;
 use App\Http\Controllers\Pos\DailyCutController as PosDailyCutController;
 use App\Http\Controllers\Pos\SaleController as PosSaleController;
 use App\Http\Controllers\Pos\SaleReturnController as PosSaleReturnController;
@@ -115,6 +116,14 @@ Route::middleware(['auth', 'active', 'permission:pos.access'])->prefix('pos')->n
     Route::post('/corte/reabrir-mi-dia', [PosDailyCutController::class, 'reopenMyDay'])
         ->middleware(['auth', 'active', 'role_or_permission:pos.cut.manage|pos.cut.own'])
         ->name('cuts.reopen-my-day');
+});
+
+// Cartera manual: administradores y empleados activos, sin depender del acceso al POS.
+Route::middleware(['auth', 'active', 'role:admin|empleado'])->prefix('pos')->name('pos.')->group(function () {
+    Route::get('/abonos', [PosCustomerCreditController::class, 'index'])->name('abonos.index');
+    Route::get('/abonos/productos', [PosCustomerCreditController::class, 'products'])->name('abonos.products');
+    Route::post('/abonos', [PosCustomerCreditController::class, 'store'])->name('abonos.store');
+    Route::post('/abonos/{customerCredit}/abonos', [PosCustomerCreditController::class, 'storePayment'])->name('abonos.payments.store');
 });
 
 // Caja de solo lectura: accesible con el permiso "ver módulo de caja".

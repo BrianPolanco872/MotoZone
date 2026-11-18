@@ -179,3 +179,10 @@ plan-home-mapa-enlace-corto-01 -> implementa_feature -> feature-home-mapa-enlace
 plan-home-mapa-enlace-corto-01 -> implementado_por -> fix-home-mapa-enlace-corto-01
 fix-home-mapa-enlace-corto-01 -> implementa_feature -> feature-home-mapa-enlace-corto-01
 plan-home-mapa-enlace-corto-01 -> detecta -> bug-test-contacto-atributos-01
+plan-cartera-manual-01 -> implementa_feature -> feature-cartera-manual-01
+plan-cartera-manual-01 -> se_apoya_en -> plan-feature-corte-dia-01
+plan-cartera-manual-01 -> implementado_por -> fix-cartera-manual-01
+fix-cartera-manual-01 -> implementa_feature -> feature-cartera-manual-01
+plan-cartera-abonos-metodos-corte-01 -> implementa_feature -> feature-cartera-manual-01
+plan-cartera-abonos-metodos-corte-01 -> implementado_por -> fix-cartera-abonos-metodos-corte-01
+fix-cartera-abonos-metodos-corte-01 -> implementa_feature -> feature-cartera-manual-01

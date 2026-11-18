@@ -147,6 +147,16 @@
             </tbody>
         </table>
 
+        <h2>Abonos de clientes por método</h2>
+        <table>
+            <tbody>
+                <tr><td>Efectivo</td><td class="num">{{ $money($totals['customer_payments_cash'] ?? 0) }}</td></tr>
+                <tr><td>Tarjeta de débito/crédito</td><td class="num">{{ $money($totals['customer_payments_card'] ?? 0) }}</td></tr>
+                <tr><td>Transferencia</td><td class="num">{{ $money($totals['customer_payments_transfer'] ?? 0) }}</td></tr>
+                <tr class="row-total"><td>Total</td><td class="num">{{ $money($totals['customer_payments'] ?? 0) }}</td></tr>
+            </tbody>
+        </table>
+
         <div class="grid">
             <div class="panel">
                 <h3>Panel 1 — Computadora</h3>

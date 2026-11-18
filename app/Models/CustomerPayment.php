@@ -18,6 +18,8 @@ class CustomerPayment extends Model
         'reason',
         'customer_name',
         'customer_id',
+        'customer_credit_id',
+        'idempotency_key',
         'happened_at',
     ];
 
@@ -34,6 +36,11 @@ class CustomerPayment extends Model
     public function dailyCut(): BelongsTo
     {
         return $this->belongsTo(DailyCut::class, 'daily_cut_id');
+    }
+
+    public function credit(): BelongsTo
+    {
+        return $this->belongsTo(CustomerCredit::class, 'customer_credit_id');
     }
 
     /**

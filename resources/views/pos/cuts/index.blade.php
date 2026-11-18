@@ -205,6 +205,12 @@
                     <td class="py-3">Abonos de clientes en efectivo</td>
                     <td class="py-3 text-right">+ ${{ number_format((float) ($cb['customer_payments'] ?? 0), 2) }}</td>
                 </tr>
+                @foreach (($cashCustomerPayments ?? collect()) as $cashPayment)
+                    <tr class="border-b border-mz-border-light/40 text-xs text-mz-text-muted">
+                        <td class="pb-2 pl-4">Abono por {{ $cashPayment->customer_name }}:</td>
+                        <td class="pb-2 text-right text-mz-success">+ ${{ number_format((float) $cashPayment->amount, 2) }}</td>
+                    </tr>
+                @endforeach
                 <tr class="border-b border-mz-border-light text-mz-error">
                     <td class="py-3">Devoluciones en efectivo</td>
                     <td class="py-3 text-right">- ${{ number_format((float) ($cb['refunds'] ?? 0), 2) }}</td>
@@ -246,13 +252,25 @@
                     <td class="py-3 text-right">$0.00</td>
                 </tr>
                 <tr class="border-b border-mz-border-light">
-                    <td class="py-3">Pagos de clientes</td>
+                    <td class="py-3">Pagos de clientes (total)</td>
                     <td class="py-3 text-right">
                         <a href="#" class="text-mz-accent-primary underline hover:text-mz-accent-hover cursor-pointer"
                            onclick="event.preventDefault(); openCustomerPaymentsModal('{{ $date->toDateString() }}', {{ $employee?->id ?? 'null' }});">
                             ${{ number_format((float) ($totals['customer_payments'] ?? 0), 2) }}
                         </a>
                     </td>
+                </tr>
+                <tr class="border-b border-mz-border-light/40 text-xs text-mz-text-muted">
+                    <td class="pb-2 pl-4">Abonos en efectivo</td>
+                    <td class="pb-2 text-right">${{ number_format((float) ($totals['customer_payments_cash'] ?? 0), 2) }}</td>
+                </tr>
+                <tr class="border-b border-mz-border-light/40 text-xs text-mz-text-muted">
+                    <td class="pb-2 pl-4">Abonos con tarjeta de débito/crédito</td>
+                    <td class="pb-2 text-right">${{ number_format((float) ($totals['customer_payments_card'] ?? 0), 2) }}</td>
+                </tr>
+                <tr class="border-b border-mz-border-light/40 text-xs text-mz-text-muted">
+                    <td class="pb-2 pl-4">Abonos por transferencia</td>
+                    <td class="pb-2 text-right">${{ number_format((float) ($totals['customer_payments_transfer'] ?? 0), 2) }}</td>
                 </tr>
                 <tr class="font-bold text-mz-text-primary border-t border-mz-border">
                     <td class="py-3">Pagos a proveedores / salidas</td>
@@ -344,7 +362,7 @@
                         <tr class="text-xs uppercase text-mz-text-muted">
                             <th class="py-3 text-left">Fecha</th>
                             <th class="py-3 text-left">Hora</th>
-                            <th class="py-3 text-left">Cliente</th>
+                            <th class="py-3 text-left">Cliente / Deudor</th>
                             <th class="py-3 text-right">Monto</th>
                             <th class="py-3 text-left">Método</th>
                             <th class="py-3 text-left">Motivo / Nota</th>
@@ -443,19 +461,26 @@
                 } else {
                     empty.hidden = true;
                     let total = 0;
+                    const metodosAbono = { cash: 'Efectivo', card: 'Tarjeta débito/crédito', transfer: 'Transferencia' };
                     data.items.forEach(function (item) {
                         total += parseFloat(item.monto || 0);
                         const tr = document.createElement('tr');
                         tr.className = 'text-mz-text-secondary';
-                        tr.innerHTML = `
-                            <td class="py-3 whitespace-nowrap">${item.fecha}</td>
-                            <td class="py-3 whitespace-nowrap">${item.hora}</td>
-                            <td class="py-3">${item.cliente}</td>
-                            <td class="py-3 text-right">$${parseFloat(item.monto).toFixed(2)}</td>
-                            <td class="py-3">${item.metodo}</td>
-                            <td class="py-3">${item.motivo || '—'}</td>
-                            <td class="py-3">${item.empleado}</td>
-                        `;
+                        const cells = [
+                            [item.fecha, 'py-3 whitespace-nowrap'],
+                            [item.hora, 'py-3 whitespace-nowrap'],
+                            [item.deudor || item.cliente, 'py-3'],
+                            ['$' + parseFloat(item.monto || 0).toFixed(2), 'py-3 text-right'],
+                            [metodosAbono[item.metodo] || item.metodo, 'py-3'],
+                            [item.motivo || '—', 'py-3'],
+                            [item.empleado, 'py-3'],
+                        ];
+                        cells.forEach(function (cell) {
+                            const td = document.createElement('td');
+                            td.className = cell[1];
+                            td.textContent = String(cell[0] ?? '');
+                            tr.appendChild(td);
+                        });
                         body.appendChild(tr);
                     });
 

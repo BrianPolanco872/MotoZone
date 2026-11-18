@@ -32,6 +32,10 @@
         $adminNavigation[] = ['label' => 'Caja', 'icon' => 'banknotes', 'route' => 'pos.cash.index'];
     }
 
+    if ($user?->hasRole(['admin', 'empleado'])) {
+        $adminNavigation[] = ['label' => 'Abonos / Créditos', 'icon' => 'banknotes', 'route' => 'pos.abonos.index'];
+    }
+
     if ($user?->can('pos.cut.manage')) {
         $adminNavigation[] = ['label' => 'Corte del día', 'icon' => 'report', 'route' => 'pos.cuts.index'];
         if ($user?->can('pos.access')) {

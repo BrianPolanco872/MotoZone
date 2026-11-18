@@ -104,6 +104,8 @@ class DailyCutService
 
         // Solo los abonos en EFECTIVO suman al dinero esperado en caja.
         $customerPaymentsCash = round((float) $customerPaymentsAll->where('method', 'cash')->sum('amount'), 2);
+        $customerPaymentsCard = round((float) $customerPaymentsAll->where('method', 'card')->sum('amount'), 2);
+        $customerPaymentsTransfer = round((float) $customerPaymentsAll->where('method', 'transfer')->sum('amount'), 2);
         $customerPaymentsNonCash = round((float) $customerPaymentsAll->where('method', '!=', 'cash')->sum('amount'), 2);
         $customerPaymentsTotal = round($customerPaymentsCash + $customerPaymentsNonCash, 2);
 
@@ -262,6 +264,8 @@ class DailyCutService
             ],
             'customer_payments' => $customerPaymentsTotal,
             'customer_payments_cash' => $customerPaymentsCash,
+            'customer_payments_card' => $customerPaymentsCard,
+            'customer_payments_transfer' => $customerPaymentsTransfer,
             'customer_payments_non_cash' => $customerPaymentsNonCash,
             'supplier_payments' => $supplierPaymentsTotal,
             'reconciliation' => [
@@ -523,7 +527,7 @@ class DailyCutService
         $end = $start->copy()->endOfDay();
 
         return CustomerPayment::query()
-            ->with('user')
+            ->with(['user', 'credit'])
             ->whereBetween('happened_at', [$start, $end])
             ->when($employee, fn ($query) => $query->where('user_id', $employee->id))
             ->orderByDesc('happened_at')

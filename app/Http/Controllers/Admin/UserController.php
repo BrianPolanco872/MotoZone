@@ -128,6 +128,15 @@ class UserController extends Controller
 
             abort_unless($user->hasRole('empleado'), 403, 'Solo se pueden eliminar empleados.');
 
+            if (DB::table('customer_payments')
+                ->where('user_id', $user->id)
+                ->whereNotNull('customer_credit_id')
+                ->exists()) {
+                throw ValidationException::withMessages([
+                    'user' => 'No se puede eliminar al empleado porque tiene abonos de créditos vinculados a su historial.',
+                ]);
+            }
+
             if (DB::table('sale_returns')
                 ->join('sales', 'sales.id', '=', 'sale_returns.sale_id')
                 ->where('sale_returns.requested_by', $user->id)
