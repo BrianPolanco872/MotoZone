@@ -153,3 +153,7 @@ plan-importar-csv-barcodes-01 -> propone_fix_para -> hipotesis-H1-importar-csv-b
 plan-importar-csv-barcodes-01 -> se_apoya_en -> plan-barcode2-productos-01
 plan-importar-csv-barcodes-01 -> implementado_por -> fix-importar-csv-barcodes-01
 bug-importar-csv-barcodes-01 -> corregido_en_fuente_por -> fix-importar-csv-barcodes-01
+bug-productos-costo-vacio-01 -> causa_confirmada -> hipotesis-H1-productos-costo-vacio-01
+bug-productos-costo-vacio-01 -> tiene_plan -> plan-productos-costo-vacio-01
+plan-productos-costo-vacio-01 -> propone_fix_para -> hipotesis-H1-productos-costo-vacio-01
+bug-productos-costo-vacio-01 -> hipotesis_pendiente_de_secuencia -> hipotesis-H2-productos-costo-vacio-01
