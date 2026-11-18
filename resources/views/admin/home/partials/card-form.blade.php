@@ -1,11 +1,20 @@
 @php
     $exists = $card->exists;
     $isProductLike = $section !== 'categories';
+    $usesThousands = $section === 'products';
     $action = $exists ? route('admin.home.cards.update', $card) : route('admin.home.cards.store');
     $useOldInput = old('section') === $section && (string) old('card_id', '') === (string) ($card->id ?? '');
     $formValues = $card->only(['title', 'subtitle', 'description', 'price', 'sale_price', 'badge', 'link_url', 'link_label', 'product_id', 'is_active', 'slug', 'icon', 'sort_order', 'image_url']);
     if ($useOldInput) {
         $formValues = array_replace($formValues, old());
+    }
+    if ($usesThousands) {
+        foreach (['price', 'sale_price'] as $field) {
+            $value = $formValues[$field] ?? null;
+            if (is_numeric($value)) {
+                $formValues[$field] = number_format((float) $value, 2, '.', ',');
+            }
+        }
     }
 @endphp
 
@@ -47,15 +56,19 @@
         <div class="grid gap-4 sm:grid-cols-2">
             <div>
                 <label for="{{ $section }}-{{ $card->id ?? 'new' }}-price" class="mb-1 block text-sm font-medium">Precio regular</label>
-                <input id="{{ $section }}-{{ $card->id ?? 'new' }}-price" name="price" type="number" step="0.01" min="0" max="99999999" value="{{ $formValues['price'] ?? '' }}" class="mz-input h-11 w-full">
+                <input id="{{ $section }}-{{ $card->id ?? 'new' }}-price" name="price" type="{{ $usesThousands ? 'text' : 'number' }}" @if ($usesThousands) inputmode="decimal" aria-describedby="{{ $section }}-{{ $card->id ?? 'new' }}-price-help" @else step="0.01" min="0" max="99999999" @endif value="{{ $formValues['price'] ?? '' }}" class="mz-input h-11 w-full">
                 @error('price')<p class="mt-1 text-sm text-mz-error">{{ $message }}</p>@enderror
             </div>
             <div>
                 <label for="{{ $section }}-{{ $card->id ?? 'new' }}-sale-price" class="mb-1 block text-sm font-medium">Precio de oferta <span class="font-normal text-mz-text-muted">(opcional)</span></label>
-                <input id="{{ $section }}-{{ $card->id ?? 'new' }}-sale-price" name="sale_price" type="number" step="0.01" min="0" max="99999999" value="{{ $formValues['sale_price'] ?? '' }}" class="mz-input h-11 w-full">
+                <input id="{{ $section }}-{{ $card->id ?? 'new' }}-sale-price" name="sale_price" type="{{ $usesThousands ? 'text' : 'number' }}" @if ($usesThousands) inputmode="decimal" aria-describedby="{{ $section }}-{{ $card->id ?? 'new' }}-price-help" @else step="0.01" min="0" max="99999999" @endif value="{{ $formValues['sale_price'] ?? '' }}" class="mz-input h-11 w-full">
                 @error('sale_price')<p class="mt-1 text-sm text-mz-error">{{ $message }}</p>@enderror
             </div>
         </div>
+
+        @if ($usesThousands)
+            <p id="{{ $section }}-{{ $card->id ?? 'new' }}-price-help" class="text-xs text-mz-text-muted">Usa coma para miles y punto para decimales: 1,299.50. También puedes escribir 1299.50. Máximo: 99,999,999.00.</p>
+        @endif
 
     @endif
 
@@ -87,7 +100,7 @@
         'mediaId' => $section.'-'.($card->id ?? 'new'),
         'label' => 'Fotos de la card',
         'mainName' => 'image',
-        'mainUrl' => $card->coverUrl(),
+        'mainUrl' => $card->imageUrl(),
         'mainSourceUrl' => $card->image_url ?? '',
         'mainUrlValue' => $formValues['image_url'] ?? '',
         'galleryUrlValue' => $useOldInput ? old('gallery_url', '') : '',

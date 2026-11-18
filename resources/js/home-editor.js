@@ -222,6 +222,13 @@ document.querySelectorAll('[data-home-editor]').forEach((editor) => {
             element.classList.toggle('hidden', !visible);
         };
 
+        const savedGallery = [...media.querySelectorAll('[data-media-gallery-item]')];
+        savedGallery.forEach((item) => {
+            const remove = item.querySelector('[data-media-gallery-remove]');
+            setVisible(item, !remove.checked);
+            remove.addEventListener('change', () => setVisible(item, !remove.checked));
+        });
+
         const previewDirectUrl = (input, image, wrapper, status, initialUrl, fallbackUrl) => {
             if (!input || !image) return () => {};
             let version = 0;
@@ -352,7 +359,7 @@ document.querySelectorAll('[data-home-editor]').forEach((editor) => {
             if (main) main.value = '';
             if (mainUrl) {
                 mainUrl.value = '';
-                mainUrl.dispatchEvent(new Event('input', { bubbles: true }));
+                restoreMainUrlPreview();
             }
             revokeMain();
             if (mainPreview) mainPreview.removeAttribute('src');
@@ -408,6 +415,7 @@ document.querySelectorAll('[data-home-editor]').forEach((editor) => {
             revokeGallery();
             files = [];
             newGallery?.replaceChildren();
+            savedGallery.forEach((item) => setVisible(item, !item.querySelector('[data-media-gallery-remove]').defaultChecked));
             if (mainPreview) {
                 if (originalMainUrl) mainPreview.src = originalMainUrl;
                 else mainPreview.removeAttribute('src');

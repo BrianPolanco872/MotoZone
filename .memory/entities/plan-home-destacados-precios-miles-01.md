@@ -1,0 +1,29 @@
+---
+entity: plan-home-destacados-precios-miles-01
+type: plan
+---
+
+- Tipo: bug-fix
+- Aprobación explícita en este chat: usuario «si» a coma para miles y punto para decimales y a aplicar el ajuste.
+- Objetivo: permitir escribir precios como 1299, 1,299 o 1,299.50 en Destacados y mostrarlos con miles al editar, sin alterar su valor monetario.
+- Causa raíz: hipotesis-H1-home-destacados-precios-miles-01 CONFIRMADA.
+- Convención propuesta: coma para miles y punto para decimales, coherente con presentación MXN actual. 1,299.50 equivale a 1299.50; 7.50 sigue siendo 7.50. No aceptar texto arbitrario ni reinterpretar coma decimal 7,50 como 750. Aprobación de ejemplos requerida antes de implementar.
+- Paso 1: solo en section=products, cambiar price/sale_price a inputs text con inputmode decimal y ayuda breve de formato; conservar IDs/names, estilos, accesibilidad y carácter opcional. Otras secciones del partial mantienen su comportamiento actual.
+- Paso 2: normalizar en HomeCardRequest solo las comas de agrupación de miles bien formadas antes de numeric/min/max y comparación sale_price <= price. Determinar sección efectiva por card existente al editar, no confiar en section manipulada para cambiar alcance. Preservar validación/autorización, vacíos como null y valores inválidos con mensaje útil; no quitar caracteres indiscriminadamente ni usar parseFloat que trunque.
+- Paso 3: al mostrar precios existentes/válidos en el editor de Destacados, usar formato monetario canónico con coma de miles y dos decimales (1,299.50). Tras errores, mantener el dato inválido visible para corregirlo sin convertirlo silenciosamente en otro importe. Guardar siempre decimal real, no el texto con comas.
+- Paso 4: verificar compatibilidad del selector de producto existente: el JS actual copia 1299.00 y despacha input, valor aceptado por el nuevo campo y backend. No agregar máscara en vivo, nuevas dependencias ni modificar el JS/bundle para esta solución mínima. La portada ya formatea miles correctamente.
+- Paso 5: añadir cobertura de creación y edición con miles/decimales, ambos precios, conservación del importe, oferta mayor rechazada tras normalizar, formatos mal agrupados/coma decimal rechazados sin escritura y render de inputs/formato en Destacados; conservar otras secciones, límite máximo, negativos y opcionales. Verificar sintaxis/Pint/diff; Testing solo con solicitud explícita.
+- Archivos previstos: resources/views/admin/home/partials/card-form.blade.php; app/Http/Requests/Admin/HomeCardRequest.php; tests/Feature/AdminHomeContentTest.php y/o tests/Feature/HomeCardTest.php según cobertura existente, sin duplicación.
+- Solo inspección, sin cambios previstos: HomeCardController.php, HomeCard.php, components/promo-card.blade.php, resources/js/home-editor.js. El almacenamiento decimal y la home pública ya soportan el importe correcto y la presentación con miles.
+- Criterios de aceptación: escribir 1,299.50 no elimina la coma ni rechaza un importe válido; persistir 1299.50 y volver a mostrar 1,299.50; precio de oferta conserva igual tratamiento; 7.50 no se convierte en 750; inválidos no alteran importes existentes; otras secciones y precios de inventario/POS intactos.
+- Exclusiones: preservar cualquier texto monetario literalmente en BD, coma decimal europea, máscaras/reformateo por cada pulsación, cambios de inventario/costos/códigos, migraciones, nuevas dependencias, JS, builds y operaciones de historial git.
+- Plan de rollback: revertir únicamente estos cambios de entrada/normalización/tests conservando trabajo previo; no habrá migraciones ni escrituras sobre cards reales durante implementación. Los precios permanecen decimales compatibles con el flujo anterior.
+- Herramientas: read/glob/grep, patch y PowerShell disponibles; MCP memory/codesearch no disponible en esta sesión, fallback .memory/. .ai/rules no existe según glob. Skills disponibles/aplicables ya cargadas: ponytail, laravel-best-practices, tailwindcss-development y testing-best-practices.
+- Fecha: 2026-11-17.
+- Estado: IMPLEMENTADO.
+- Cambios aplicados: price y sale_price de Destacados usan text/inputmode decimal con ayuda asociada por aria-describedby; importes numéricos mostrados con coma de miles y dos decimales. HomeCardRequest normaliza solo agrupaciones válidas mediante regex y eliminación de comas como texto antes de las reglas existentes; sección efectiva del registro al actualizar. Se preservan límites, opcionales, comparación de oferta y texto mal formado tras errores.
+- Archivos tocados: app/Http/Requests/Admin/HomeCardRequest.php; resources/views/admin/home/partials/card-form.blade.php; tests/Feature/AdminHomeContentTest.php. Sin cambios en JS, modelo, controlador, portada, inventario ni POS.
+- Cobertura añadida: seis variantes de creación/edición con miles/decimales, 7.50, máximo y vacíos; ocho rechazos de agrupación inválida, coma decimal, texto, máximo, negativos y oferta mayor sin sobrescritura; atributos/valores renderizados y preservación de texto inválido; alcance por sección real y campos de Recién llegados numéricos conservados.
+- Verificación básica: Laravel v13.38.0 confirmado; Pint --dirty --format agent correcto; php -l en request y prueba correcto; git diff --check sin errores; revisión completa del diff y de callers (store/update/payload y selector JS) confirma alcance y compatibilidad. .ai/rules no existe.
+- Desviaciones del plan original: ninguna; toda la cobertura quedó en AdminHomeContentTest.php sin duplicarla en HomeCardTest.php. No se necesitó build al no cambiar JS/CSS ni agregar clases nuevas.
+- Pendiente: Testing requiere solicitud explícita; pruebas añadidas pero no ejecutadas. No se verificó en navegador ni se modificaron cards/datos reales. El incidente de costo de inventario sigue pendiente y no está incluido en este arreglo.

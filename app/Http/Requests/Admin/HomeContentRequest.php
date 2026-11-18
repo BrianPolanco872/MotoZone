@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Admin;
 
 use App\Models\HomePage;
+use App\Services\GoogleMapsLinkResolver;
 use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Validator;
@@ -101,9 +102,11 @@ class HomeContentRequest extends FormRequest
             $rules['content.longitude'] = ['bail', 'sometimes', 'nullable', 'numeric', 'between:-180,180'];
             foreach (['maps_url', 'map_embed_url'] as $key) {
                 $rules['content.'.$key][] = function (string $attribute, mixed $value, Closure $fail) use ($key): void {
-                    if (! HomePage::isGoogleMapsUrl($value, $key === 'map_embed_url')) {
+                    $valid = is_string($value) && (HomePage::isGoogleMapsUrl($value, $key === 'map_embed_url')
+                        || ($key === 'map_embed_url' && $this->block() === 'location' && GoogleMapsLinkResolver::supportsShortUrl($value)));
+                    if (! $valid) {
                         $fail($key === 'map_embed_url'
-                            ? 'Pega solo la URL HTTPS de Google Maps > Compartir > Insertar mapa (src), no el HTML ni un enlace corto.'
+                            ? 'Pega un enlace corto HTTPS de maps.app.goo.gl o la URL de inserción de Google Maps (src), no el HTML.'
                             : 'Escribe un enlace HTTPS de Google Maps para llegar al mostrador.');
                     }
                 };

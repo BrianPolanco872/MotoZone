@@ -9,6 +9,7 @@ use App\Models\HomePage;
 use App\Models\Product;
 use App\Services\AuditLogService;
 use App\Services\GalleryService;
+use App\Services\GoogleMapsLinkResolver;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -16,6 +17,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use RuntimeException;
 use Throwable;
 
@@ -36,8 +38,21 @@ class HomeContentController extends Controller
         return view('admin.home.edit', compact('page', 'cards', 'selectedCategory'));
     }
 
-    public function update(HomeContentRequest $request, GalleryService $gallery): RedirectResponse
+    public function update(HomeContentRequest $request, GalleryService $gallery, GoogleMapsLinkResolver $maps): RedirectResponse
     {
+        $validatedContent = $request->validated('content', []);
+        $mapUrl = $validatedContent['map_embed_url'] ?? null;
+        if ($request->block() === 'location' && is_string($mapUrl) && GoogleMapsLinkResolver::supportsShortUrl($mapUrl)) {
+            $resolved = $maps->resolve($mapUrl);
+            if ($resolved === null) {
+                throw ValidationException::withMessages([
+                    'content.map_embed_url' => 'No se pudo convertir el enlace. Usa un enlace de una ubicación puntual de Google Maps o su URL de inserción. No se cambió la ubicación guardada.',
+                ]);
+            }
+
+            $validatedContent['map_embed_url'] = $resolved;
+        }
+
         $hero = ! $request->has('block') || $request->block() === 'hero';
         $newPath = null;
         $newGallery = [];
@@ -57,9 +72,9 @@ class HomeContentController extends Controller
                 }
             }
 
-            $removedGallery = DB::transaction(function () use ($request, $hero, $newPath, $newGallery, $gallery): array {
+            $removedGallery = DB::transaction(function () use ($request, $validatedContent, $hero, $newPath, $newGallery, $gallery): array {
                 $page = HomePage::lockForEditing();
-                $content = array_replace($page->content ?? [], $request->validated('content', []));
+                $content = array_replace($page->content ?? [], $validatedContent);
                 $removed = [];
 
                 if ($hero) {

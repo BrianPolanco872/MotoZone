@@ -17,6 +17,18 @@ class HomeCardRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         $this->merge(['is_active' => $this->boolean('is_active')]);
+
+        if (($this->route('card')?->section ?? $this->input('section')) !== 'products') {
+            return;
+        }
+
+        foreach (['price', 'sale_price'] as $field) {
+            $value = $this->input($field);
+
+            if (is_string($value) && preg_match('/\A[0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]{1,2})?\z/', $value) === 1) {
+                $this->merge([$field => str_replace(',', '', $value)]);
+            }
+        }
     }
 
     /** @return array<string, array<int, mixed>> */

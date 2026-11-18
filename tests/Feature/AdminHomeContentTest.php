@@ -8,10 +8,15 @@ use App\Models\Product;
 use App\Models\User;
 use App\Services\AuditLogService;
 use Database\Seeders\RolePermissionSeeder;
+use DOMDocument;
+use DOMElement;
+use DOMXPath;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\TestWith;
 use RuntimeException;
@@ -109,6 +114,160 @@ class AdminHomeContentTest extends TestCase
         $this->assertSame('/#nuevos', $card->link_url);
         $this->assertSame('Comprar ahora', $card->link_label);
         $this->assertSame($product->id, $card->product_id);
+    }
+
+    #[TestWith(['1,299', '999', '1299.00', '999.00'])]
+    #[TestWith(['1,299.50', '1,099.75', '1299.50', '1099.75'])]
+    #[TestWith(['1299.50', '', '1299.50', null])]
+    #[TestWith(['7.50', '', '7.50', null])]
+    #[TestWith(['99,999,999.00', '1,234,567.89', '99999999.00', '1234567.89'])]
+    #[TestWith(['', '', null, null])]
+    public function test_featured_prices_accept_thousands_without_changing_amounts(string $price, string $salePrice, ?string $expectedPrice, ?string $expectedSalePrice): void
+    {
+        $this->actingAs($this->admin())->post(route('admin.home.cards.store'), [
+            'section' => 'products', 'title' => 'Destacado con precio', 'is_active' => '1',
+            'price' => $price, 'sale_price' => $salePrice,
+        ])->assertRedirect(route('admin.home.edit').'#destacados')->assertSessionHasNoErrors();
+
+        $card = HomeCard::query()->sole();
+        $this->assertSame($expectedPrice, $card->price);
+        $this->assertSame($expectedSalePrice, $card->sale_price);
+
+        $this->put(route('admin.home.cards.update', $card), [
+            'section' => 'new', 'title' => 'Precio editado', 'is_active' => '1',
+            'price' => $price, 'sale_price' => $salePrice,
+        ])->assertRedirect(route('admin.home.edit').'#destacados')->assertSessionHasNoErrors();
+
+        $card->refresh();
+        $this->assertSame('products', $card->section);
+        $this->assertSame('Precio editado', $card->title);
+        $this->assertSame($expectedPrice, $card->price);
+        $this->assertSame($expectedSalePrice, $card->sale_price);
+        $this->assertDatabaseCount('home_cards', 1);
+    }
+
+    #[TestWith(['price', '1,29'])]
+    #[TestWith(['price', '7,50'])]
+    #[TestWith(['price', '1.299,50'])]
+    #[TestWith(['price', '1,299.50x'])]
+    #[TestWith(['price', '100,000,000.00'])]
+    #[TestWith(['price', '-1'])]
+    #[TestWith(['sale_price', '1,09.75'])]
+    #[TestWith(['sale_price', '2,001.00'])]
+    public function test_invalid_featured_prices_do_not_replace_saved_amounts(string $field, string $value): void
+    {
+        $card = HomeCard::factory()->create(['price' => 2000, 'sale_price' => 1000]);
+        $before = $card->fresh()->getAttributes();
+
+        $this->actingAs($this->admin())->put(route('admin.home.cards.update', $card), array_replace([
+            'section' => 'products', 'title' => 'No guardar', 'is_active' => '1',
+            'price' => '2,000.00', 'sale_price' => '1,000.00',
+        ], [$field => $value]))->assertSessionHasErrors($field);
+
+        $this->assertSame($before, $card->fresh()->getAttributes());
+        $this->assertDatabaseCount('home_cards', 1);
+    }
+
+    public function test_featured_price_fields_display_thousands_without_changing_novelty_inputs(): void
+    {
+        $featured = HomeCard::factory()->create(['price' => 1299.50, 'sale_price' => 1099.75]);
+        $novelty = HomeCard::factory()->novelty()->create(['price' => 2500]);
+
+        $response = $this->actingAs($this->admin())->get(route('admin.home.edit'))->assertOk();
+
+        $document = new DOMDocument;
+        $document->loadHTML('<?xml encoding="UTF-8">'.$response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+        $xpath = new DOMXPath($document);
+
+        foreach (['price' => '1,299.50', 'sale-price' => '1,099.75'] as $field => $value) {
+            $input = $xpath->query('//input[@id="products-'.$featured->id.'-'.$field.'"]')->item(0);
+            $this->assertInstanceOf(DOMElement::class, $input);
+            $this->assertSame('text', $input->getAttribute('type'));
+            $this->assertSame('decimal', $input->getAttribute('inputmode'));
+            $this->assertSame($value, $input->getAttribute('value'));
+        }
+
+        $input = $xpath->query('//input[@id="new-'.$novelty->id.'-price"]')->item(0);
+        $this->assertInstanceOf(DOMElement::class, $input);
+        $this->assertSame('number', $input->getAttribute('type'));
+        $this->assertSame('2500.00', $input->getAttribute('value'));
+    }
+
+    public function test_invalid_featured_price_text_is_preserved_for_correction(): void
+    {
+        $card = HomeCard::factory()->create(['price' => 1299.50]);
+
+        $response = $this->actingAs($this->admin())->withSession(['_old_input' => [
+            'section' => 'products', 'card_id' => (string) $card->id,
+            'price' => '1,29x', 'sale_price' => '7,50',
+        ]])->get(route('admin.home.edit'))->assertOk();
+
+        $document = new DOMDocument;
+        $document->loadHTML('<?xml encoding="UTF-8">'.$response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+        $xpath = new DOMXPath($document);
+
+        foreach (['price' => '1,29x', 'sale-price' => '7,50'] as $field => $value) {
+            $input = $xpath->query('//input[@id="products-'.$card->id.'-'.$field.'"]')->item(0);
+            $this->assertInstanceOf(DOMElement::class, $input);
+            $this->assertSame($value, $input->getAttribute('value'));
+        }
+    }
+
+    #[TestWith(['new'])]
+    #[TestWith(['categories'])]
+    public function test_thousands_normalization_uses_the_saved_card_section(string $section): void
+    {
+        $card = HomeCard::factory()->create(['section' => $section, 'price' => 2000]);
+
+        $this->actingAs($this->admin())->put(route('admin.home.cards.update', $card), [
+            'section' => 'products', 'title' => 'No cambiar sección', 'is_active' => '1', 'price' => '1,299.50',
+        ])->assertSessionHasErrors('price');
+
+        $this->assertSame($section, $card->fresh()->section);
+        $this->assertSame('2000.00', $card->fresh()->price);
+    }
+
+    public function test_gallery_photo_is_not_presented_as_a_saved_main_photo_in_the_editor(): void
+    {
+        $galleryUrl = 'https://images.example.test/gallery-only.jpg';
+        $card = HomeCard::factory()->create(['image_path' => null, 'image_url' => null, 'gallery' => [$galleryUrl]]);
+
+        $response = $this->actingAs($this->admin())->get(route('admin.home.edit'))->assertOk();
+
+        $document = new DOMDocument;
+        $document->loadHTML('<?xml encoding="UTF-8">'.$response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+        $xpath = new DOMXPath($document);
+        $media = '//fieldset[.//input[@id="products-'.$card->id.'-main"]]';
+        $preview = $xpath->query($media.'//img[@data-media-main-preview]')->item(0);
+        $this->assertInstanceOf(DOMElement::class, $preview);
+        $this->assertFalse($preview->hasAttribute('src'));
+        $this->assertSame(1, $xpath->query($media.'//img[@src="'.$galleryUrl.'"]')->length);
+        $this->assertSame($galleryUrl, $card->coverUrl());
+    }
+
+    public function test_saved_gallery_removal_controls_are_present_in_all_four_editor_sections(): void
+    {
+        Storage::fake('public');
+        $galleryUrl = 'https://images.example.test/gallery.jpg';
+        HomePage::factory()->create(['gallery' => [$galleryUrl]]);
+        $featured = HomeCard::factory()->create(['gallery' => [$galleryUrl]]);
+        $novelty = HomeCard::factory()->novelty()->create(['gallery' => [$galleryUrl]]);
+        $category = HomeCard::factory()->category()->create(['gallery' => [$galleryUrl]]);
+
+        $response = $this->actingAs($this->admin())->get(route('admin.home.edit', ['family' => $category->id]))->assertOk();
+
+        $document = new DOMDocument;
+        $document->loadHTML('<?xml encoding="UTF-8">'.$response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+        $xpath = new DOMXPath($document);
+
+        foreach (['hero', 'products-'.$featured->id, 'new-'.$novelty->id, 'categories-'.$category->id] as $mediaId) {
+            $media = '//fieldset[.//input[@id="'.$mediaId.'-main"]]';
+            $remove = $xpath->query($media.'//*[@data-media-gallery-item]//input[@data-media-gallery-remove]')->item(0);
+            $this->assertInstanceOf(DOMElement::class, $remove);
+            $this->assertSame('remove_gallery[]', $remove->getAttribute('name'));
+            $this->assertSame($galleryUrl, $remove->getAttribute('value'));
+            $this->assertFalse($remove->hasAttribute('disabled'));
+        }
     }
 
     public function test_novelty_card_form_drops_subtitle_badge_and_manual_links(): void
@@ -594,9 +753,9 @@ class AdminHomeContentTest extends TestCase
     #[TestWith(['location', ['map_mode' => 'pin', 'latitude' => 0], 'content.longitude', 'Indica la latitud y la longitud juntas para colocar el pin.'])]
     #[TestWith(['location', ['map_mode' => 'pin', 'longitude' => 0], 'content.latitude', 'Indica la latitud y la longitud juntas para colocar el pin.'])]
     #[TestWith(['location', ['map_mode' => 'google'], 'content.map_embed_url', 'Indica la URL de inserción de Google Maps para mostrar este mapa.'])]
-    #[TestWith(['location', ['map_embed_url' => 'https://maps.app.goo.gl/short'], 'content.map_embed_url', 'Pega solo la URL HTTPS de Google Maps > Compartir > Insertar mapa (src), no el HTML ni un enlace corto.'])]
-    #[TestWith(['location', ['map_embed_url' => '<iframe src="https://www.google.com/maps/embed?pb=test"></iframe>'], 'content.map_embed_url', 'Pega solo la URL HTTPS de Google Maps > Compartir > Insertar mapa (src), no el HTML ni un enlace corto.'])]
-    #[TestWith(['location', ['map_embed_url' => 'https://www.google.com.evil.test/maps/embed?pb=test'], 'content.map_embed_url', 'Pega solo la URL HTTPS de Google Maps > Compartir > Insertar mapa (src), no el HTML ni un enlace corto.'])]
+    #[TestWith(['location', ['map_embed_url' => 'https://maps.app.goo.gl/'], 'content.map_embed_url', 'Pega un enlace corto HTTPS de maps.app.goo.gl o la URL de inserción de Google Maps (src), no el HTML.'])]
+    #[TestWith(['location', ['map_embed_url' => '<iframe src="https://www.google.com/maps/embed?pb=test"></iframe>'], 'content.map_embed_url', 'Pega un enlace corto HTTPS de maps.app.goo.gl o la URL de inserción de Google Maps (src), no el HTML.'])]
+    #[TestWith(['location', ['map_embed_url' => 'https://www.google.com.evil.test/maps/embed?pb=test'], 'content.map_embed_url', 'Pega un enlace corto HTTPS de maps.app.goo.gl o la URL de inserción de Google Maps (src), no el HTML.'])]
     #[TestWith(['location', ['maps_url' => 'javascript:alert(1)'], 'content.maps_url', 'Escribe un enlace HTTPS de Google Maps para llegar al mostrador.'])]
     #[TestWith(['location', ['maps_url' => 'http://maps.google.com/?q=test'], 'content.maps_url', 'Escribe un enlace HTTPS de Google Maps para llegar al mostrador.'])]
     #[TestWith(['location', ['maps_url' => 'https://www.google.com@evil.test/maps'], 'content.maps_url', 'Escribe un enlace HTTPS de Google Maps para llegar al mostrador.'])]
@@ -606,6 +765,182 @@ class AdminHomeContentTest extends TestCase
             ->assertSessionHasErrors([$field => $message]);
 
         $this->assertDatabaseCount('home_pages', 0);
+    }
+
+    #[TestWith(['https://www.google.com/maps/place/Motorefacciones+Motozone/@0,0,17z/data=!3m5!8m2!3d21.0049966!4d-89.3959592', '21.0049966,-89.3959592'])]
+    #[TestWith(['https://www.google.com/maps?q=0%2C0', '0,0'])]
+    #[TestWith(['https://www.google.com/maps/search/?api=1&query=19.5%2C-99.5', '19.5,-99.5'])]
+    public function test_google_short_map_link_is_converted_and_rendered_without_changing_other_content(string $target, string $coordinates): void
+    {
+        Http::preventStrayRequests();
+        Storage::fake('public');
+        $short = 'https://maps.app.goo.gl/r6GZ2qGtkTtopaqz5';
+        $legacy = 'https://maps.google.com/maps?q='.rawurlencode($coordinates).'&z=16&output=embed';
+        $embed = 'https://www.google.com/maps/embed?origin=mfe&pb=!1m3!2m1!1s'.$coordinates.'!6i16';
+        $directions = 'https://maps.app.goo.gl/keep-directions';
+        $page = HomePage::factory()->create(['content' => [
+            'hero_title' => 'Conservar', 'maps_url' => $directions,
+        ]]);
+        Http::fake(function (ClientRequest $request, array $options) use ($short, $target, $legacy, $embed): mixed {
+            $this->assertSame($request->url() === $legacy ? 'GET' : 'HEAD', $request->method());
+            $this->assertFalse($options['allow_redirects']);
+            $this->assertTrue($options['stream']);
+            $this->assertLessThanOrEqual(3, $options['timeout']);
+            $this->assertLessThanOrEqual(2, $options['connect_timeout']);
+
+            return match ($request->url()) {
+                $short => Http::response('', 302, ['Location' => $target]),
+                $legacy => Http::response('', 301, ['Location' => $embed]),
+                default => null,
+            };
+        });
+
+        $this->actingAs($this->admin())->put(route('admin.home.update'), ['block' => 'location', 'content' => [
+            'map_mode' => 'google', 'map_embed_url' => $short, 'show_location' => '1',
+        ]])->assertRedirect(route('admin.home.edit').'#ubicacion')->assertSessionHasNoErrors();
+
+        $page->refresh();
+        $this->assertSame($embed, $page->text('map_embed_url'));
+        $this->assertSame($embed, $page->mapEmbedUrl());
+        $this->assertSame($directions, $page->directionsUrl());
+        $this->assertSame('Conservar', $page->text('hero_title'));
+        Http::assertSentCount(2);
+
+        $this->get(route('home'))->assertOk()->assertSee($embed)->assertSee($directions, false);
+        Http::assertSentCount(2);
+    }
+
+    #[TestWith(['http://www.google.com/maps/place/X/data=!3d21!4d-89'])]
+    #[TestWith(['https://evil.test/maps/place/X/data=!3d21!4d-89'])]
+    #[TestWith(['https://127.0.0.1/maps/place/X/data=!3d21!4d-89'])]
+    #[TestWith(['https://www.google.com:8443/maps/place/X/data=!3d21!4d-89'])]
+    #[TestWith(['https://user:pass@www.google.com/maps/place/X/data=!3d21!4d-89'])]
+    #[TestWith(['https://www.google.com.evil.test/maps/place/X/data=!3d21!4d-89'])]
+    public function test_google_short_map_rejects_unsafe_redirects_without_visiting_them(string $target): void
+    {
+        Http::preventStrayRequests();
+        $short = 'https://maps.app.goo.gl/short';
+        $page = HomePage::factory()->create(['content' => ['map_mode' => 'pin', 'latitude' => '19', 'longitude' => '-99']]);
+        $before = $page->fresh()->getAttributes();
+        Http::fake([$short => Http::response('', 302, ['Location' => $target])]);
+
+        $this->actingAs($this->admin())->from(route('admin.home.edit'))
+            ->put(route('admin.home.update'), ['block' => 'location', 'content' => [
+                'map_mode' => 'google', 'map_embed_url' => $short,
+            ]])->assertSessionHasErrors('content.map_embed_url');
+
+        $this->assertSame($before, $page->fresh()->getAttributes());
+        $this->assertSame($short, session('_old_input.content.map_embed_url'));
+        Http::assertSentCount(1);
+    }
+
+    #[TestWith(['https://www.google.com/maps/@21,-89,17z'])]
+    #[TestWith(['https://www.google.com/maps/place/X/data=!3d91!4d0'])]
+    #[TestWith(['https://www.google.com/maps/place/X/data=!3d21!4d181'])]
+    #[TestWith(['https://www.google.com/maps/place/X/data=!3d21!4d-89abc'])]
+    #[TestWith(['https://www.google.com/maps/place/X/data=!3d1!4d1!3d2!4d2'])]
+    #[TestWith(['https://www.google.com/maps/dir/X/Y/data=!3d21!4d-89'])]
+    #[TestWith(['https://www.google.com/maps?q=not-coordinates'])]
+    public function test_google_short_map_does_not_guess_a_location_without_a_valid_point(string $target): void
+    {
+        Http::preventStrayRequests();
+        $short = 'https://maps.app.goo.gl/short';
+        $page = HomePage::factory()->create(['content' => ['address' => 'Conservar ubicación']]);
+        $before = $page->fresh()->getAttributes();
+        Http::fake([
+            $short => Http::response('', 302, ['Location' => $target]),
+            $target => Http::response('', 200),
+        ]);
+
+        $this->actingAs($this->admin())->put(route('admin.home.update'), ['block' => 'location', 'content' => [
+            'map_mode' => 'google', 'map_embed_url' => $short,
+        ]])->assertSessionHasErrors(['content.map_embed_url' => 'No se pudo convertir el enlace. Usa un enlace de una ubicación puntual de Google Maps o su URL de inserción. No se cambió la ubicación guardada.']);
+
+        $this->assertSame($before, $page->fresh()->getAttributes());
+        Http::assertSentCount(2);
+    }
+
+    #[TestWith([false])]
+    #[TestWith([true])]
+    public function test_google_short_map_handles_missing_links_and_connection_failures(bool $connectionFailure): void
+    {
+        Http::preventStrayRequests();
+        $short = 'https://maps.app.goo.gl/short';
+        $page = HomePage::factory()->create(['content' => ['address' => 'Conservar']]);
+        $before = $page->fresh()->getAttributes();
+        Http::fake([$short => $connectionFailure ? Http::failedConnection() : Http::response('', 404)]);
+
+        $this->actingAs($this->admin())->put(route('admin.home.update'), ['block' => 'location', 'content' => [
+            'map_mode' => 'google', 'map_embed_url' => $short,
+        ]])->assertSessionHasErrors('content.map_embed_url');
+
+        $this->assertSame($before, $page->fresh()->getAttributes());
+    }
+
+    #[TestWith([true, 2])]
+    #[TestWith([false, 3])]
+    public function test_google_short_map_stops_redirect_loops_and_long_chains(bool $loop, int $expectedRequests): void
+    {
+        Http::preventStrayRequests();
+        $short = 'https://maps.app.goo.gl/one';
+        Http::fake([
+            $short => Http::response('', 302, ['Location' => 'https://maps.app.goo.gl/two']),
+            'https://maps.app.goo.gl/two' => Http::response('', 302, ['Location' => $loop ? $short : 'https://maps.app.goo.gl/three']),
+            'https://maps.app.goo.gl/three' => Http::response('', 302, ['Location' => 'https://maps.app.goo.gl/four']),
+        ]);
+
+        $this->actingAs($this->admin())->put(route('admin.home.update'), ['block' => 'location', 'content' => [
+            'map_mode' => 'google', 'map_embed_url' => $short,
+        ]])->assertSessionHasErrors('content.map_embed_url');
+
+        $this->assertDatabaseCount('home_pages', 0);
+        Http::assertSentCount($expectedRequests);
+    }
+
+    #[TestWith(['https://evil.test/maps/embed?pb=unsafe'])]
+    #[TestWith(['https://www.google.com/maps?q=21,-89'])]
+    public function test_google_short_map_only_saves_a_supported_google_iframe_url(string $invalidEmbed): void
+    {
+        Http::preventStrayRequests();
+        $short = 'https://maps.app.goo.gl/short';
+        Http::fake([
+            $short => Http::response('', 302, ['Location' => 'https://www.google.com/maps/place/X/data=!3d21!4d-89']),
+            'https://maps.google.com/maps?*' => Http::response('', 301, ['Location' => $invalidEmbed]),
+        ]);
+
+        $this->actingAs($this->admin())->put(route('admin.home.update'), ['block' => 'location', 'content' => [
+            'map_mode' => 'google', 'map_embed_url' => $short,
+        ]])->assertSessionHasErrors('content.map_embed_url');
+
+        $this->assertDatabaseCount('home_pages', 0);
+        Http::assertSentCount(2);
+    }
+
+    public function test_google_short_map_is_not_stored_unresolved_by_a_legacy_full_update(): void
+    {
+        Http::preventStrayRequests();
+        Http::fake();
+
+        $this->actingAs($this->admin())->put(route('admin.home.update'), ['content' => [
+            'map_mode' => 'google', 'map_embed_url' => 'https://maps.app.goo.gl/short',
+        ]])->assertSessionHasErrors('content.map_embed_url');
+
+        $this->assertDatabaseCount('home_pages', 0);
+        Http::assertNothingSent();
+    }
+
+    public function test_employee_cannot_trigger_google_short_map_resolution(): void
+    {
+        Http::preventStrayRequests();
+        Http::fake();
+        $employee = User::factory()->create()->assignRole('empleado');
+
+        $this->actingAs($employee)->put(route('admin.home.update'), ['block' => 'location', 'content' => [
+            'map_mode' => 'google', 'map_embed_url' => 'https://maps.app.goo.gl/short',
+        ]])->assertForbidden();
+
+        $this->assertDatabaseCount('home_pages', 0);
+        Http::assertNothingSent();
     }
 
     public function test_partial_location_update_uses_saved_coordinate_and_rejects_clearing_only_one(): void

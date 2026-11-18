@@ -9,6 +9,7 @@ use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use PHPUnit\Framework\Attributes\TestWith;
 use Tests\TestCase;
 
 class HomeCardTest extends TestCase
@@ -123,6 +124,62 @@ class HomeCardTest extends TestCase
         $this->assertSame([$imageUrl, $galleryUrl], $card->galleryUrls());
         $this->assertNull($product->fresh()->image_path);
         $this->get(route('home'))->assertOk()->assertSee($imageUrl, false)->assertSee($galleryUrl, false);
+    }
+
+    #[TestWith([false])]
+    #[TestWith([true])]
+    public function test_removing_main_photo_keeps_gallery_and_linked_product_photo(bool $useRemoteUrl): void
+    {
+        Storage::disk('public')->put('home/cards/main.png', 'main');
+        Storage::disk('public')->put('products/own.png', 'product');
+        $product = Product::factory()->create(['image_path' => 'products/own.png']);
+        $photos = ['https://images.example.test/gallery.jpg'];
+        $card = HomeCard::factory()->create([
+            'image_path' => $useRemoteUrl ? null : 'home/cards/main.png',
+            'image_url' => $useRemoteUrl ? 'https://images.example.test/main.jpg' : null,
+            'gallery' => $photos,
+            'product_id' => $product->id,
+        ]);
+
+        $this->actingAs($this->admin())->put(route('admin.home.cards.update', $card), $this->payload([
+            'image_url' => '', 'remove_image' => '1', 'product_id' => $product->id,
+        ]))->assertRedirect(route('admin.home.edit').'#destacados')->assertSessionHasNoErrors();
+
+        $card->refresh();
+        $this->assertNull($card->image_path);
+        $this->assertNull($card->image_url);
+        $this->assertNull($card->imageUrl());
+        $this->assertSame($photos, $card->gallery);
+        $this->assertSame($photos, $card->galleryUrls());
+        $this->assertSame('products/own.png', $product->fresh()->image_path);
+        Storage::disk('public')->assertExists('products/own.png');
+    }
+
+    #[TestWith(['products'])]
+    #[TestWith(['new'])]
+    #[TestWith(['categories'])]
+    public function test_gallery_removal_keeps_unselected_photos_and_main_in_each_card_section(string $section): void
+    {
+        Storage::disk('public')->put('products/own.png', 'product');
+        $product = Product::factory()->create(['image_path' => 'products/own.png']);
+        $remove = 'https://images.example.test/remove.jpg';
+        $keep = 'https://images.example.test/keep.jpg';
+        $main = 'https://images.example.test/main.jpg';
+        $card = HomeCard::factory()->create([
+            'section' => $section, 'gallery' => [$remove, $keep],
+            'image_path' => null, 'image_url' => $main, 'product_id' => $product->id,
+        ]);
+
+        $this->actingAs($this->admin())->put(route('admin.home.cards.update', $card), $this->payload([
+            'section' => $section, 'title' => $card->title, 'remove_gallery' => [$remove],
+        ]))->assertRedirect()->assertSessionHasNoErrors();
+
+        $card->refresh();
+        $this->assertSame([$keep], $card->gallery);
+        $this->assertSame($main, $card->imageUrl());
+        $this->assertSame($product->id, $card->product_id);
+        $this->assertSame('products/own.png', $product->fresh()->image_path);
+        Storage::disk('public')->assertExists('products/own.png');
     }
 
     public function test_card_rejects_non_https_image_url_without_replacing_saved_file(): void

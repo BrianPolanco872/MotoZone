@@ -48,13 +48,13 @@
 
         <div>
             <p class="text-sm font-medium">Carrusel de fotos</p>
-            <p class="text-xs text-mz-text-muted">Hasta 6 fotos en total. La primera se usa como portada.</p>
+            <p class="text-xs text-mz-text-muted">Hasta 6 fotos en total. La primera se usa como portada. Pulsa × y guarda para quitar una foto; Descartar restaura el borrador.</p>
 
             <div class="mt-2 grid grid-cols-3 gap-2">
                 @foreach ($galleryPaths as $path)
-                    <label class="group relative block cursor-pointer overflow-hidden rounded-lg border border-mz-border bg-mz-bg-surface">
+                    <label class="group relative block cursor-pointer overflow-hidden rounded-lg border border-mz-border bg-mz-bg-surface" data-media-gallery-item>
                         <img src="{{ str_starts_with(strtolower($path), 'https://') ? $path : Storage::disk('public')->url($path) }}" alt="Foto {{ $loop->iteration }}" class="h-20 w-full object-cover" loading="lazy" referrerpolicy="no-referrer">
-                        <input type="checkbox" name="{{ $removeGallery }}[]" value="{{ $path }}" class="peer sr-only">
+                        <input type="checkbox" name="{{ $removeGallery }}[]" value="{{ $path }}" class="peer sr-only" aria-label="Quitar foto {{ $loop->iteration }} del carrusel" data-media-gallery-remove>
                         <span class="absolute right-1 top-1 flex size-6 items-center justify-center rounded-full bg-black/70 text-xs font-bold text-white transition peer-checked:bg-mz-error" aria-hidden="true">×</span>
                     </label>
                 @endforeach
