@@ -685,12 +685,12 @@
         #ticket-print-container .divider { border: 0; border-top: 1px dashed #94a3b8; margin: 8px 0; }
         #ticket-print-container table { width: 100%; border-collapse: collapse; }
         #ticket-print-container th { text-align: left; font-size: 10px; text-transform: uppercase; color: #475569; padding-bottom: 4px; }
-        #ticket-print-container th.num, #ticket-print-container td.num { text-align: right; white-space: nowrap; }
+        #ticket-print-container th.num, #ticket-print-container td.num { text-align: right; white-space: nowrap; padding-left: 2mm; }
         #ticket-print-container td { padding: 3px 0; vertical-align: top; }
         #ticket-print-container .item-name { font-weight: 700; }
         #ticket-print-container p { margin: 4px 0; overflow-wrap: anywhere; }
-        #ticket-print-container table { table-layout: fixed; }
-        #ticket-print-container th:first-child { width: 52%; }
+        #ticket-print-container table { table-layout: auto; }
+        #ticket-print-container th:first-child { width: 100%; }
         #ticket-print-container td:first-child { overflow-wrap: anywhere; }
         #ticket-print-container td.num { font-size: 10px; }
         #ticket-print-container .totals td { padding: 2px 0; }
@@ -700,9 +700,9 @@
             body * { visibility: hidden !important; }
             #ticket-print-container, #ticket-print-container * { visibility: visible !important; }
             #ticket-print-container { position: absolute !important; top: 0; left: 0; width: 100%; margin: 0; padding: 0; background: #fff; }
-            #ticket-print-container .ticket-sheet { width: calc(var(--ticket-width, 80mm) - 8mm); padding: 0; }
+            #ticket-print-container .ticket-sheet { width: calc(var(--ticket-width, 80mm) - 8mm); max-width: 100%; margin: 0 auto; padding: 0; }
             body { padding: 0; background: #fff; }
-            @page { size: {{ (int) ($settings['ticket']['width_mm'] ?? 80) }}mm auto; margin: 4mm; }
+            @page { size: auto; margin: 4mm; }
         }
     </style>
 

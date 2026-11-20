@@ -58,13 +58,13 @@
         .divider { border: 0; border-top: 1px dashed #94a3b8; margin: 8px 0; }
         table { width: 100%; border-collapse: collapse; }
         th { text-align: left; font-size: 10px; text-transform: uppercase; color: #475569; padding-bottom: 4px; }
-        th.num, td.num { text-align: right; white-space: nowrap; }
+        th.num, td.num { text-align: right; white-space: nowrap; padding-left: 2mm; }
         td { padding: 3px 0; vertical-align: top; }
         .item-name { font-weight: 700; }
         .ticket p { margin: 4px 0; overflow-wrap: anywhere; }
         .ticket td:first-child { overflow-wrap: anywhere; }
-        .ticket table { table-layout: fixed; }
-        .ticket th:first-child { width: 52%; }
+        .ticket table { table-layout: auto; }
+        .ticket th:first-child { width: 100%; }
         .ticket td.num { font-size: 10px; }
         .totals td { padding: 2px 0; }
         .totals .label { color: #475569; }
@@ -74,8 +74,8 @@
         @media print {
             body { padding: 0; background: #fff; }
             .toolbar { display: none; }
-            .ticket { box-shadow: none; margin: 0; width: auto; max-width: none; padding: 0; }
-            @page { size: {{ (int) ($settings['ticket']['width_mm'] ?? 80) }}mm auto; margin: 4mm; }
+            .ticket { box-shadow: none; margin: 0 auto; width: calc(var(--ticket-width, 80mm) - 8mm); max-width: 100%; padding: 0; }
+            @page { size: auto; margin: 4mm; }
         }
     </style>
 </head>

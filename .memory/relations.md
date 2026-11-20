@@ -186,3 +186,9 @@ fix-cartera-manual-01 -> implementa_feature -> feature-cartera-manual-01
 plan-cartera-abonos-metodos-corte-01 -> implementa_feature -> feature-cartera-manual-01
 plan-cartera-abonos-metodos-corte-01 -> implementado_por -> fix-cartera-abonos-metodos-corte-01
 fix-cartera-abonos-metodos-corte-01 -> implementa_feature -> feature-cartera-manual-01
+bug-tickets-ancho-impresion-01 -> causa_confirmada -> hipotesis-H1-tickets-ancho-impresion-01
+bug-tickets-ancho-impresion-01 -> tiene_plan -> plan-tickets-ancho-impresion-01
+plan-tickets-ancho-impresion-01 -> propone_fix_para -> hipotesis-H1-tickets-ancho-impresion-01
+plan-tickets-ancho-impresion-01 -> se_apoya_en -> plan-pos-03
+plan-tickets-ancho-impresion-01 -> implementado_por -> fix-tickets-ancho-impresion-01
+bug-tickets-ancho-impresion-01 -> corregido_en_fuente_por -> fix-tickets-ancho-impresion-01

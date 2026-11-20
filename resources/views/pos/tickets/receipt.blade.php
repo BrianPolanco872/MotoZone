@@ -60,7 +60,9 @@
     <div class="center">
         <p class="muted">Método de pago: {{ config('pos.payment_methods.'.($sale->payment_method ?? 'cash').'.label', ucfirst($sale->payment_method ?? 'efectivo')) }}</p>
         <p class="footer" style="white-space:pre-line">{{ $settings['ticket']['footer'] }}</p>
-        <p class="muted" style="white-space:pre-line">{{ $settings['ticket']['policy'] }}</p>
+        @if (filled($settings['ticket']['policy']))
+            <p class="muted" style="white-space:pre-line">{{ $settings['ticket']['policy'] }}</p>
+        @endif
         @if ($settings['ticket']['show_qr'] && $settings['ticket']['qr_image_url'])
             <img src="{{ $settings['ticket']['qr_image_url'] }}" alt="Código QR de facturación o soporte" style="display:block;width:24mm;height:24mm;object-fit:contain;margin:12px auto">
             <p class="muted">Facturación / Soporte</p>

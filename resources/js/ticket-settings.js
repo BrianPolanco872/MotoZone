@@ -137,14 +137,6 @@ if (ticketSettings) {
     ticketSettings.querySelectorAll('[data-ticket-print]').forEach((button) => {
         button.addEventListener('click', () => {
             updatePreview();
-            let pageStyle = document.getElementById('ticket-settings-page-style');
-            if (!pageStyle) {
-                pageStyle = document.createElement('style');
-                pageStyle.id = 'ticket-settings-page-style';
-                document.head.append(pageStyle);
-            }
-            const width = new FormData(form).get('ticket[width_mm]') === '58' ? 58 : 80;
-            pageStyle.textContent = `@media print { @page { size: ${width}mm auto; margin: 4mm; } }`;
             window.print();
         });
     });

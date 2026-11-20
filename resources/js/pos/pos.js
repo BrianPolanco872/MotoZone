@@ -174,16 +174,6 @@ if (configElement) {
 
             const data = await response.json();
             container.innerHTML = data.ticket_html;
-            const width = Number(data.settings?.ticket?.width_mm) === 58 ? 58 : 80;
-            let pageStyle = document.getElementById('ticket-page-style');
-
-            if (!pageStyle) {
-                pageStyle = document.createElement('style');
-                pageStyle.id = 'ticket-page-style';
-                document.head.append(pageStyle);
-            }
-
-            pageStyle.textContent = `@media print { @page { size: ${width}mm auto; margin: 4mm; } }`;
             await Promise.all(Array.from(container.querySelectorAll('img'), (image) => image.decode()));
 
             container.classList.remove('hidden');

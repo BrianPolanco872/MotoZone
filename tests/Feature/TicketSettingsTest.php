@@ -43,14 +43,14 @@ class TicketSettingsTest extends TestCase
         ];
     }
 
-    private function sale(User $user): Sale
+    private function sale(User $user, string $productName = 'Aceite prueba', float $price = 148): Sale
     {
-        $product = Product::factory()->create(['name' => 'Aceite prueba', 'sku' => 'SKU-OCULTO', 'price' => 148, 'stock' => 10]);
+        $product = Product::factory()->create(['name' => $productName, 'sku' => 'SKU-OCULTO', 'price' => $price, 'stock' => 10]);
         $response = $this->actingAs($user)->postJson(route('pos.sales.store'), [
             'idempotency_key' => 'ticket-settings-sale',
             'status' => 'paid',
             'payment_method' => 'card',
-            'amount_paid' => 148,
+            'amount_paid' => $price,
             'items' => [['product_id' => $product->id, 'quantity' => 1]],
         ])->assertOk();
 
@@ -128,6 +128,71 @@ class TicketSettingsTest extends TestCase
             ->assertSee('data:image/png;base64,', false)->assertSee('80mm');
         $this->put(route('pos.tickets.update'), $this->payload(['show_qr' => true]))->assertSessionHasNoErrors();
         $this->assertStringStartsWith('data:image/png;base64,', app(TicketSettings::class)->current()['ticket']['qr_image_url']);
+    }
+
+    #[TestWith([58])]
+    #[TestWith([80])]
+    public function test_printing_keeps_the_configured_width_and_all_receipt_data(int $width): void
+    {
+        $admin = User::factory()->create()->assignRole('admin');
+        $productName = str_repeat('CUBIERTA REFORZADA ', 6);
+        $sale = $this->sale($admin, trim($productName), 123456.78);
+        $this->put(route('pos.tickets.update'), $this->payload(['width_mm' => $width, 'policy' => '']))->assertSessionHasNoErrors();
+
+        $this->get(route('pos.sales.ticket', $sale))->assertOk()
+            ->assertSee('--ticket-width: '.$width.'mm', false)
+            ->assertSee('width: calc(var(--ticket-width, 80mm) - 8mm)', false)
+            ->assertSee('max-width: 100%', false)->assertSee('size: auto', false)
+            ->assertDontSee('mm auto', false)->assertDontSee('width: auto; max-width: none', false)
+            ->assertSeeInOrder(['Producto', trim($productName), 'Subtotal', 'Total', 'Método de pago: Tarjeta', 'Vuelve pronto.'])
+            ->assertSee('$123,456.78')->assertDontSee('Conserve este ticket');
+
+        $response = $this->getJson(route('pos.sales.ticketData', $sale))->assertOk()
+            ->assertJsonPath('settings.ticket.width_mm', $width);
+        $this->assertStringContainsString('--ticket-width: '.$width.'mm', $response->json('ticket_html'));
+        $this->assertStringContainsString(trim($productName), $response->json('ticket_html'));
+        $this->assertStringContainsString('$123,456.78', $response->json('ticket_html'));
+        $this->assertSame('123456.78', $sale->refresh()->total);
+
+        $this->get(route('pos.index'))->assertOk()
+            ->assertSee('width: calc(var(--ticket-width, 80mm) - 8mm)', false)
+            ->assertSee('margin: 0 auto', false)->assertSee('size: auto', false)->assertDontSee('mm auto', false);
+        $this->get(route('pos.tickets.edit'))->assertOk()
+            ->assertSee('width: calc(var(--ticket-width, 80mm) - 8mm)', false)
+            ->assertSee('margin: 0 auto', false)->assertSee('size: auto', false)->assertDontSee('mm auto', false);
+    }
+
+    public function test_default_receipt_has_no_returns_policy_and_keeps_the_thank_you_message(): void
+    {
+        $admin = User::factory()->create()->assignRole('admin');
+        $sale = $this->sale($admin);
+
+        $this->get(route('pos.sales.ticket', $sale))->assertOk()
+            ->assertSee('Gracias por su compra.')->assertDontSee('Conserve este ticket');
+        $html = $this->getJson(route('pos.sales.ticketData', $sale))->assertOk()->json('ticket_html');
+        $this->assertStringContainsString('Gracias por su compra.', $html);
+        $this->assertStringNotContainsString('Conserve este ticket', $html);
+        $this->assertSame('', app(TicketSettings::class)->current()['ticket']['policy']);
+    }
+
+    public function test_clearing_a_saved_returns_policy_preserves_other_ticket_settings(): void
+    {
+        $admin = User::factory()->create()->assignRole('admin');
+        $sale = $this->sale($admin);
+        $payload = $this->payload(['policy' => 'Conserve este ticket para cambios y devoluciones.']);
+        $this->put(route('pos.tickets.update'), $payload)->assertSessionHasNoErrors();
+        $expected = app(TicketSettings::class)->current();
+        $expected['ticket']['policy'] = '';
+        $payload['ticket']['policy'] = '';
+
+        $this->put(route('pos.tickets.update'), $payload)->assertSessionHasNoErrors();
+
+        $this->assertSame($expected, app(TicketSettings::class)->current());
+        $this->get(route('pos.sales.ticket', $sale))->assertOk()
+            ->assertSee('Vuelve pronto.')->assertDontSee('Conserve este ticket');
+        $html = $this->getJson(route('pos.sales.ticketData', $sale))->assertOk()->json('ticket_html');
+        $this->assertStringContainsString('Vuelve pronto.', $html);
+        $this->assertStringNotContainsString('Conserve este ticket', $html);
     }
 
     public function test_ticket_settings_are_escaped_in_both_printing_paths(): void

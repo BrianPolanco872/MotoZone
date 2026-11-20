@@ -19,14 +19,17 @@
     <style>
         .ticket-settings-tab[aria-selected="true"] { color: #f97316; border-color: #f97316; background: rgb(249 115 22 / 8%); }
         #ticket-paper { width: var(--ticket-width, 80mm); max-width: 100%; overflow-wrap: anywhere; }
+        #ticket-paper table { width: 100%; table-layout: auto; border-collapse: collapse; }
+        #ticket-paper th:first-child { width: 100%; }
+        #ticket-paper th:not(:first-child), #ticket-paper td:not(:first-child) { text-align: right; white-space: nowrap; padding-left: 2mm; }
         #ticket-paper [hidden], [data-ticket-settings] [hidden] { display: none !important; }
         @media print {
-            @page { margin: 4mm; }
+            @page { size: auto; margin: 4mm; }
             html, body { background: white !important; height: auto !important; color: black !important; }
             body > div, body > div > div, main, [data-ticket-settings], #ticket-settings-form, [data-ticket-workspace], [data-ticket-preview] { display: block !important; padding: 0 !important; margin: 0 !important; min-height: 0 !important; border: 0 !important; background: white !important; }
             body > div > aside, header, main > :not([data-ticket-settings]), [data-ticket-settings] > :not(form), #ticket-settings-form > :not([data-ticket-workspace]), [data-ticket-workspace] > :not([data-ticket-preview]), [data-ticket-preview] > :not(#ticket-paper) { display: none !important; }
             [data-ticket-preview][hidden] { display: block !important; }
-            #ticket-paper { margin: 0 !important; box-shadow: none !important; padding: 0 !important; width: calc(var(--ticket-width, 80mm) - 8mm); max-width: 100%; color: black; }
+            #ticket-paper { margin: 0 auto !important; box-shadow: none !important; padding: 0 !important; width: calc(var(--ticket-width, 80mm) - 8mm); max-width: 100%; color: black; }
         }
     </style>
 

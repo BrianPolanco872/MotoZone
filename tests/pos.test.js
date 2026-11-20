@@ -8,10 +8,11 @@ import numeral from 'numeral';
 const source = readFileSync(new URL('../resources/js/pos/pos.js', import.meta.url), 'utf8')
     .replace("import numeral from 'numeral';", '');
 
-async function pos({ pending = null } = {}) {
+async function pos({ pending = null, ticket = null } = {}) {
     const elements = new Map();
     const requests = [];
     const confirmations = [];
+    const prints = [];
     const element = (tagName = 'DIV') => {
         const listeners = new Map();
         const classes = new Set();
@@ -40,12 +41,14 @@ async function pos({ pending = null } = {}) {
             },
             click() { return this.disabled ? Promise.resolve() : this.emit('click'); },
             appendChild(child) { this.children.push(child); },
+            append(...children) { this.children.push(...children); },
             closest(selector) {
                 if (selector === '[data-action]' && this.dataset.action) return this;
                 if (selector === 'input, textarea, select' && ['INPUT', 'TEXTAREA', 'SELECT'].includes(this.tagName)) return this;
                 return null;
             },
             querySelector() { return null; },
+            querySelectorAll() { return []; },
             focus() { document.activeElement = this; },
             select() {}, reset() {}, scrollIntoView() {},
             showModal() { this.open = true; },
@@ -56,19 +59,22 @@ async function pos({ pending = null } = {}) {
         + 'pos-wholesale pos-error pending-banner payment-dialog payment-amount payment-total payment-change payment-error '
         + 'payment-confirm payment-method payment-amount-group cash-dialog cash-type cash-title cash-error start-day-dialog '
         + 'custom-product-dialog custom-product-form custom-product-name custom-product-price custom-product-quantity '
-        + 'custom-product-error pos-charge pos-pending pos-new-sale pos-clear').split(' ')) {
+        + 'custom-product-error pos-charge pos-pending pos-new-sale pos-clear '
+        + 'last-sale-indicator last-sale-folio pos-print-ticket ticket-print-container').split(' ')) {
         elements.set(id, element(id.endsWith('-dialog') ? 'DIALOG' : 'DIV'));
     }
     const get = (id) => elements.get(id);
     get('pos-search').tagName = 'INPUT';
     get('payment-method').tagName = 'SELECT';
     get('payment-method').value = 'cash';
+    get('ticket-print-container').classList.add('hidden');
     const cashIn = element('BUTTON');
     cashIn.dataset.cashOpen = 'in';
     const cashOut = element('BUTTON');
     cashOut.dataset.cashOpen = 'out';
     const exact = element('BUTTON');
     const document = Object.assign(element(), {
+        head: element('HEAD'),
         getElementById: (id) => get(id) || null,
         createElement: element,
         querySelector(selector) {
@@ -82,7 +88,7 @@ async function pos({ pending = null } = {}) {
     });
     get('pos-config').textContent = JSON.stringify({
         permissions: { wholesale: true, price_edit: true }, csrf: 'test',
-        routes: { search: '/search', store: '/store', show: '/sale/__SALE__', charge: '/sale/__SALE__/charge', pending: '/pending' },
+        routes: { search: '/search', store: '/store', show: '/sale/__SALE__', charge: '/sale/__SALE__/charge', pending: '/pending', ticketData: ticket ? '/ticket/__SALE__' : undefined },
     });
     const product = { id: 7, name: 'Aceite', price: 100, wholesale_price: 80, tax_rate: 0, track_inventory: false };
     vm.runInNewContext(source, {
@@ -90,18 +96,26 @@ async function pos({ pending = null } = {}) {
         window: {
             location: { search: pending ? '?pending=41' : '' },
             confirm: (message) => { confirmations.push(message); return true; },
+            print: () => prints.push({
+                html: get('ticket-print-container').innerHTML,
+                hidden: get('ticket-print-container').classList.contains('hidden'),
+                pageStyles: document.head.children.map((style) => style.textContent),
+            }),
         },
         fetch: async (url, options) => {
             if (options?.method === 'POST') {
                 requests.push({ url, payload: JSON.parse(options.body) });
                 return { ok: true, json: async () => ({ sale: { id: 42, folio: 'TEST' } }) };
             }
+            if (url === '/ticket/42') {
+                return { ok: true, json: async () => ticket };
+            }
             return { ok: true, json: async () => url.startsWith('/search') ? { products: [product] } : { sale: pending } };
         },
     }, { filename: 'resources/js/pos/pos.js' });
     await setImmediate();
     return {
-        get, requests, confirmations, document, element, exact,
+        get, requests, confirmations, prints, document, element, exact,
         async scan() {
             get('pos-search').value = '750123';
             await get('pos-search').emit('keydown', { key: 'Enter' });
@@ -115,6 +129,36 @@ async function pos({ pending = null } = {}) {
         async key(key, target = document) { return document.emit('keydown', { key, target }); },
     };
 }
+
+for (const width of [58, 80]) {
+    test(`printing ${width} mm uses the receipt HTML without overriding the printer page size`, async () => {
+        const html = `<div class="ticket ticket-sheet" style="--ticket-width: ${width}mm">Ticket de prueba</div>`;
+        const ui = await pos({ ticket: { ticket_html: html, settings: { ticket: { width_mm: width } } } });
+        await ui.scan();
+        await ui.get('pos-charge').click();
+        await ui.get('payment-confirm').click();
+
+        await ui.get('pos-print-ticket').click();
+
+        assert.deepEqual(ui.prints, [{ html, hidden: false, pageStyles: [] }]);
+        assert.equal(ui.get('ticket-print-container').classList.contains('hidden'), true);
+        assert.equal(ui.requests.length, 1);
+    });
+}
+
+test('an image loading failure prevents printing and hides the print container again', async () => {
+    const ui = await pos({ ticket: { ticket_html: '<img src="qr.png">' } });
+    await ui.scan();
+    await ui.get('pos-charge').click();
+    await ui.get('payment-confirm').click();
+    ui.get('ticket-print-container').querySelectorAll = () => [{ decode: async () => { throw new Error('No se pudo cargar el QR.'); } }];
+
+    await ui.get('pos-print-ticket').click();
+
+    assert.equal(ui.prints.length, 0);
+    assert.match(ui.get('pos-error').innerHTML, /No se pudo cargar el QR\./);
+    assert.equal(ui.get('ticket-print-container').classList.contains('hidden'), true);
+});
 
 for (const method of ['card', 'transfer']) {
     test(`${method}: changing from insufficient cash enables confirmation and submits the total`, async () => {
