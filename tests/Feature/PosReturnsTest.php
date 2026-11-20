@@ -8,11 +8,13 @@ use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\SaleReturn;
+use App\Models\StockMovement;
 use App\Models\User;
 use App\Services\DailyCutService;
 use App\Services\ReturnService;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\ValidationException;
 use PHPUnit\Framework\Attributes\TestWith;
@@ -176,6 +178,108 @@ class PosReturnsTest extends TestCase
             'amount' => 100.00,
             'type' => 'out',
         ]);
+    }
+
+    public function test_return_after_clearing_inventory_preserves_payment_and_stock_history_without_recreating_product(): void
+    {
+        $this->freezeTime();
+        $admin = User::factory()->create()->assignRole('admin');
+        $employee = $this->employee();
+        $product = Product::factory()->create([
+            'name' => 'Producto para devolución',
+            'sku' => 'DEV-001',
+            'barcode' => '00012345',
+            'barcode2' => '00(DEV)+123',
+            'price' => 100,
+            'cost' => 60,
+            'stock' => 10,
+            'track_inventory' => true,
+            'tax_rate' => 0.16,
+        ]);
+        $response = $this->actingAs($employee)->postJson(route('pos.sales.store'), [
+            'idempotency_key' => 'return-cleared-inventory',
+            'status' => 'paid',
+            'amount_paid' => 200,
+            'items' => [['product_id' => $product->id, 'quantity' => 2]],
+        ])->assertOk();
+        $sale = Sale::query()->findOrFail($response->json('sale.id'));
+        $saleItem = $sale->items()->sole();
+        $payment = CashMovement::query()->where('sale_id', $sale->id)->sole();
+        $stockMovement = StockMovement::query()->where('sale_id', $sale->id)->sole();
+        $saleBefore = $sale->getAttributes();
+        $itemBefore = $saleItem->getAttributes();
+        $paymentBefore = $payment->getAttributes();
+        $movementBefore = $stockMovement->getAttributes();
+        $this->assertSame('paid', $sale->status);
+        $this->assertSame('200.00', $sale->amount_paid);
+        $this->assertSame(8, $product->fresh()->stock);
+        $this->assertDatabaseCount('daily_cuts', 0);
+
+        $this->actingAs($admin)->post(route('admin.products.clearInventory'))
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('status', 'Se eliminaron 1 productos del inventario.');
+
+        $this->assertDatabaseCount('products', 0);
+        $this->assertSame([...$itemBefore, 'product_id' => null], $saleItem->fresh()->getAttributes());
+        $this->actingAs($employee)->postJson(route('pos.returns.store'), [
+            'sale_id' => $sale->id,
+            'reason' => 'Producto defectuoso después de limpiar el inventario',
+            'items' => [['sale_item_id' => $saleItem->id, 'quantity' => 1]],
+        ])->assertRedirect(route('pos.returns.index'))->assertSessionHasNoErrors();
+        $return = SaleReturn::query()->where('sale_id', $sale->id)->sole();
+        $this->assertSame(SaleReturn::STATUS_PENDING, $return->status);
+
+        $this->actingAs($admin)->putJson(route('pos.returns.approve', $return))
+            ->assertRedirect(route('pos.returns.index'))
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('sale_returns', [
+            'id' => $return->id,
+            'sale_id' => $sale->id,
+            'requested_by' => $employee->id,
+            'approved_by' => $admin->id,
+            'status' => SaleReturn::STATUS_APPROVED,
+            'total' => 100,
+            'approved_at' => now()->toDateTimeString(),
+        ]);
+        $this->assertDatabaseHas('sale_return_items', [
+            'sale_return_id' => $return->id,
+            'sale_item_id' => $saleItem->id,
+            'quantity' => 1,
+            'unit_price' => 100,
+            'line_total' => 100,
+            'restock' => true,
+        ]);
+        $this->assertSame($saleBefore, $sale->fresh()->getAttributes());
+        $this->assertSame($paymentBefore, $payment->fresh()->getAttributes());
+        $this->assertDatabaseCount('cash_movements', 2);
+        $this->assertDatabaseHas('cash_movements', [
+            'sale_id' => $sale->id,
+            'user_id' => $admin->id,
+            'category' => 'refund',
+            'amount' => 100,
+            'type' => 'out',
+            'happened_at' => now()->toDateTimeString(),
+        ]);
+        $this->assertSame([
+            ...$itemBefore, 'product_id' => null, 'returned_quantity' => 1,
+        ], $saleItem->fresh()->getAttributes());
+        $this->assertDatabaseCount('products', 0);
+        $this->assertDatabaseCount('stock_movements', 1);
+        $this->assertSame(
+            Arr::except($movementBefore, ['product_id', 'product_snapshot']),
+            Arr::except($stockMovement->fresh()->getAttributes(), ['product_id', 'product_snapshot']),
+        );
+        $stockMovement->refresh();
+        $this->assertNull($stockMovement->product_id);
+        $this->assertSame([
+            'id' => $product->id,
+            'name' => 'Producto para devolución',
+            'sku' => 'DEV-001',
+            'barcode' => '00012345',
+            'barcode2' => '00(DEV)+123',
+        ], $stockMovement->product_snapshot);
     }
 
     public function test_approval_does_not_change_a_globally_closed_day(): void

@@ -18,6 +18,7 @@ class StockMovement extends Model
 
     protected $fillable = [
         'product_id',
+        'product_snapshot',
         'user_id',
         'sale_id',
         'type',
@@ -30,6 +31,7 @@ class StockMovement extends Model
     protected function casts(): array
     {
         return [
+            'product_snapshot' => 'array',
             'quantity' => 'integer',
             'stock_before' => 'integer',
             'stock_after' => 'integer',

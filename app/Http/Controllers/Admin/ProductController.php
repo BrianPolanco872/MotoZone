@@ -9,6 +9,7 @@ use App\Models\StockMovement;
 use App\Services\AuditLogService;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -93,24 +94,41 @@ class ProductController extends Controller
     {
         try {
             $deletedProducts = DB::transaction(function (): int {
-                StockMovement::query()
-                    ->where('type', StockMovement::TYPE_ADJUSTMENT)
-                    ->whereNull('sale_id')
-                    ->where('note', 'Limpieza de inventario: existencias puestas en cero.')
-                    ->where('stock_after', 0)
-                    ->whereRaw('quantity = -stock_before')
-                    ->delete();
+                $deletedProducts = 0;
+                $lastProductId = Product::query()->max('id') ?? 0;
 
-                return Product::query()->delete();
-            });
+                Product::query()
+                    ->select(['id', 'name', 'sku', 'barcode', 'barcode2'])
+                    ->where('id', '<=', $lastProductId)
+                    ->lockForUpdate()
+                    ->chunkById(200, function (Collection $products) use (&$deletedProducts): void {
+                        foreach ($products as $product) {
+                            StockMovement::query()
+                                ->where('product_id', $product->id)
+                                ->whereNull('product_snapshot')
+                                ->toBase()
+                                ->update([
+                                    'product_snapshot' => json_encode($product->only([
+                                        'id', 'name', 'sku', 'barcode', 'barcode2',
+                                    ]), JSON_THROW_ON_ERROR),
+                                ]);
+                        }
+
+                        $deletedProducts += $products->toQuery()->delete();
+                    });
+
+                return $deletedProducts;
+            }, 3);
         } catch (QueryException $exception) {
             if ($exception->getCode() !== '23000') {
                 throw $exception;
             }
 
+            report($exception);
+
             return redirect()
                 ->route('admin.products.index')
-                ->with('error', 'No se eliminó ningún producto porque existen movimientos asociados.');
+                ->with('error', 'No se pudo limpiar el inventario por una restricción de integridad. No se aplicó ningún cambio.');
         }
 
         return redirect()

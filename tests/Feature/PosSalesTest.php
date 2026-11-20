@@ -169,6 +169,61 @@ class PosSalesTest extends TestCase
         $this->assertNotNull($sale->paid_at);
     }
 
+    public function test_pending_catalog_sale_remains_loadable_but_charge_returns_422_after_clearing_inventory(): void
+    {
+        $this->freezeTime();
+        $employee = $this->employee(['admin.products.manage']);
+        $product = $this->createProduct(['stock' => 5, 'barcode' => '00012345']);
+        $this->actingAs($employee);
+        $response = $this->postJson(route('pos.sales.store'), [
+            'idempotency_key' => 'pending-cleared-inventory',
+            'status' => 'pending',
+            'amount_paid' => 0,
+            'items' => [['product_id' => $product->id, 'quantity' => 2]],
+        ])->assertOk();
+        $sale = Sale::query()->findOrFail($response->json('sale.id'));
+        $saleItem = $sale->items()->sole();
+        $saleBefore = $sale->getAttributes();
+        $itemBefore = $saleItem->getAttributes();
+        $this->assertSame('pending', $sale->status);
+        $this->assertSame('0.00', $sale->amount_paid);
+        $this->assertSame(5, $product->fresh()->stock);
+
+        $this->post(route('admin.products.clearInventory'))
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('status', 'Se eliminaron 1 productos del inventario.');
+
+        $this->assertDatabaseCount('products', 0);
+        $this->getJson(route('pos.sales.show', $sale))->assertOk()
+            ->assertJsonPath('sale.id', $sale->id)
+            ->assertJsonPath('sale.total', 200)
+            ->assertJsonPath('sale.items.0.sale_item_id', $saleItem->id)
+            ->assertJsonPath('sale.items.0.product_id', null)
+            ->assertJsonPath('sale.items.0.is_custom', false)
+            ->assertJsonPath('sale.items.0.custom_name', null)
+            ->assertJsonPath('sale.items.0.custom_price', null)
+            ->assertJsonPath('sale.items.0.name', 'Kit de prueba')
+            ->assertJsonPath('sale.items.0.sku', 'KIT-001')
+            ->assertJsonPath('sale.items.0.barcode', '00012345')
+            ->assertJsonPath('sale.items.0.unit_price', 100)
+            ->assertJsonPath('sale.items.0.quantity', 2);
+        $this->assertSame([...$itemBefore, 'product_id' => null], $saleItem->fresh()->getAttributes());
+
+        $this->postJson(route('pos.sales.charge', $sale), ['amount_paid' => 200])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('items')
+            ->assertJsonPath('errors.items.0', 'El producto «Kit de prueba» ya no existe.');
+
+        $this->assertSame($saleBefore, $sale->fresh()->getAttributes());
+        $this->assertSame([...$itemBefore, 'product_id' => null], $saleItem->fresh()->getAttributes());
+        $this->assertDatabaseCount('sales', 1);
+        $this->assertDatabaseCount('sale_items', 1);
+        $this->assertDatabaseCount('products', 0);
+        $this->assertDatabaseCount('cash_movements', 0);
+        $this->assertDatabaseCount('stock_movements', 0);
+    }
+
     public function test_custom_only_sale_is_paid_without_inventory_movements(): void
     {
         $employee = $this->employee(['pos.tickets.print.own']);

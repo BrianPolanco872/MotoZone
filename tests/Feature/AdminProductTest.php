@@ -4,21 +4,29 @@ namespace Tests\Feature;
 
 use App\Models\AuditLog;
 use App\Models\Category;
+use App\Models\HomeCard;
 use App\Models\Product;
 use App\Models\StockMovement;
 use App\Models\User;
 use App\Services\DailyCutService;
+use App\Services\ReturnService;
 use App\Services\SaleService;
 use Database\Seeders\RolePermissionSeeder;
 use DOMDocument;
 use DOMElement;
 use DOMXPath;
 use Illuminate\Database\Eloquent\Factories\Sequence;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Database\QueryException;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Exceptions;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\TestWith;
+use RuntimeException;
 use Tests\TestCase;
 
 class AdminProductTest extends TestCase
@@ -462,10 +470,10 @@ class AdminProductTest extends TestCase
     #[TestWith(['empleado'])]
     public function test_clearing_inventory_deletes_all_products_and_preserves_other_records(string $role): void
     {
-        $this->freezeTime();
+        $this->travelTo('2026-11-20 10:00:00');
         $operator = User::factory()->create()->assignRole($role);
-        $operator->givePermissionTo('admin.products.manage');
-        Product::factory()->create(['stock' => 6, 'price' => 100]);
+        $operator->givePermissionTo(['admin.products.manage', 'pos.access', 'pos.tickets.print.own']);
+        $product = Product::factory()->create(['name' => 'Producto con historial', 'stock' => 6, 'price' => 100]);
         Product::factory()->create(['stock' => 3, 'track_inventory' => false]);
         Product::factory()->create(['stock' => 2, 'is_active' => false]);
         Product::factory()->outOfStock()->create();
@@ -473,11 +481,44 @@ class AdminProductTest extends TestCase
             'idempotency_key' => 'inventory-history',
             'items' => [['is_custom' => true, 'custom_name' => 'Servicio de prueba', 'custom_price' => 100, 'quantity' => 1]],
         ]);
+        $sale = app(SaleService::class)->create($operator, [
+            'idempotency_key' => 'inventory-paid-history',
+            'items' => [['product_id' => $product->id, 'quantity' => 2]],
+        ]);
+        $saleItem = $sale->items->sole();
+        $return = app(ReturnService::class)->request($operator, [
+            'sale_id' => $sale->id,
+            'reason' => 'Devolución antes de limpiar',
+            'items' => [['sale_item_id' => $saleItem->id, 'quantity' => 1]],
+        ]);
+        app(ReturnService::class)->approve($return, $operator);
+        AuditLog::create([
+            'user_id' => $operator->id,
+            'action' => AuditLog::ACTION_RETURN_SALE,
+            'entity_type' => 'sale_return',
+            'entity_id' => $return->id,
+            'after' => ['status' => 'approved'],
+        ]);
         app(DailyCutService::class)->generate(today(), $operator);
+        $cutBefore = app(DailyCutService::class)->build(today());
+        $ticketBefore = $this->actingAs($operator)->get(route('pos.sales.ticket', $sale))
+            ->assertOk()->assertSee($product->name)->getContent();
         $history = [];
-        foreach (['categories', 'sales', 'sale_items', 'cash_movements', 'sale_returns', 'sale_return_items', 'daily_cuts', 'audit_logs'] as $table) {
+        foreach (['categories', 'sales', 'cash_movements', 'sale_returns', 'sale_return_items', 'daily_cuts', 'audit_logs'] as $table) {
             $history[$table] = DB::table($table)->orderBy('id')->get()->toJson();
         }
+        $itemsBefore = DB::table('sale_items')->orderBy('id')->get()->map(function (object $item): object {
+            $item->product_id = null;
+
+            return $item;
+        })->toJson();
+        $movementsBefore = StockMovement::query()->orderBy('id')->get();
+        $this->assertSame('paid', $sale->status);
+        $this->assertDatabaseHas('sale_returns', ['id' => $return->id, 'status' => 'approved']);
+        $this->assertCount(2, $movementsBefore);
+        $this->assertSame(300.0, $cutBefore['sales']['total']);
+        $this->assertSame(100.0, $cutBefore['returns']['total']);
+        $this->travel(1)->minutes();
 
         $this->actingAs($operator)->post(route('admin.products.clearInventory'))
             ->assertRedirect(route('admin.products.index'))
@@ -485,10 +526,29 @@ class AdminProductTest extends TestCase
             ->assertSessionHas('status', 'Se eliminaron 4 productos del inventario.');
 
         $this->assertDatabaseCount('products', 0);
-        $this->assertDatabaseCount('stock_movements', 0);
+        $this->assertDatabaseCount('stock_movements', 2);
         foreach ($history as $table => $rows) {
             $this->assertSame($rows, DB::table($table)->orderBy('id')->get()->toJson(), $table);
         }
+        $this->assertSame($itemsBefore, DB::table('sale_items')->orderBy('id')->get()->toJson());
+        foreach ($movementsBefore as $movement) {
+            $after = $movement->fresh();
+            $this->assertSame($product->only(['id', 'name', 'sku', 'barcode', 'barcode2']), $after->product_snapshot);
+            $this->assertSame(
+                [...$movement->getAttributes(), 'product_id' => null],
+                [...$after->getAttributes(), 'product_snapshot' => null],
+                'Only the product reference and snapshot may change.',
+            );
+        }
+        $cutAfter = app(DailyCutService::class)->build(today());
+        unset($cutBefore['generated_at'], $cutAfter['generated_at']);
+        $this->assertSame($cutBefore, $cutAfter);
+        $this->get(route('pos.sales.ticket', $sale))->assertOk()->assertContent($ticketBefore);
+        $this->getJson(route('pos.products.search', ['q' => $product->barcode]))
+            ->assertOk()->assertExactJson(['products' => []]);
+        $this->getJson(route('pos.products.frequent'))->assertOk()->assertExactJson(['products' => []]);
+        $index = $this->get(route('admin.products.index'))->assertOk();
+        $this->assertSame(0, $index->viewData('products')->total());
     }
 
     public function test_clearing_already_empty_inventory_succeeds_without_creating_movements(): void
@@ -502,12 +562,14 @@ class AdminProductTest extends TestCase
         $this->assertDatabaseCount('stock_movements', 0);
     }
 
-    public function test_clearing_inventory_removes_adjustments_created_by_the_old_clear_button(): void
+    public function test_clearing_inventory_preserves_adjustments_created_by_the_old_clear_button(): void
     {
+        $this->freezeTime();
         $admin = $this->admin();
         $products = Product::factory()->count(2)->outOfStock()->create();
+        $movements = [];
         foreach ($products as $product) {
-            StockMovement::create([
+            $movements[] = StockMovement::create([
                 'product_id' => $product->id,
                 'user_id' => $admin->id,
                 'type' => StockMovement::TYPE_ADJUSTMENT,
@@ -515,15 +577,25 @@ class AdminProductTest extends TestCase
                 'stock_before' => 5,
                 'stock_after' => 0,
                 'note' => 'Limpieza de inventario: existencias puestas en cero.',
-            ]);
+            ])->fresh();
         }
+        $this->travel(1)->hours();
 
         $this->actingAs($admin)->post(route('admin.products.clearInventory'))
             ->assertRedirect(route('admin.products.index'))
             ->assertSessionHas('status', 'Se eliminaron 2 productos del inventario.');
 
         $this->assertDatabaseCount('products', 0);
-        $this->assertDatabaseCount('stock_movements', 0);
+        $this->assertDatabaseCount('stock_movements', 2);
+        foreach ($movements as $index => $movement) {
+            $after = $movement->fresh();
+            $expectedSnapshot = $products[$index]->only(['id', 'name', 'sku', 'barcode', 'barcode2']);
+            $this->assertSame($expectedSnapshot, $after->product_snapshot);
+            $this->assertSame(
+                [...$movement->getAttributes(), 'product_id' => null],
+                [...$after->getAttributes(), 'product_snapshot' => null],
+            );
+        }
     }
 
     #[TestWith(['Movimiento que debe conservarse'])]
@@ -531,7 +603,9 @@ class AdminProductTest extends TestCase
     public function test_clearing_inventory_keeps_every_product_when_a_foreign_key_blocks_deletion(string $note): void
     {
         $admin = $this->admin();
-        $products = Product::factory()->count(2)->sequence(['stock' => 0], ['stock' => 7])->create();
+        $this->freezeTime();
+        $products = Product::factory()->for(Category::factory()->create())->count(201)
+            ->sequence(['stock' => 0], ['stock' => 7])->create();
         StockMovement::create([
             'product_id' => $products->first()->id,
             'user_id' => $admin->id,
@@ -552,16 +626,322 @@ class AdminProductTest extends TestCase
         ]);
         $productsBefore = DB::table('products')->orderBy('id')->get()->toJson();
         $movementsBefore = DB::table('stock_movements')->orderBy('id')->get()->toJson();
+        $firstMovementId = StockMovement::query()->min('id');
+        $firstChunkDeleted = false;
+        DB::listen(function (QueryExecuted $query) use (&$firstChunkDeleted, $products, $firstMovementId): void {
+            if (str_starts_with($query->sql, 'delete from') && str_contains($query->sql, 'products')) {
+                $firstChunkDeleted = ! DB::table('products')->where('id', $products->first()->id)->exists()
+                    && DB::table('stock_movements')->where('id', $firstMovementId)->value('product_snapshot') !== null;
+            }
+        });
+        Schema::create('inventory_clear_restrictions', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('product_id')->constrained()->restrictOnDelete();
+        });
+
+        try {
+            DB::table('inventory_clear_restrictions')->insert(['product_id' => $products->last()->id]);
+            Exceptions::fake([QueryException::class]);
+            $this->travel(1)->hours();
+
+            $this->actingAs($admin)->post(route('admin.products.clearInventory'))
+                ->assertRedirect(route('admin.products.index'))
+                ->assertSessionMissing('status')
+                ->assertSessionHas('error', 'No se pudo limpiar el inventario por una restricción de integridad. No se aplicó ningún cambio.');
+
+            $this->assertTrue($firstChunkDeleted, 'The first chunk must have been deleted after saving its snapshots.');
+            $this->assertSame($productsBefore, DB::table('products')->orderBy('id')->get()->toJson());
+            $this->assertSame($movementsBefore, DB::table('stock_movements')->orderBy('id')->get()->toJson());
+            Exceptions::assertReported(fn (QueryException $exception): bool => $exception->getCode() === '23000');
+            $this->get(route('admin.products.index'))
+                ->assertOk()
+                ->assertSee('No se pudo limpiar el inventario por una restricción de integridad. No se aplicó ningún cambio.');
+        } finally {
+            Schema::dropIfExists('inventory_clear_restrictions');
+        }
+
+        $this->post(route('admin.products.clearInventory'))
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHas('status', 'Se eliminaron 201 productos del inventario.');
+        $this->assertDatabaseCount('products', 0);
+        $this->assertDatabaseCount('stock_movements', 2);
+        $movements = StockMovement::query()->orderBy('id')->get();
+        foreach ([$products->first(), $products->last()] as $index => $product) {
+            $this->assertSame($product->only(['id', 'name', 'sku', 'barcode', 'barcode2']), $movements[$index]->product_snapshot);
+            $this->assertNull($movements[$index]->product_id);
+        }
+    }
+
+    #[TestWith([null])]
+    #[TestWith(['00(ALT)+#'])]
+    public function test_clearing_inventory_preserves_exact_product_identity_and_does_not_attach_history_to_reused_codes(?string $secondBarcode): void
+    {
+        $this->freezeTime();
+        $admin = $this->admin();
+        $product = Product::factory()->create([
+            'name' => 'Kit d\'arrastre "Premium" + #',
+            'sku' => '000(REF)+#',
+            'barcode' => '00012345',
+            'barcode2' => $secondBarcode,
+        ]);
+        $movement = StockMovement::create([
+            'product_id' => $product->id,
+            'user_id' => $admin->id,
+            'type' => StockMovement::TYPE_ADJUSTMENT,
+            'quantity' => 3,
+            'stock_before' => 2,
+            'stock_after' => 5,
+            'note' => 'Ajuste manual "original"',
+        ])->fresh();
+        $before = $movement->getAttributes();
+        $this->travel(2)->hours();
 
         $this->actingAs($admin)->post(route('admin.products.clearInventory'))
             ->assertRedirect(route('admin.products.index'))
-            ->assertSessionHas('error', 'No se eliminó ningún producto porque existen movimientos asociados.');
+            ->assertSessionHas('status', 'Se eliminaron 1 productos del inventario.');
 
+        $after = $movement->fresh();
+        $this->assertSame([
+            'id' => $product->id,
+            'name' => 'Kit d\'arrastre "Premium" + #',
+            'sku' => '000(REF)+#',
+            'barcode' => '00012345',
+            'barcode2' => $secondBarcode,
+        ], $after->product_snapshot);
+        $this->assertSame([...$before, 'product_id' => null], [...$after->getAttributes(), 'product_snapshot' => null]);
+        $this->assertNull($after->product);
+        $history = DB::table('stock_movements')->orderBy('id')->get()->toJson();
+
+        $this->post(route('admin.products.clearInventory'))
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHas('status', 'Se eliminaron 0 productos del inventario.');
+        $this->assertSame($history, DB::table('stock_movements')->orderBy('id')->get()->toJson());
+
+        $this->post(route('admin.products.import'), [
+            'import_file' => UploadedFile::fake()->createWithContent(
+                'productos.csv',
+                "sku,nombre,precio_venta,stock,codigo_barras,codigo_barras_2\n000(REF)+#,Nuevo producto,100,2,00012345,{$secondBarcode}",
+            ),
+        ])->assertRedirect(route('admin.products.index'))->assertSessionHasNoErrors();
+
+        $replacement = Product::query()->sole();
+        $this->assertGreaterThan($product->id, $replacement->id);
+        $this->assertSame('000(REF)+#', $replacement->sku);
+        $this->assertSame('00012345', $replacement->barcode);
+        $this->assertSame($secondBarcode, $replacement->barcode2);
+        $this->assertSame(0, $replacement->stockMovements()->count());
+        $this->assertSame($history, DB::table('stock_movements')->orderBy('id')->get()->toJson());
+    }
+
+    /**
+     * @param  array<string, int|string|null>  $snapshot
+     */
+    #[TestWith([[]])]
+    #[TestWith([['id' => 99, 'name' => 'Nombre anterior', 'sku' => '000-OLD', 'barcode' => '00+#', 'barcode2' => null]])]
+    public function test_clearing_inventory_does_not_overwrite_existing_or_detached_snapshots(array $snapshot): void
+    {
+        $this->freezeTime();
+        $admin = $this->admin();
+        $product = Product::factory()->create();
+        $movement = StockMovement::create([
+            'product_id' => $product->id,
+            'product_snapshot' => $snapshot,
+            'user_id' => $admin->id,
+            'type' => StockMovement::TYPE_ADJUSTMENT,
+            'quantity' => 1,
+            'stock_before' => 0,
+            'stock_after' => 1,
+        ])->fresh();
+        $detached = StockMovement::create([
+            'product_id' => null,
+            'product_snapshot' => ['id' => 100, 'name' => 'Producto ya eliminado'],
+            'user_id' => $admin->id,
+            'type' => StockMovement::TYPE_RETURN,
+            'quantity' => 1,
+            'stock_before' => 0,
+            'stock_after' => 1,
+        ])->fresh();
+        $this->travel(1)->hours();
+
+        $this->actingAs($admin)->post(route('admin.products.clearInventory'))
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHas('status', 'Se eliminaron 1 productos del inventario.');
+
+        $this->assertSame([...$movement->getAttributes(), 'product_id' => null], $movement->fresh()->getAttributes());
+        $this->assertSame($snapshot, $movement->fresh()->product_snapshot);
+        $this->assertSame($detached->getAttributes(), $detached->fresh()->getAttributes());
+        $this->assertDatabaseCount('stock_movements', 2);
+        $this->assertDatabaseCount('products', 0);
+    }
+
+    public function test_clearing_inventory_preserves_cards_families_publications_and_image_files_but_removes_product_links(): void
+    {
+        Storage::fake('public');
+        $this->freezeTime();
+        $product = Product::factory()->create(['image_path' => 'products/history.jpg']);
+        Storage::disk('public')->put('products/history.jpg', 'product-image');
+        Storage::disk('public')->put('home/cards/history.jpg', 'card-image');
+        $card = HomeCard::factory()->create([
+            'title' => 'Card conservada', 'product_id' => $product->id, 'image_path' => 'home/cards/history.jpg',
+        ]);
+        $family = HomeCard::factory()->category()->create(['title' => 'Familia conservada']);
+        $family->linkedProducts()->attach($product, ['sort_order' => 0]);
+        DB::table('home_publications')->insert([
+            'title' => 'Publicación conservada', 'body' => 'Contenido original',
+            'product_id' => $product->id,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $cardsBefore = DB::table('home_cards')->orderBy('id')->get()->map(function (object $card): object {
+            $card->product_id = null;
+
+            return $card;
+        })->toJson();
+        $publicationsBefore = DB::table('home_publications')->orderBy('id')->get()->map(function (object $publication): object {
+            $publication->product_id = null;
+
+            return $publication;
+        })->toJson();
+        $categoriesBefore = DB::table('categories')->orderBy('id')->get()->toJson();
+        $this->travel(1)->hours();
+
+        $this->actingAs($this->admin())->post(route('admin.products.clearInventory'))
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHas('status', 'Se eliminaron 1 productos del inventario.');
+
+        $this->assertDatabaseCount('products', 0);
+        $this->assertSame($cardsBefore, DB::table('home_cards')->orderBy('id')->get()->toJson());
+        $this->assertSame($publicationsBefore, DB::table('home_publications')->orderBy('id')->get()->toJson());
+        $this->assertSame($categoriesBefore, DB::table('categories')->orderBy('id')->get()->toJson());
+        $this->assertDatabaseCount('home_card_product', 0);
+        $this->assertNull($card->fresh()->product);
+        $this->assertSame(0, $family->linkedProducts()->count());
+        Storage::disk('public')->assertExists(['products/history.jpg', 'home/cards/history.jpg']);
+        $this->get(route('home'))->assertOk()->assertSee('Card conservada')->assertSee('Familia conservada');
+    }
+
+    public function test_clearing_inventory_rolls_back_and_reports_unexpected_errors_instead_of_showing_integrity_message(): void
+    {
+        $admin = $this->admin();
+        $product = Product::factory()->create();
+        StockMovement::create([
+            'product_id' => $product->id,
+            'user_id' => $admin->id,
+            'type' => StockMovement::TYPE_ADJUSTMENT,
+            'quantity' => 1,
+            'stock_before' => 0,
+            'stock_after' => 1,
+        ]);
+        $productsBefore = DB::table('products')->orderBy('id')->get()->toJson();
+        $movementsBefore = DB::table('stock_movements')->orderBy('id')->get()->toJson();
+        DB::listen(function (QueryExecuted $query): void {
+            if (str_starts_with($query->sql, 'delete from') && str_contains($query->sql, 'products')) {
+                DB::table('inventory_clear_nonexistent_table')->get();
+            }
+        });
+        Exceptions::fake([QueryException::class]);
+
+        $this->actingAs($admin)->post(route('admin.products.clearInventory'))
+            ->assertInternalServerError()->assertSessionMissing('error')->assertSessionMissing('status');
+
+        Exceptions::assertReported(fn (QueryException $exception): bool => $exception->getCode() !== '23000');
         $this->assertSame($productsBefore, DB::table('products')->orderBy('id')->get()->toJson());
         $this->assertSame($movementsBefore, DB::table('stock_movements')->orderBy('id')->get()->toJson());
-        $this->get(route('admin.products.index'))
-            ->assertOk()
-            ->assertSee('No se eliminó ningún producto porque existen movimientos asociados.');
+    }
+
+    public function test_guest_cannot_clear_inventory(): void
+    {
+        $product = Product::factory()->create();
+
+        $this->post(route('admin.products.clearInventory'))->assertRedirect(route('login'));
+
+        $this->assertModelExists($product);
+        $this->assertDatabaseCount('stock_movements', 0);
+    }
+
+    public function test_clear_inventory_form_preserves_post_csrf_and_cancelable_confirmation(): void
+    {
+        $response = $this->actingAs($this->admin())->get(route('admin.products.index'))->assertOk();
+        $document = new DOMDocument;
+        $document->loadHTML('<?xml encoding="UTF-8">'.$response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+        $xpath = new DOMXPath($document);
+        $form = $xpath->query('//form[@id="clear-inventory-form"]')->item(0);
+
+        $this->assertInstanceOf(DOMElement::class, $form);
+        $this->assertSame(route('admin.products.clearInventory'), $form->getAttribute('action'));
+        $this->assertSame('POST', $form->getAttribute('method'));
+        $token = $xpath->query('.//input[@name="_token"]', $form)->item(0);
+        $this->assertInstanceOf(DOMElement::class, $token);
+        $this->assertSame(csrf_token(), $token->getAttribute('value'));
+        $button = $xpath->query('//button[contains(@onclick, "clear-inventory-form")]')->item(0);
+        $this->assertInstanceOf(DOMElement::class, $button);
+        $this->assertSame('button', $button->getAttribute('type'));
+        $confirmation = $button->getAttribute('onclick');
+        $this->assertStringContainsString('if(confirm(', $confirmation);
+        $this->assertStringContainsString("document.getElementById('clear-inventory-form').submit()", $confirmation);
+        foreach (['TODOS los productos', 'movimientos históricos', 'desvincularán de la web', 'no se puede deshacer', 'respaldo recuperable'] as $warning) {
+            $this->assertStringContainsString($warning, $confirmation);
+        }
+    }
+
+    public function test_stock_history_migration_upgrades_an_existing_movement_without_changing_its_data(): void
+    {
+        $this->assertSame('sqlite', DB::connection()->getDriverName());
+        $this->assertSame(':memory:', DB::connection()->getDatabaseName());
+        $admin = $this->admin();
+        $product = Product::factory()->create();
+        $migration = require database_path('migrations/2026_11_20_114507_preserve_stock_movement_history_when_products_are_deleted.php');
+        $migration->down();
+
+        try {
+            $movement = StockMovement::create([
+                'product_id' => $product->id,
+                'user_id' => $admin->id,
+                'type' => StockMovement::TYPE_ADJUSTMENT,
+                'quantity' => 1,
+                'stock_before' => 0,
+                'stock_after' => 1,
+                'note' => 'Fila anterior a la migración',
+            ])->fresh();
+            $before = $movement->getAttributes();
+        } finally {
+            $migration->up();
+        }
+
+        $this->assertSame([...$before, 'product_snapshot' => null], $movement->fresh()->getAttributes());
+        $this->actingAs($admin)->post(route('admin.products.clearInventory'))
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHas('status', 'Se eliminaron 1 productos del inventario.');
+        $this->assertDatabaseCount('stock_movements', 1);
+        $this->assertSame($product->only(['id', 'name', 'sku', 'barcode', 'barcode2']), $movement->fresh()->product_snapshot);
+        $this->assertSame([...$before, 'product_id' => null, 'product_snapshot' => null], [...$movement->fresh()->getAttributes(), 'product_snapshot' => null]);
+    }
+
+    #[TestWith([true, false])]
+    #[TestWith([false, true])]
+    public function test_stock_history_migration_refuses_rollback_when_it_would_lose_references_or_snapshots(bool $detached, bool $hasSnapshot): void
+    {
+        $admin = $this->admin();
+        $product = Product::factory()->create();
+        $movement = StockMovement::create([
+            'product_id' => $detached ? null : $product->id,
+            'product_snapshot' => $hasSnapshot ? $product->only(['id', 'name', 'sku', 'barcode', 'barcode2']) : null,
+            'user_id' => $admin->id,
+            'type' => StockMovement::TYPE_ADJUSTMENT,
+            'quantity' => 1,
+            'stock_before' => 0,
+            'stock_after' => 1,
+        ])->fresh();
+        $before = $movement->getAttributes();
+        $migration = require database_path('migrations/2026_11_20_114507_preserve_stock_movement_history_when_products_are_deleted.php');
+
+        $this->assertThrows(
+            fn () => $migration->down(),
+            fn (RuntimeException $exception): bool => $exception->getMessage() === 'No se puede revertir la migración porque se perderían referencias o identificación histórica de productos.',
+        );
+
+        $this->assertTrue(Schema::hasColumn('stock_movements', 'product_snapshot'));
+        $this->assertSame($before, $movement->fresh()->getAttributes());
+        $this->assertModelExists($product);
     }
 
     public function test_employee_without_product_permission_cannot_clear_inventory(): void

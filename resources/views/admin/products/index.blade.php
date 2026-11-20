@@ -49,7 +49,7 @@
                     </button>
                 </div>
                 <div>
-                    <button type="button" onclick="if(confirm('¿Eliminar TODOS los productos registrados? Esta acción no se puede deshacer.')) { document.getElementById('clear-inventory-form').submit(); }" class="x-button x-button-danger size-sm w-full">
+                    <button type="button" onclick="if(confirm('¿Eliminar TODOS los productos registrados, aunque tengan existencias o movimientos? Se conservarán ventas, caja, cortes y movimientos históricos; los productos se desvincularán de la web. Esta acción no se puede deshacer. Antes de continuar, verifica que tienes un respaldo recuperable de la base de datos.')) { document.getElementById('clear-inventory-form').submit(); }" class="x-button x-button-danger size-sm w-full">
                         <x-icon name="trash" class="size-4" />
                         Limpiar inventario
                     </button>
