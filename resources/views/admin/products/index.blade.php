@@ -152,6 +152,7 @@
                             <td class="px-4 py-3">
                                 <p class="font-medium text-mz-text-primary">{{ $product->name }}</p>
                                 <p class="text-xs text-mz-text-secondary">{{ $product->brand }}</p>
+                                <p class="mt-1 text-xs text-mz-text-muted">{{ match ($product->saleMode()) { \App\Models\Product::MODE_BULK => 'A granel', \App\Models\Product::MODE_KIT => 'Paquete (kit)', default => 'Por unidad/pieza' } }}</p>
                             </td>
                             <td class="whitespace-nowrap px-4 py-3 font-mono text-xs text-mz-text-secondary">
                                 @if ($product->barcode)

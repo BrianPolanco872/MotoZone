@@ -9,6 +9,7 @@ use App\Models\Sale;
 use App\Models\SaleReturn;
 use App\Models\SupplierPayment;
 use App\Models\User;
+use App\Support\Quantity;
 use Carbon\CarbonInterface;
 use Closure;
 use Illuminate\Database\QueryException;
@@ -181,7 +182,7 @@ class DailyCutService
 
                 $key = $item->category_name ?: 'Sin departamento';
                 $departments[$key] ??= ['name' => $key, 'quantity' => 0, 'total' => 0.0, 'ticket_ids' => []];
-                $departments[$key]['quantity'] += (int) $item->quantity;
+                $departments[$key]['quantity'] += Quantity::milli($item->quantity);
                 $departments[$key]['total'] += (float) $item->line_total;
                 $departments[$key]['ticket_ids'][$sale->id] = true;
             }
@@ -210,7 +211,7 @@ class DailyCutService
         $departmentRows = array_values(array_map(function (array $department): array {
             return [
                 'name' => $department['name'],
-                'quantity' => $department['quantity'],
+                'quantity' => Quantity::number($department['quantity']),
                 'total' => round($department['total'], 2),
                 'tickets' => count($department['ticket_ids']),
             ];

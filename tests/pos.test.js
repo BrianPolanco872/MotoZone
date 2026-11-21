@@ -8,11 +8,12 @@ import numeral from 'numeral';
 const source = readFileSync(new URL('../resources/js/pos/pos.js', import.meta.url), 'utf8')
     .replace("import numeral from 'numeral';", '');
 
-async function pos({ pending = null, ticket = null } = {}) {
+async function pos({ pending = null, ticket = null, products = [{ id: 7, name: 'Aceite', price: 100, wholesale_price: 80, tax_rate: 0, track_inventory: false, sale_mode: 'unit' }] } = {}) {
     const elements = new Map();
     const requests = [];
     const confirmations = [];
     const prints = [];
+    const timers = new Set();
     const element = (tagName = 'DIV') => {
         const listeners = new Map();
         const classes = new Set();
@@ -31,6 +32,7 @@ async function pos({ pending = null, ticket = null } = {}) {
                 listeners.set(type, [...(listeners.get(type) || []), callback]);
             },
             async emit(type, event = {}) {
+                event.type ??= type;
                 event.target ??= this;
                 event.preventDefault ??= () => { event.defaultPrevented = true; };
                 for (const callback of listeners.get(type) || []) {
@@ -44,6 +46,7 @@ async function pos({ pending = null, ticket = null } = {}) {
             append(...children) { this.children.push(...children); },
             closest(selector) {
                 if (selector === '[data-action]' && this.dataset.action) return this;
+                if (selector === '[data-product-id]' && this.dataset.productId) return this;
                 if (selector === 'input, textarea, select' && ['INPUT', 'TEXTAREA', 'SELECT'].includes(this.tagName)) return this;
                 return null;
             },
@@ -52,7 +55,11 @@ async function pos({ pending = null, ticket = null } = {}) {
             focus() { document.activeElement = this; },
             select() {}, reset() {}, scrollIntoView() {},
             showModal() { this.open = true; },
-            close() { this.open = false; },
+            close() { this.open = false; void this.emit('close'); },
+            async cancel() {
+                const event = await this.emit('cancel');
+                if (!event.defaultPrevented) this.close();
+            },
         };
     };
     for (const id of ('pos-config pos-search pos-results pos-cart-body pos-empty pos-items-count pos-subtotal pos-tax pos-total '
@@ -60,11 +67,18 @@ async function pos({ pending = null, ticket = null } = {}) {
         + 'payment-confirm payment-method payment-amount-group cash-dialog cash-type cash-title cash-error start-day-dialog '
         + 'custom-product-dialog custom-product-form custom-product-name custom-product-price custom-product-quantity '
         + 'custom-product-error pos-charge pos-pending pos-new-sale pos-clear '
+        + 'bulk-dialog bulk-form bulk-close-btn bulk-name bulk-price bulk-stock-info bulk-available-stock bulk-quantity bulk-amount bulk-total bulk-error bulk-cancel bulk-accept '
         + 'last-sale-indicator last-sale-folio pos-print-ticket ticket-print-container').split(' ')) {
         elements.set(id, element(id.endsWith('-dialog') ? 'DIALOG' : 'DIV'));
     }
     const get = (id) => elements.get(id);
     get('pos-search').tagName = 'INPUT';
+    get('bulk-quantity').tagName = 'INPUT';
+    get('bulk-amount').tagName = 'INPUT';
+    get('bulk-accept').tagName = 'BUTTON';
+    get('bulk-cancel').tagName = 'BUTTON';
+    get('bulk-close-btn').tagName = 'BUTTON';
+    get('bulk-cancel').dataset.closeDialog = 'bulk-dialog';
     get('payment-method').tagName = 'SELECT';
     get('payment-method').value = 'cash';
     get('ticket-print-container').classList.add('hidden');
@@ -73,6 +87,7 @@ async function pos({ pending = null, ticket = null } = {}) {
     const cashOut = element('BUTTON');
     cashOut.dataset.cashOpen = 'out';
     const exact = element('BUTTON');
+    const frequentButtons = products.map((product) => Object.assign(element('BUTTON'), { dataset: { addProduct: JSON.stringify(product) } }));
     const document = Object.assign(element(), {
         head: element('HEAD'),
         getElementById: (id) => get(id) || null,
@@ -84,15 +99,21 @@ async function pos({ pending = null, ticket = null } = {}) {
             if (selector === '[data-amount-exact]') return exact;
             return null;
         },
-        querySelectorAll: (selector) => selector === '[data-cash-open]' ? [cashIn, cashOut] : [],
+        querySelectorAll(selector) {
+            if (selector === '[data-cash-open]') return [cashIn, cashOut];
+            if (selector === '[data-add-product]') return frequentButtons;
+            if (selector === '[data-close-dialog]') return [get('bulk-cancel')];
+            return [];
+        },
     });
     get('pos-config').textContent = JSON.stringify({
         permissions: { wholesale: true, price_edit: true }, csrf: 'test',
         routes: { search: '/search', store: '/store', show: '/sale/__SALE__', charge: '/sale/__SALE__/charge', pending: '/pending', ticketData: ticket ? '/ticket/__SALE__' : undefined },
     });
-    const product = { id: 7, name: 'Aceite', price: 100, wholesale_price: 80, tax_rate: 0, track_inventory: false };
     vm.runInNewContext(source, {
-        document, numeral, URLSearchParams, setTimeout, clearTimeout,
+        document, numeral, URLSearchParams,
+        setTimeout: (callback) => { timers.add(callback); return callback; },
+        clearTimeout: (callback) => timers.delete(callback),
         window: {
             location: { search: pending ? '?pending=41' : '' },
             confirm: (message) => { confirmations.push(message); return true; },
@@ -110,15 +131,38 @@ async function pos({ pending = null, ticket = null } = {}) {
             if (url === '/ticket/42') {
                 return { ok: true, json: async () => ticket };
             }
-            return { ok: true, json: async () => url.startsWith('/search') ? { products: [product] } : { sale: pending } };
+            return { ok: true, json: async () => url.startsWith('/search') ? { products } : { sale: pending } };
         },
     }, { filename: 'resources/js/pos/pos.js' });
     await setImmediate();
     return {
-        get, requests, confirmations, prints, document, element, exact,
+        get, requests, confirmations, prints, document, element, exact, frequentButtons,
         async scan() {
             get('pos-search').value = '750123';
             await get('pos-search').emit('keydown', { key: 'Enter' });
+        },
+        async search(index = 0) {
+            get('pos-search').value = 'aceite';
+            await get('pos-search').emit('input');
+            for (const callback of timers) {
+                timers.delete(callback);
+                await callback();
+            }
+            const button = element('BUTTON');
+            button.dataset.productId = String(products[index].id);
+            await get('pos-results').emit('click', { target: button });
+        },
+        async bulk(quantity) {
+            get('bulk-quantity').value = String(quantity);
+            await get('bulk-quantity').emit('input');
+            await get('bulk-form').emit('submit');
+        },
+        async editQuantity(quantity, index = 0) {
+            const input = element('INPUT');
+            input.dataset = { action: 'quantity', index: String(index) };
+            input.value = String(quantity);
+            await get('pos-cart-body').emit('change', { target: input });
+            return input;
         },
         async custom(name, price) {
             get('custom-product-name').value = name;
@@ -251,7 +295,7 @@ test('pending custom lines preserve identity and charge the saved total, includi
 test('any open dialog blocks all global shortcuts without preventing native Escape cancellation', async () => {
     const ui = await pos();
     await ui.scan();
-    for (const id of ['payment-dialog', 'cash-dialog', 'custom-product-dialog', 'start-day-dialog']) {
+    for (const id of ['payment-dialog', 'cash-dialog', 'custom-product-dialog', 'start-day-dialog', 'bulk-dialog']) {
         const dialog = ui.get(id);
         dialog.showModal();
         for (const key of ['Escape', 'Delete', 'F12', 'F6', 'F7', 'F8', 'F11']) {
@@ -312,4 +356,275 @@ test('Delete outside editing still confirms removal and explicit clear still con
     await ui.get('pos-clear').click();
     assert.equal(ui.get('pos-cart-body').children.length, 0);
     assert.equal(ui.confirmations.length, 2);
+});
+
+const bulkProduct = { id: 8, name: 'Aceite a granel', sale_mode: 'bulk', price: 14.10, wholesale_price: 12, tax_rate: 0.16, track_inventory: true, stock: 2.75, available_stock: 2.75 };
+
+for (const entry of ['scan', 'search', 'frequent']) {
+    test(`${entry}: bulk asks for quantity before mutating the cart and submits exact quantity and money`, async () => {
+        const ui = await pos({ products: [bulkProduct] });
+
+        if (entry === 'frequent') {
+            await ui.frequentButtons[0].click();
+        } else {
+            await ui[entry]();
+        }
+
+        assert.equal(ui.get('bulk-dialog').open, true);
+        assert.equal(ui.document.activeElement, ui.get('bulk-quantity'));
+        assert.equal(ui.get('bulk-name').textContent, 'Aceite a granel');
+        assert.equal(ui.get('bulk-price').textContent, '$14.10');
+        assert.equal(ui.get('pos-cart-body').children.length, 0);
+        ui.get('bulk-quantity').value = '0.500';
+        await ui.get('bulk-quantity').emit('input');
+        assert.equal(ui.get('bulk-total').textContent, '$7.05');
+
+        await ui.get('bulk-form').emit('submit');
+        await ui.get('bulk-form').emit('submit');
+        assert.equal(ui.get('bulk-dialog').open, false);
+        assert.equal(ui.document.activeElement, ui.get('pos-search'));
+        assert.equal(ui.get('pos-total').textContent, '$7.05');
+        assert.equal(ui.get('pos-subtotal').textContent, '$6.08');
+        assert.equal(ui.get('pos-tax').textContent, '$0.97');
+        assert.equal(ui.get('pos-items-count').textContent, '1 renglón');
+        assert.match(ui.get('pos-cart-body').children[0].innerHTML, /step="0\.001" min="0\.001" max="9999" value="0\.5"/);
+        await ui.get('pos-charge').click();
+        await ui.get('payment-confirm').click();
+        assert.equal(ui.requests[0].payload.amount_paid, 7.05);
+        assert.equal(ui.requests[0].payload.items[0].quantity, 0.5);
+        assert.equal('sale_mode' in ui.requests[0].payload.items[0], false);
+        assert.equal('inventory_snapshot' in ui.requests[0].payload.items[0], false);
+    });
+}
+
+for (const cancellation of ['button', 'Escape']) {
+    test(`bulk ${cancellation} discards the addition and preserves existing quantity, price and shortcuts`, async () => {
+        const ui = await pos({ products: [bulkProduct] });
+        await ui.scan();
+        await ui.bulk(0.5);
+        const before = ui.get('pos-cart-body').children[0].innerHTML;
+        await ui.scan();
+        ui.get('bulk-quantity').value = '0.125';
+        for (const key of ['Delete', 'F12', 'F6', 'F7', 'F8', 'F11', 'Escape']) {
+            const event = await ui.key(key, ui.get('bulk-quantity'));
+            assert.equal(event.defaultPrevented, undefined);
+        }
+
+        if (cancellation === 'button') {
+            await ui.get('bulk-cancel').click();
+        } else {
+            await ui.get('bulk-dialog').cancel();
+        }
+
+        assert.equal(ui.get('bulk-dialog').open, false);
+        assert.equal(ui.document.activeElement, ui.get('pos-search'));
+        assert.equal(ui.get('pos-cart-body').children[0].innerHTML, before);
+        assert.equal(ui.get('pos-total').textContent, '$7.05');
+        assert.equal(ui.requests.length, 0);
+        assert.equal(ui.confirmations.length, 0);
+    });
+}
+
+test('bulk readding uses wholesale or overridden price and sums thousandths only on confirmation', async () => {
+    const ui = await pos({ products: [bulkProduct] });
+    await ui.key('F11');
+    await ui.scan();
+    assert.equal(ui.get('bulk-price').textContent, '$12.00');
+    await ui.bulk(0.1);
+    const price = ui.element('INPUT');
+    price.dataset = { action: 'price', index: '0' };
+    price.value = '15.25';
+    await ui.get('pos-cart-body').emit('input', { target: price });
+    await ui.scan();
+    assert.equal(ui.get('bulk-price').textContent, '$15.25');
+    assert.equal(ui.get('pos-total').textContent, '$1.53');
+    await ui.bulk(0.2);
+    assert.equal(ui.get('pos-total').textContent, '$4.58');
+    assert.equal(ui.get('pos-cart-body').children.length, 1);
+    await ui.get('pos-pending').click();
+    assert.equal(ui.requests[0].payload.items[0].quantity, 0.3);
+    assert.equal(ui.requests[0].payload.items[0].unit_price, 15.25);
+    assert.equal(ui.requests[0].payload.items[0].wholesale, true);
+});
+
+test('bulk edits retain fractions and invalid quantities or insufficient stock never truncate or clamp', async () => {
+    const ui = await pos({ products: [bulkProduct] });
+    await ui.scan();
+    for (const invalid of ['0', '-1', '0.0001', '1.2345', '10000', '1e-3', '']) {
+        await ui.bulk(invalid);
+        assert.equal(ui.get('bulk-dialog').open, true);
+        assert.equal(ui.get('pos-cart-body').children.length, 0);
+        assert.equal(ui.get('bulk-error').classList.contains('hidden'), false);
+    }
+    await ui.bulk(0.001);
+    await ui.editQuantity('0.125');
+    assert.equal(ui.get('pos-total').textContent, '$1.76');
+    for (const invalid of ['0.0001', '0', '10000', '2.751']) {
+        const input = await ui.editQuantity(invalid);
+        assert.equal(input.value, '0.125');
+        assert.equal(ui.get('pos-total').textContent, '$1.76');
+    }
+    await ui.scan();
+    await ui.bulk(2.75);
+    assert.equal(ui.get('bulk-dialog').open, true);
+    assert.equal(ui.get('pos-total').textContent, '$1.76');
+    await ui.get('bulk-cancel').click();
+    await ui.get('pos-pending').click();
+    assert.equal(ui.requests[0].payload.items[0].quantity, 0.125);
+});
+
+test('bulk readding checks the accumulated 9999 limit', async () => {
+    const product = { ...bulkProduct, available_stock: 9999, stock: 9999 };
+    const ui = await pos({ products: [product] });
+    await ui.scan();
+    await ui.bulk(9998.999);
+    await ui.scan();
+    await ui.bulk(0.002);
+    assert.equal(ui.get('bulk-dialog').open, true);
+    await ui.bulk(0.001);
+    assert.equal(ui.get('bulk-dialog').open, false);
+    await ui.get('pos-pending').click();
+    assert.equal(ui.requests[0].payload.items[0].quantity, 9999);
+});
+
+test('bulk readding validates the latest availability without changing the existing line on failure', async () => {
+    const product = { ...bulkProduct };
+    const ui = await pos({ products: [product] });
+    await ui.scan();
+    await ui.bulk(0.5);
+    product.available_stock = 0.625;
+    await ui.scan();
+    await ui.bulk(0.25);
+    assert.equal(ui.get('bulk-dialog').open, true);
+    assert.equal(ui.get('pos-total').textContent, '$7.05');
+    await ui.bulk(0.125);
+    assert.equal(ui.get('bulk-dialog').open, false);
+    assert.equal(ui.get('pos-total').textContent, '$8.81');
+    await ui.get('pos-pending').click();
+    assert.equal(ui.requests[0].payload.items[0].quantity, 0.625);
+});
+
+for (const available of [3, null]) {
+    test(`kit availability ${available} ignores zero parent stock and keeps quantities integral`, async () => {
+        const ui = await pos({ products: [{ id: 9, name: 'Paquete', sale_mode: 'kit', price: 30, wholesale_price: null, stock: 0, available_stock: available, track_inventory: available !== null, kit_deduct_components: available !== null }] });
+        await ui.scan();
+        assert.equal(ui.get('bulk-dialog').open, false);
+        assert.equal(ui.get('pos-cart-body').children.length, 1);
+        const input = await ui.editQuantity(0.5);
+        assert.equal(input.value, '1');
+        assert.equal(ui.get('pos-total').textContent, '$30.00');
+        await ui.editQuantity(3);
+        await ui.scan();
+        assert.equal(ui.get('pos-total').textContent, available === null ? '$120.00' : '$90.00');
+        await ui.get('pos-pending').click();
+        assert.equal(ui.requests[0].payload.items[0].quantity, available === null ? 4 : 3);
+    });
+}
+
+test('kit with zero derived availability is blocked even when parent stock is positive', async () => {
+    const ui = await pos({ products: [{ id: 9, name: 'Paquete agotado', sale_mode: 'kit', price: 30, stock: 100, available_stock: 0, track_inventory: true }] });
+    await ui.scan();
+    assert.equal(ui.get('pos-cart-body').children.length, 0);
+    assert.match(ui.get('pos-error').innerHTML, /está agotado/);
+});
+
+test('bulk without inventory accepts fractions despite zero parent stock and cancellation leaves an empty cart', async () => {
+    const ui = await pos({ products: [{ ...bulkProduct, track_inventory: false, stock: 0, available_stock: null }] });
+    await ui.scan();
+    await ui.get('bulk-cancel').click();
+    assert.equal(ui.get('pos-cart-body').children.length, 0);
+    assert.equal(ui.document.activeElement, ui.get('pos-search'));
+    await ui.scan();
+    await ui.bulk(0.5);
+    assert.equal(ui.get('pos-total').textContent, '$7.05');
+});
+
+test('unit and custom quantities reject fractions instead of silently flooring', async () => {
+    const ui = await pos();
+    await ui.scan();
+    assert.equal((await ui.editQuantity(1.5)).value, '1');
+    await ui.custom('Servicio', 20);
+    assert.equal((await ui.editQuantity(0.5, 1)).value, '1');
+    ui.get('custom-product-name').value = 'Otro';
+    ui.get('custom-product-price').value = '10';
+    ui.get('custom-product-quantity').value = '1.5';
+    await ui.get('custom-product-form').emit('submit');
+    assert.equal(ui.get('pos-cart-body').children.length, 2);
+    await ui.get('pos-pending').click();
+    assert.deepEqual(ui.requests[0].payload.items.map((item) => item.quantity), [1, 1]);
+});
+
+test('tax is rounded per line and mixed quantities count rows, not pieces', async () => {
+    const ui = await pos({ products: [bulkProduct, { ...bulkProduct, id: 10, name: 'Otro aceite' }] });
+    await ui.frequentButtons[0].click();
+    await ui.bulk(0.001);
+    await ui.frequentButtons[1].click();
+    await ui.bulk(0.001);
+    assert.equal(ui.get('pos-subtotal').textContent, '$0.02');
+    assert.equal(ui.get('pos-tax').textContent, '$0.00');
+    assert.equal(ui.get('pos-total').textContent, '$0.02');
+    assert.equal(ui.get('pos-items-count').textContent, '2 renglones');
+});
+
+test('pending bulk stays fractional and locked while charge sends only payment information', async () => {
+    const ui = await pos({ pending: { id: 41, total: 1.76, payment_method: 'cash', items: [{ product_id: 8, sale_mode: 'bulk', name: 'Aceite guardado', unit_price: 14.10, quantity: 0.125, tax_rate: 0.16 }] } });
+    const row = ui.get('pos-cart-body').children[0].innerHTML;
+    assert.match(row, />0\.125<\/span>/);
+    assert.doesNotMatch(row, /data-action="quantity"/);
+    ui.get('payment-dialog').close();
+    await ui.scan();
+    assert.equal(ui.get('bulk-dialog').open, false);
+    assert.equal(ui.get('pos-cart-body').children[0].innerHTML, row);
+    await ui.get('pos-charge').click();
+    await ui.get('payment-confirm').click();
+    assert.deepEqual(ui.requests, [{ url: '/sale/41/charge', payload: { amount_paid: 1.76, payment_method: 'cash' } }]);
+});
+
+test('bulk modal bidirectional calculation updates amount from quantity and quantity from amount', async () => {
+    const ui = await pos({ products: [bulkProduct] });
+    await ui.scan();
+
+    assert.equal(ui.get('bulk-dialog').open, true);
+    assert.equal(ui.get('bulk-quantity').value, '1.00');
+    assert.equal(ui.get('bulk-amount').value, '14.10');
+    assert.equal(ui.get('bulk-price').textContent, '$14.10');
+    assert.equal(ui.get('bulk-available-stock').textContent, '2.75');
+
+    // Modifying quantity updates amount
+    ui.get('bulk-quantity').value = '2.00';
+    await ui.get('bulk-quantity').emit('input');
+    assert.equal(ui.get('bulk-amount').value, '28.20');
+
+    // Modifying amount updates quantity
+    ui.get('bulk-amount').value = '14.10';
+    await ui.get('bulk-amount').emit('input');
+    assert.equal(ui.get('bulk-quantity').value, '1.00');
+
+    // Enter key on amount confirms and adds to cart
+    await ui.get('bulk-amount').emit('keydown', { key: 'Enter' });
+    assert.equal(ui.get('bulk-dialog').open, false);
+    assert.equal(ui.document.activeElement, ui.get('pos-search'));
+    assert.equal(ui.get('pos-cart-body').children.length, 1);
+    assert.equal(ui.get('pos-total').textContent, '$14.10');
+});
+
+test('bulk modal validates stock and displays warning when exceeded', async () => {
+    const ui = await pos({ products: [bulkProduct] }); // available_stock: 2.75
+    await ui.scan();
+
+    ui.get('bulk-quantity').value = '5.00';
+    await ui.get('bulk-quantity').emit('input');
+
+    assert.equal(ui.get('bulk-error').classList.contains('hidden'), false);
+    assert.match(ui.get('bulk-error').textContent, /No hay existencia suficiente/);
+
+    // Pressing Enter does not add to cart when exceeding stock
+    await ui.get('bulk-accept').click();
+    assert.equal(ui.get('bulk-dialog').open, true);
+    assert.equal(ui.get('pos-cart-body').children.length, 0);
+
+    // Cancel closes dialog and refocuses search
+    await ui.get('bulk-cancel').click();
+    assert.equal(ui.get('bulk-dialog').open, false);
+    assert.equal(ui.document.activeElement, ui.get('pos-search'));
 });

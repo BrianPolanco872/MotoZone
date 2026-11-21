@@ -175,6 +175,7 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'active'])->group(fu
     Route::middleware('permission:admin.products.manage')->group(function () {
         Route::get('/productos', [AdminProductController::class, 'index'])->name('products.index');
         Route::get('/productos/crear', [AdminProductController::class, 'create'])->name('products.create');
+        Route::get('/productos/componentes/buscar', [AdminProductController::class, 'components'])->name('products.components');
         Route::post('/productos', [AdminProductController::class, 'store'])->name('products.store');
         Route::get('/productos/{product}/editar', [AdminProductController::class, 'edit'])->name('products.edit');
         Route::put('/productos/{product}', [AdminProductController::class, 'update'])->name('products.update');

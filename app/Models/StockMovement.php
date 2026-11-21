@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\QuantityCast;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -32,9 +33,9 @@ class StockMovement extends Model
     {
         return [
             'product_snapshot' => 'array',
-            'quantity' => 'integer',
-            'stock_before' => 'integer',
-            'stock_after' => 'integer',
+            'quantity' => QuantityCast::class,
+            'stock_before' => QuantityCast::class,
+            'stock_after' => QuantityCast::class,
         ];
     }
 

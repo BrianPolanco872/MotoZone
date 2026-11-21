@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleItem;
+use App\Models\StockMovement;
 use App\Models\User;
 use App\Services\SaleService;
 use Database\Seeders\RolePermissionSeeder;
@@ -44,6 +45,399 @@ class PosSalesTest extends TestCase
             'track_inventory' => true,
             'tax_rate' => 0.16,
         ], $overrides));
+    }
+
+    /**
+     * @param  array<int, array{quantity: int|float}>  $components
+     */
+    private function createKit(array $components, bool $deductComponents = true): Product
+    {
+        $kit = Product::factory()->create([
+            'sale_mode' => Product::MODE_KIT,
+            'kit_deduct_components' => $deductComponents,
+            'price' => 100,
+            'stock' => 0,
+            'min_stock' => 0,
+            'track_inventory' => true,
+        ]);
+        $kit->kitItems()->sync($components);
+
+        return $kit;
+    }
+
+    #[TestWith([0.5, '7.05', 2.25])]
+    #[TestWith([0.001, '0.01', 2.749])]
+    public function test_bulk_sale_preserves_fractional_quantity_price_stock_and_movement(float $quantity, string $total, float $remainingStock): void
+    {
+        $product = Product::factory()->bulk()->create(['price' => 14.10, 'stock' => 2.750, 'min_stock' => 0.500]);
+
+        $response = $this->actingAs($this->employee())->postJson(route('pos.sales.store'), [
+            'idempotency_key' => 'bulk-precision',
+            'items' => [['product_id' => $product->id, 'quantity' => $quantity]],
+        ])->assertOk();
+
+        $sale = Sale::query()->findOrFail($response->json('sale.id'));
+        $item = $sale->items()->sole();
+        $this->assertSame($total, $sale->total);
+        $this->assertSame($total, $item->line_total);
+        $this->assertSame($quantity, $item->quantity);
+        $this->assertSame(Product::MODE_BULK, $item->sale_mode);
+        $this->assertSame($remainingStock, $product->fresh()->stock);
+        $this->assertSame(0.5, $product->fresh()->min_stock);
+        $this->assertSame([
+            ['product_id' => $product->id, 'product_name' => $product->name, 'quantity' => $quantity],
+        ], $item->inventory_snapshot['effects']);
+        $movement = StockMovement::query()->where('sale_id', $sale->id)->sole();
+        $this->assertSame(-$quantity, $movement->quantity);
+        $this->assertSame(2.75, $movement->stock_before);
+        $this->assertSame($remainingStock, $movement->stock_after);
+        $this->assertDatabaseHas('cash_movements', ['sale_id' => $sale->id, 'amount' => $total]);
+    }
+
+    #[TestWith([0])]
+    #[TestWith([0.0001])]
+    #[TestWith([-0.001])]
+    #[TestWith([9999.001])]
+    public function test_invalid_bulk_quantity_returns_422_without_any_sale_effects(int|float $quantity): void
+    {
+        $product = Product::factory()->bulk()->create(['stock' => 10000]);
+
+        $this->actingAs($this->employee())->postJson(route('pos.sales.store'), [
+            'idempotency_key' => 'invalid-bulk',
+            'items' => [['product_id' => $product->id, 'quantity' => $quantity]],
+        ])->assertUnprocessable()->assertJsonValidationErrors('items.0.quantity');
+
+        $this->assertSame(10000, $product->fresh()->stock);
+        $this->assertDatabaseCount('sales', 0);
+        $this->assertDatabaseCount('sale_items', 0);
+        $this->assertDatabaseCount('stock_movements', 0);
+        $this->assertDatabaseCount('cash_movements', 0);
+    }
+
+    #[TestWith(['unit'])]
+    #[TestWith(['kit'])]
+    #[TestWith(['custom'])]
+    public function test_fractional_non_bulk_quantity_returns_422_without_truncating(string $mode): void
+    {
+        $component = Product::factory()->create(['stock' => 10]);
+        $product = $this->createKit([$component->id => ['quantity' => 1]]);
+        if ($mode === Product::MODE_UNIT) {
+            $product = $component;
+        }
+        $item = $mode === 'custom'
+            ? ['is_custom' => true, 'custom_name' => 'Instalación', 'custom_price' => 10]
+            : ['product_id' => $product->id];
+
+        $this->actingAs($this->employee())->postJson(route('pos.sales.store'), [
+            'idempotency_key' => 'fractional-non-bulk',
+            'items' => [[...$item, 'quantity' => 0.5, 'sale_mode' => Product::MODE_BULK]],
+        ])->assertUnprocessable()->assertJsonValidationErrors('items.0.quantity');
+
+        $this->assertSame(10, $component->fresh()->stock);
+        $this->assertDatabaseCount('sales', 0);
+        $this->assertDatabaseCount('stock_movements', 0);
+        $this->assertDatabaseCount('cash_movements', 0);
+    }
+
+    #[TestWith([true])]
+    #[TestWith([false])]
+    public function test_kit_uses_server_recipe_and_toggle_never_its_own_stock(bool $deductComponents): void
+    {
+        $sparkPlug = Product::factory()->create(['stock' => $deductComponents ? 10 : 0]);
+        $filter = Product::factory()->create(['stock' => $deductComponents ? 10 : 0]);
+        $kit = $this->createKit([$sparkPlug->id => ['quantity' => 2], $filter->id => ['quantity' => 1]], $deductComponents);
+
+        $response = $this->actingAs($this->employee())->postJson(route('pos.sales.store'), [
+            'idempotency_key' => 'kit-server-authority',
+            'items' => [[
+                'product_id' => $kit->id, 'quantity' => 3,
+                'sale_mode' => Product::MODE_UNIT,
+                'kit_deduct_components' => ! $deductComponents,
+                'components' => [['product_id' => $sparkPlug->id, 'quantity' => 999]],
+                'inventory_snapshot' => ['version' => 1, 'mode' => 'unit', 'effects' => []],
+            ]],
+        ])->assertOk();
+
+        $sale = Sale::query()->findOrFail($response->json('sale.id'));
+        $item = $sale->items()->sole();
+        $this->assertSame('300.00', $sale->total);
+        $this->assertSame('100.00', $item->unit_price);
+        $this->assertSame(Product::MODE_KIT, $item->sale_mode);
+        $this->assertSame([
+            'version' => 1,
+            'mode' => Product::MODE_KIT,
+            'kit_deduct_components' => $deductComponents,
+            'components' => [
+                ['product_id' => $sparkPlug->id, 'product_name' => $sparkPlug->name, 'quantity' => 2, 'sale_mode' => Product::MODE_UNIT],
+                ['product_id' => $filter->id, 'product_name' => $filter->name, 'quantity' => 1, 'sale_mode' => Product::MODE_UNIT],
+            ],
+            'effects' => $deductComponents ? [
+                ['product_id' => $sparkPlug->id, 'product_name' => $sparkPlug->name, 'quantity' => 6],
+                ['product_id' => $filter->id, 'product_name' => $filter->name, 'quantity' => 3],
+            ] : [],
+        ], $item->inventory_snapshot);
+        $this->assertSame($deductComponents ? 4 : 0, $sparkPlug->fresh()->stock);
+        $this->assertSame($deductComponents ? 7 : 0, $filter->fresh()->stock);
+        $this->assertSame(0, $kit->fresh()->stock);
+        $this->assertDatabaseMissing('stock_movements', ['product_id' => $kit->id]);
+        $this->assertDatabaseCount('stock_movements', $deductComponents ? 2 : 0);
+        $this->assertDatabaseHas('cash_movements', ['sale_id' => $sale->id, 'amount' => 300]);
+        if ($deductComponents) {
+            $this->assertDatabaseHas('stock_movements', ['product_id' => $sparkPlug->id, 'quantity' => -6]);
+            $this->assertDatabaseHas('stock_movements', ['product_id' => $filter->id, 'quantity' => -3]);
+        }
+    }
+
+    public function test_kit_multiplies_bulk_components_exactly_and_skips_untracked_components(): void
+    {
+        $oil = Product::factory()->bulk()->create(['stock' => 1]);
+        $service = Product::factory()->create(['stock' => 0, 'track_inventory' => false]);
+        $kit = $this->createKit([$oil->id => ['quantity' => 0.125], $service->id => ['quantity' => 2]]);
+
+        $response = $this->actingAs($this->employee())->postJson(route('pos.sales.store'), [
+            'idempotency_key' => 'kit-bulk-component',
+            'items' => [['product_id' => $kit->id, 'quantity' => 3]],
+        ])->assertOk();
+
+        $item = Sale::query()->findOrFail($response->json('sale.id'))->items()->sole();
+        $this->assertSame(0.625, $oil->fresh()->stock);
+        $this->assertSame(0, $service->fresh()->stock);
+        $this->assertSame([
+            ['product_id' => $oil->id, 'product_name' => $oil->name, 'quantity' => 0.375],
+        ], $item->inventory_snapshot['effects']);
+        $this->assertDatabaseCount('stock_movements', 1);
+        $this->assertDatabaseHas('stock_movements', ['product_id' => $oil->id, 'quantity' => -0.375]);
+    }
+
+    #[TestWith(['paid'])]
+    #[TestWith(['pending'])]
+    public function test_shared_component_demand_from_repeated_direct_lines_and_two_kits_rolls_back_atomically(string $status): void
+    {
+        $component = Product::factory()->create(['stock' => 10]);
+        $firstKit = $this->createKit([$component->id => ['quantity' => 2]]);
+        $secondKit = $this->createKit([$component->id => ['quantity' => 3]]);
+        $this->actingAs($this->employee());
+        $payload = [
+            'idempotency_key' => 'combined-kit-stock', 'status' => $status,
+            'items' => [
+                ['product_id' => $component->id, 'quantity' => 2],
+                ['product_id' => $component->id, 'quantity' => 2],
+                ['product_id' => $firstKit->id, 'quantity' => 2],
+                ['product_id' => $secondKit->id, 'quantity' => 1],
+            ],
+        ];
+
+        if ($status === 'pending') {
+            $response = $this->postJson(route('pos.sales.store'), $payload)->assertOk();
+            $sale = Sale::query()->findOrFail($response->json('sale.id'));
+            $itemsBefore = $sale->items->toArray();
+            $this->postJson(route('pos.sales.charge', $sale), [])->assertUnprocessable()->assertJsonValidationErrors('items');
+            $this->assertSame('pending', $sale->fresh()->status);
+            $this->assertSame('0.00', $sale->fresh()->amount_paid);
+            $this->assertSame($itemsBefore, $sale->fresh()->items->toArray());
+        } else {
+            $this->postJson(route('pos.sales.store'), $payload)->assertUnprocessable()->assertJsonValidationErrors('items');
+            $this->assertDatabaseCount('sales', 0);
+            $this->assertDatabaseCount('sale_items', 0);
+        }
+
+        $this->assertSame(10, $component->fresh()->stock);
+        $this->assertSame(0, $firstKit->fresh()->stock);
+        $this->assertSame(0, $secondKit->fresh()->stock);
+        $this->assertDatabaseCount('stock_movements', 0);
+        $this->assertDatabaseCount('cash_movements', 0);
+    }
+
+    public function test_repeated_kit_lines_preserve_authorized_prices_and_per_line_effects(): void
+    {
+        $component = Product::factory()->create(['stock' => 10]);
+        $kit = $this->createKit([$component->id => ['quantity' => 2]]);
+
+        $response = $this->actingAs($this->employee(['pos.price.edit']))->postJson(route('pos.sales.store'), [
+            'idempotency_key' => 'kit-line-prices',
+            'items' => [
+                ['product_id' => $kit->id, 'quantity' => 2, 'unit_price' => 100],
+                ['product_id' => $kit->id, 'quantity' => 3, 'unit_price' => 90],
+            ],
+        ])->assertOk();
+
+        $sale = Sale::query()->findOrFail($response->json('sale.id'));
+        $items = $sale->items()->orderBy('id')->get();
+        $this->assertCount(2, $items);
+        $this->assertSame(['100.00', '90.00'], $items->pluck('unit_price')->all());
+        $this->assertSame([4, 6], $items->map(fn (SaleItem $item): int => $item->inventory_snapshot['effects'][0]['quantity'])->all());
+        $this->assertSame('470.00', $sale->total);
+        $this->assertSame(0, $component->fresh()->stock);
+    }
+
+    public function test_kit_idempotency_applies_component_effects_and_cash_only_once(): void
+    {
+        $component = Product::factory()->create(['stock' => 10]);
+        $kit = $this->createKit([$component->id => ['quantity' => 2]]);
+        $this->actingAs($this->employee());
+        $payload = ['idempotency_key' => 'kit-idempotent', 'items' => [['product_id' => $kit->id, 'quantity' => 3]]];
+
+        $first = $this->postJson(route('pos.sales.store'), $payload)->assertOk();
+        $this->postJson(route('pos.sales.store'), $payload)->assertOk()->assertJsonPath('sale.id', $first->json('sale.id'));
+
+        $this->assertSame(4, $component->fresh()->stock);
+        $this->assertDatabaseCount('sales', 1);
+        $this->assertDatabaseCount('sale_items', 1);
+        $this->assertDatabaseCount('stock_movements', 1);
+        $this->assertDatabaseCount('cash_movements', 1);
+        $this->assertDatabaseHas('stock_movements', ['product_id' => $component->id, 'quantity' => -6]);
+    }
+
+    #[TestWith([true])]
+    #[TestWith([false])]
+    public function test_pending_bulk_and_kit_freeze_recipe_toggle_and_amounts_until_charged_once(bool $deductComponents): void
+    {
+        $component = Product::factory()->create(['stock' => 10]);
+        $replacement = Product::factory()->create(['stock' => 10]);
+        $bulk = Product::factory()->bulk()->create(['stock' => 2.75, 'price' => 14.10]);
+        $kit = $this->createKit([$component->id => ['quantity' => 2]], $deductComponents);
+        $this->actingAs($this->employee());
+        $response = $this->postJson(route('pos.sales.store'), [
+            'idempotency_key' => 'pending-frozen-recipe', 'status' => 'pending',
+            'items' => [['product_id' => $kit->id, 'quantity' => 3], ['product_id' => $bulk->id, 'quantity' => 0.5]],
+        ])->assertOk();
+        $sale = Sale::query()->findOrFail($response->json('sale.id'));
+        $kitItem = $sale->items()->where('product_id', $kit->id)->sole();
+        $snapshot = $kitItem->inventory_snapshot;
+        $this->assertNull($snapshot['effects']);
+        $this->assertSame($deductComponents, $snapshot['kit_deduct_components']);
+        $this->assertSame(2, $snapshot['components'][0]['quantity']);
+        $this->assertSame(10, $component->fresh()->stock);
+        $this->assertSame(2.75, $bulk->fresh()->stock);
+        $this->assertDatabaseCount('cash_movements', 0);
+        $this->assertDatabaseCount('stock_movements', 0);
+        $this->getJson(route('pos.sales.show', $sale))->assertOk()->assertJsonPath('sale.items.1.quantity', 0.5);
+        $kit->kitItems()->sync([$replacement->id => ['quantity' => 9]]);
+        $kit->update(['kit_deduct_components' => ! $deductComponents, 'price' => 999]);
+        $bulk->update(['price' => 999]);
+
+        $this->postJson(route('pos.sales.charge', $sale), ['amount_paid' => 307.05])->assertOk();
+        $this->postJson(route('pos.sales.charge', $sale), ['amount_paid' => 307.05])
+            ->assertUnprocessable()->assertJsonValidationErrors('sale');
+
+        $this->assertSame('307.05', $sale->fresh()->total);
+        $this->assertSame('307.05', $sale->fresh()->amount_paid);
+        $this->assertSame('paid', $sale->fresh()->status);
+        $this->assertSame('100.00', $kitItem->fresh()->unit_price);
+        $this->assertSame([...$snapshot, 'effects' => $deductComponents ? [
+            ['product_id' => $component->id, 'product_name' => $component->name, 'quantity' => 6],
+        ] : []], $kitItem->fresh()->inventory_snapshot);
+        $this->assertSame($deductComponents ? 4 : 10, $component->fresh()->stock);
+        $this->assertSame(10, $replacement->fresh()->stock);
+        $this->assertSame(2.25, $bulk->fresh()->stock);
+        $this->assertDatabaseCount('stock_movements', $deductComponents ? 2 : 1);
+        $this->assertDatabaseCount('cash_movements', 1);
+    }
+
+    public function test_pending_kit_with_deleted_frozen_component_returns_422_without_charging(): void
+    {
+        $component = Product::factory()->create(['stock' => 10]);
+        $replacement = Product::factory()->create(['stock' => 10]);
+        $kit = $this->createKit([$component->id => ['quantity' => 2]]);
+        $this->actingAs($this->employee());
+        $response = $this->postJson(route('pos.sales.store'), [
+            'idempotency_key' => 'pending-deleted-component', 'status' => 'pending',
+            'items' => [['product_id' => $kit->id, 'quantity' => 3]],
+        ])->assertOk();
+        $sale = Sale::query()->findOrFail($response->json('sale.id'));
+        $snapshot = $sale->items()->sole()->inventory_snapshot;
+        $kit->kitItems()->sync([$replacement->id => ['quantity' => 1]]);
+        $component->delete();
+
+        $this->postJson(route('pos.sales.charge', $sale), [])->assertUnprocessable()->assertJsonValidationErrors('items');
+
+        $this->assertSame('pending', $sale->fresh()->status);
+        $this->assertSame('0.00', $sale->fresh()->amount_paid);
+        $this->assertNull($sale->fresh()->paid_at);
+        $this->assertSame($snapshot, $sale->items()->sole()->inventory_snapshot);
+        $this->assertSame(10, $replacement->fresh()->stock);
+        $this->assertModelMissing($component);
+        $this->assertDatabaseCount('stock_movements', 0);
+        $this->assertDatabaseCount('cash_movements', 0);
+    }
+
+    public function test_legacy_pending_unit_line_without_inventory_snapshot_can_be_charged(): void
+    {
+        $product = $this->createProduct(['stock' => 5]);
+        $employee = $this->employee();
+        $sale = app(SaleService::class)->create($employee, [
+            'idempotency_key' => 'legacy-pending-unit', 'status' => 'pending',
+            'items' => [['product_id' => $product->id, 'quantity' => 2]],
+        ]);
+        $sale->items()->update(['sale_mode' => Product::MODE_UNIT, 'inventory_snapshot' => null]);
+
+        $this->actingAs($employee)->postJson(route('pos.sales.charge', $sale), ['amount_paid' => 200])->assertOk();
+
+        $this->assertSame('paid', $sale->fresh()->status);
+        $this->assertSame('200.00', $sale->fresh()->total);
+        $this->assertSame(3, $product->fresh()->stock);
+        $this->assertDatabaseHas('stock_movements', ['sale_id' => $sale->id, 'product_id' => $product->id, 'quantity' => -2]);
+        $this->assertDatabaseHas('cash_movements', ['sale_id' => $sale->id, 'amount' => 200]);
+    }
+
+    public function test_fractional_product_id_returns_422_instead_of_selling_a_truncated_id(): void
+    {
+        $product = $this->createProduct(['stock' => 5]);
+
+        $this->actingAs($this->employee())->postJson(route('pos.sales.store'), [
+            'idempotency_key' => 'fractional-product-id',
+            'items' => [['product_id' => $product->id.'.9', 'quantity' => 1]],
+        ])->assertUnprocessable()->assertJsonValidationErrors('items.0.product_id');
+
+        $this->assertSame(5, $product->fresh()->stock);
+        $this->assertDatabaseCount('sales', 0);
+        $this->assertDatabaseCount('sale_items', 0);
+        $this->assertDatabaseCount('stock_movements', 0);
+        $this->assertDatabaseCount('cash_movements', 0);
+    }
+
+    #[TestWith(['parent'])]
+    #[TestWith(['component'])]
+    public function test_pending_kit_with_inactive_parent_or_component_returns_422_without_charging(string $inactiveTarget): void
+    {
+        $component = Product::factory()->create(['stock' => 10]);
+        $kit = $this->createKit([$component->id => ['quantity' => 2]]);
+        $this->actingAs($this->employee());
+        $response = $this->postJson(route('pos.sales.store'), [
+            'idempotency_key' => 'pending-inactive-product', 'status' => 'pending',
+            'items' => [['product_id' => $kit->id, 'quantity' => 3]],
+        ])->assertOk();
+        $sale = Sale::query()->findOrFail($response->json('sale.id'));
+        $snapshot = $sale->items()->sole()->inventory_snapshot;
+        $inactiveProduct = $inactiveTarget === 'parent' ? $kit : $component;
+        $inactiveProduct->update(['is_active' => false]);
+
+        $this->postJson(route('pos.sales.charge', $sale), [])->assertUnprocessable()->assertJsonValidationErrors('items');
+
+        $this->assertSame('pending', $sale->fresh()->status);
+        $this->assertSame('0.00', $sale->fresh()->amount_paid);
+        $this->assertNull($sale->fresh()->paid_at);
+        $this->assertSame($snapshot, $sale->items()->sole()->inventory_snapshot);
+        $this->assertSame(10, $component->fresh()->stock);
+        $this->assertSame(0, $kit->fresh()->stock);
+        $this->assertDatabaseCount('stock_movements', 0);
+        $this->assertDatabaseCount('cash_movements', 0);
+    }
+
+    public function test_bulk_sale_still_requires_sell_and_manual_price_permissions(): void
+    {
+        $product = Product::factory()->bulk()->create(['stock' => 2.75, 'price' => 14.10]);
+        $user = User::factory()->create()->assignRole('empleado');
+        $user->givePermissionTo('pos.access');
+        $payload = ['idempotency_key' => 'bulk-permissions', 'items' => [['product_id' => $product->id, 'quantity' => 0.5, 'unit_price' => 0.01]]];
+
+        $this->actingAs($user)->postJson(route('pos.sales.store'), $payload)->assertForbidden();
+
+        $this->assertSame(2.75, $product->fresh()->stock);
+        $this->assertDatabaseCount('sales', 0);
+        $this->assertDatabaseCount('cash_movements', 0);
+        $this->actingAs($this->employee())->postJson(route('pos.sales.store'), $payload)->assertOk();
+        $this->assertDatabaseHas('sale_items', ['product_id' => $product->id, 'unit_price' => 14.10, 'line_total' => 7.05]);
     }
 
     public function test_employee_can_create_paid_sale_and_deducts_stock(): void

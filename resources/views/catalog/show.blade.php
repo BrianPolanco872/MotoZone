@@ -9,7 +9,7 @@
     $normalizedWaPhone = \App\Models\HomePage::normalizePhoneNumber($rawWaPhone) ?? '525512345678';
     $cleanWaPhone = ltrim($normalizedWaPhone, '+');
 
-    $waMessage = "Hola, me interesa consultar la pieza: {$product->name}" . ($product->sku ? " (SKU: {$product->sku})" : "");
+    $waMessage = "Hola, me interesa consultar el producto: {$product->name}" . ($product->sku ? " (SKU: {$product->sku})" : "");
     $whatsappUrl = "https://wa.me/{$cleanWaPhone}?text=" . rawurlencode($waMessage);
 
     $storeEmail = trim($homePage->text('email')) ?: 'contacto@motozone.com';
@@ -90,6 +90,7 @@
                     <p class="font-display text-4xl font-extrabold tracking-tight text-slate-900 sm:text-5xl">
                         ${{ number_format((float) $product->price, 2) }}
                     </p>
+                    <p class="mt-1 text-sm text-slate-500">{{ match ($product->saleMode()) { \App\Models\Product::MODE_BULK => 'A granel · precio por unidad de medida', \App\Models\Product::MODE_KIT => 'Precio por paquete (kit)', default => 'Precio por unidad/pieza' } }}</p>
                 </div>
 
                 {{-- Descripción si existe --}}

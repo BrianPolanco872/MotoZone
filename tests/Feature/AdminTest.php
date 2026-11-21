@@ -345,6 +345,27 @@ class AdminTest extends TestCase
         $response->assertSee('Sin sesiones recientes ni actividad registrada hoy.');
     }
 
+    public function test_dashboard_ranking_preserves_bulk_fractions_and_loads_kit_availability(): void
+    {
+        $this->freezeTime();
+        $admin = $this->admin();
+        $bulk = Product::factory()->bulk()->create(['stock' => 2.75, 'min_stock' => 0.5]);
+        $kit = Product::factory()->kit()->create(['kit_deduct_components' => true]);
+        $component = $kit->kitItems()->firstOrFail();
+        $component->update(['sale_mode' => Product::MODE_BULK, 'stock' => 0.75]);
+        $kit->kitItems()->sync([$component->id => ['quantity' => 0.125]]);
+        $sale = $this->sale($admin);
+        $this->saleItem($sale, $bulk, 0.625)->update(['sale_mode' => Product::MODE_BULK]);
+        $this->saleItem($sale, $kit, 1)->update(['sale_mode' => Product::MODE_KIT]);
+
+        $response = $this->actingAs($admin)->get('/admin');
+
+        $response->assertOk()->assertSee('0.625')->assertSee('6 paquete(s) disponibles')->assertDontSee('0.6250');
+        $topProducts = $response->viewData('topProducts');
+        $this->assertSame([$kit->id, $bulk->id], $topProducts->modelKeys());
+        $this->assertTrue($topProducts->first()->relationLoaded('kitItems'));
+    }
+
     public function test_dashboard_shows_recent_sessions_and_employee_activity_with_cut_links(): void
     {
         $this->freezeTime();
@@ -417,7 +438,7 @@ class AdminTest extends TestCase
         ], $attributes)));
     }
 
-    private function saleItem(Sale $sale, Product $product, int $quantity): SaleItem
+    private function saleItem(Sale $sale, Product $product, int|float $quantity): SaleItem
     {
         return $sale->items()->create([
             'product_id' => $product->id,

@@ -48,6 +48,7 @@ class DashboardController extends Controller
         ];
 
         $lowStockProducts = Product::query()
+            ->with('kitItems')
             ->active()
             ->where(fn (Builder $query) => $query->outOfStock()->orWhere(fn (Builder $query) => $query->lowStock()))
             ->orderBy('stock')
@@ -65,6 +66,7 @@ class DashboardController extends Controller
                 ->paid()->whereBetween('paid_at', [$rankingStart, $generatedAt]));
 
         $topProducts = Product::query()
+            ->with('kitItems')
             ->active()
             ->whereHas('saleItems', $paidItems)
             ->withSum(['saleItems as units_sold' => $paidItems], 'quantity')

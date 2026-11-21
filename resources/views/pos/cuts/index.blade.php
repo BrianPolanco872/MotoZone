@@ -293,7 +293,7 @@
                     <thead>
                         <tr class="border-b border-mz-border-light text-xs uppercase text-mz-text-muted">
                             <th class="py-3 text-left font-medium">Departamento</th>
-                            <th class="py-3 text-right font-medium">Piezas</th>
+                            <th class="py-3 text-right font-medium">Cantidad vendida (medidas mixtas)</th>
                             <th class="py-3 text-right font-medium">Importe</th>
                         </tr>
                     </thead>
@@ -301,13 +301,13 @@
                         @foreach ($departments as $department)
                             <tr>
                                 <td class="py-3">{{ $department['name'] }}</td>
-                                <td class="py-3 text-right">{{ $department['quantity'] }}</td>
+                                <td class="py-3 text-right">{{ \App\Support\Quantity::format($department['quantity']) }}</td>
                                 <td class="py-3 text-right">${{ number_format((float) $department['total'], 2) }}</td>
                             </tr>
                         @endforeach
                         <tr class="font-bold text-mz-text-primary border-t border-mz-border pt-3">
                             <td class="py-3">Total</td>
-                            <td class="py-3 text-right">{{ array_sum(array_column($departments, 'quantity')) }}</td>
+                            <td class="py-3 text-right">{{ \App\Support\Quantity::format(array_sum(array_column($departments, 'quantity'))) }}</td>
                             <td class="py-3 text-right">${{ number_format((float) $t['sales'], 2) }}</td>
                         </tr>
                     </tbody>

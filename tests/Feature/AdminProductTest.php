@@ -68,6 +68,9 @@ class AdminProductTest extends TestCase
         $this->assertSame('0.1600', $product->tax_rate);
         $this->assertSame('kit-de-arrastre-de-prueba', $product->slug);
         $this->assertTrue($product->is_active);
+        $this->assertSame(Product::MODE_UNIT, $product->saleMode());
+        $this->assertFalse($product->kit_deduct_components);
+        $this->assertSame(0, $product->kitItems()->count());
     }
 
     /**
@@ -404,6 +407,10 @@ class AdminProductTest extends TestCase
             $document = new DOMDocument;
             $document->loadHTML('<?xml encoding="UTF-8">'.$response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
             $xpath = new DOMXPath($document);
+
+            $this->assertSame(3, $xpath->query('//input[@name="sale_mode"]')->length);
+            $this->assertSame('unit', $xpath->query('//input[@name="sale_mode"][@checked]')->item(0)->getAttribute('value'));
+            $this->assertSame('1', $xpath->query('//input[@name="stock"]')->item(0)->getAttribute('step'));
 
             foreach (['brand', 'description'] as $field) {
                 $input = $xpath->query('//*[@name="'.$field.'"]')->item(0);
@@ -1160,10 +1167,10 @@ class AdminProductTest extends TestCase
             ->post(route('admin.products.import'), [
                 'import_file' => UploadedFile::fake()->createWithContent('productos.csv', $csv),
             ])
-            ->assertRedirect(route('admin.products.index'))
-            ->assertSessionHasErrors('import_file');
+            ->assertRedirect(route('admin.products.index'));
 
-        $messages = session('errors')->get('import_file');
+        // Sin aserciones de sesión antes del GET: iniciar la sesión consume el flash de errores.
+        $messages = session('errors')['default']['messages']['import_file'];
         $this->assertCount(3, $messages);
         $response = $this->get(route('admin.products.index'))
             ->assertOk()
@@ -1182,9 +1189,9 @@ class AdminProductTest extends TestCase
         $this->actingAs($this->admin())
             ->from(route('admin.products.index'))
             ->post(route('admin.products.import'))
-            ->assertRedirect(route('admin.products.index'))
-            ->assertSessionHasErrors(['import_file' => 'Selecciona un archivo CSV para importar.']);
+            ->assertRedirect(route('admin.products.index'));
 
+        // Sin aserciones de sesión antes del GET: iniciar la sesión consume el flash de errores.
         $response = $this->get(route('admin.products.index'))
             ->assertOk()
             ->assertSee('Selecciona un archivo CSV para importar.');
@@ -1436,6 +1443,438 @@ class AdminProductTest extends TestCase
         $this->assertStringContainsString('El código principal ya está registrado', session('errors')->first('import_file'));
         $this->assertSame($before, DB::table('products')->orderBy('id')->get()->toJson());
         $this->assertSame(0, AuditLog::query()->where('action', 'completar_codigo_barras')->count());
+    }
+
+    #[TestWith(['unit'])]
+    #[TestWith(['bulk'])]
+    #[TestWith(['kit'])]
+    public function test_legacy_edits_keep_the_existing_sale_mode_and_recipe(string $mode): void
+    {
+        $component = Product::factory()->create();
+        $product = Product::factory()->create(['sale_mode' => $mode, 'stock' => 0, 'min_stock' => 0, 'kit_deduct_components' => $mode === 'kit']);
+        if ($mode === 'kit') {
+            $product->kitItems()->attach($component, ['quantity' => 2]);
+        }
+
+        $this->actingAs($this->admin())->put(route('admin.products.update', $product), $this->productInput())
+            ->assertRedirect(route('admin.products.index'))->assertSessionHasNoErrors();
+
+        $this->assertSame($mode, $product->fresh()->saleMode());
+        $this->assertSame($mode === 'kit', $product->fresh()->kit_deduct_components);
+        $this->assertSame($mode === 'kit' ? [$component->id] : [], $product->kitItems()->pluck('products.id')->all());
+    }
+
+    public function test_bulk_product_keeps_three_decimal_stock_and_minimum_without_changing_prices(): void
+    {
+        $this->actingAs($this->admin())->post(route('admin.products.store'), $this->productInput([
+            'sale_mode' => 'bulk', 'stock' => '2.750', 'min_stock' => '0.500', 'cost' => '7.50', 'price' => '14.10',
+        ]))->assertRedirect(route('admin.products.index'))->assertSessionHasNoErrors();
+
+        $product = Product::query()->sole();
+        $this->assertSame(2.75, $product->stock);
+        $this->assertSame(0.5, $product->min_stock);
+        $this->assertSame('7.50', $product->cost);
+        $this->assertSame('14.10', $product->price);
+    }
+
+    public function test_stale_product_edit_cannot_restore_stock_deducted_by_a_bulk_sale(): void
+    {
+        $admin = $this->admin();
+        $product = Product::factory()->bulk()->create(['name' => 'Aceite original', 'stock' => 10, 'price' => 14.10]);
+        $response = $this->actingAs($admin)->get(route('admin.products.edit', $product))->assertOk();
+        $document = new DOMDocument;
+        $document->loadHTML('<?xml encoding="UTF-8">'.$response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+        $xpath = new DOMXPath($document);
+        $this->assertSame('10', $xpath->query('//input[@name="original_stock"]')->item(0)->getAttribute('value'));
+        $sale = app(SaleService::class)->create($admin, [
+            'idempotency_key' => 'sale-during-product-edit',
+            'items' => [['product_id' => $product->id, 'quantity' => 0.5]],
+        ]);
+
+        $this->put(route('admin.products.update', $product), $this->productInput([
+            'name' => 'Nombre desde ficha antigua', 'sale_mode' => 'bulk', 'stock' => 10, 'original_stock' => '10',
+        ]))->assertSessionHasErrors('stock');
+
+        $this->assertSame(9.5, $product->fresh()->stock);
+        $this->assertSame('Aceite original', $product->fresh()->name);
+        $this->assertSame('14.10', $product->fresh()->price);
+        $this->assertSame('7.05', $sale->total);
+        $this->assertDatabaseHas('stock_movements', ['sale_id' => $sale->id, 'quantity' => -0.5, 'stock_after' => 9.5]);
+        $this->assertDatabaseCount('cash_movements', 1);
+    }
+
+    public function test_current_stock_reference_allows_an_explicit_inventory_edit(): void
+    {
+        $product = Product::factory()->bulk()->create(['stock' => 9.5]);
+
+        $this->actingAs($this->admin())->put(route('admin.products.update', $product), $this->productInput([
+            'sale_mode' => 'bulk', 'stock' => '11.125', 'original_stock' => '9.500',
+        ]))->assertRedirect(route('admin.products.index'))->assertSessionHasNoErrors();
+
+        $this->assertSame(11.125, $product->fresh()->stock);
+    }
+
+    public function test_bulk_validation_redirect_restores_mode_and_fractional_inventory_inputs(): void
+    {
+        $product = Product::factory()->bulk()->create(['stock' => 2.75, 'min_stock' => 0.5]);
+        $this->actingAs($this->admin())->from(route('admin.products.edit', $product))
+            ->put(route('admin.products.update', $product), $this->productInput([
+                'name' => '', 'sale_mode' => 'bulk', 'stock' => '1.125', 'min_stock' => '0.250',
+            ]))->assertRedirect(route('admin.products.edit', $product))->assertSessionHasErrors('name');
+
+        $response = $this->get(route('admin.products.edit', $product))->assertOk();
+        $document = new DOMDocument;
+        $document->loadHTML('<?xml encoding="UTF-8">'.$response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+        $xpath = new DOMXPath($document);
+        $this->assertSame('bulk', $xpath->query('//input[@name="sale_mode"][@checked]')->item(0)->getAttribute('value'));
+        $this->assertSame('1.125', $xpath->query('//input[@id="stock"]')->item(0)->getAttribute('value'));
+        $this->assertSame('0.001', $xpath->query('//input[@id="stock"]')->item(0)->getAttribute('step'));
+        $this->assertSame('0.250', $xpath->query('//input[@id="min_stock"]')->item(0)->getAttribute('value'));
+        $this->assertSame(2.75, $product->fresh()->stock);
+    }
+
+    #[TestWith(['unit', 'stock', '0.5'])]
+    #[TestWith(['unit', 'min_stock', '0.125'])]
+    #[TestWith(['bulk', 'stock', '0.0001'])]
+    #[TestWith(['bulk', 'min_stock', '0.0001'])]
+    #[TestWith(['bulk', 'stock', '-1'])]
+    #[TestWith(['bulk', 'stock', '4294967295.001'])]
+    #[TestWith(['bulk', 'stock', '1e2'])]
+    public function test_invalid_inventory_quantities_are_rejected_without_truncating_or_saving(string $mode, string $field, string $value): void
+    {
+        $product = Product::factory()->create(['sale_mode' => $mode, 'stock' => 2, 'min_stock' => 1]);
+        $before = $product->fresh()->getAttributes();
+
+        $this->actingAs($this->admin())->put(route('admin.products.update', $product), $this->productInput([
+            'sale_mode' => $mode, $field => $value,
+        ]))->assertSessionHasErrors($field);
+
+        $this->assertSame($before, $product->fresh()->getAttributes());
+    }
+
+    #[TestWith([false])]
+    #[TestWith([true])]
+    public function test_admin_can_create_and_edit_kit_recipe_and_inventory_toggle(bool $deduct): void
+    {
+        $piece = Product::factory()->create(['track_inventory' => false]);
+        $bulk = Product::factory()->bulk()->create();
+        $items = [['product_id' => $piece->id, 'quantity' => 2], ['product_id' => $bulk->id, 'quantity' => '0.125']];
+
+        $this->actingAs($this->admin())->post(route('admin.products.store'), $this->productInput([
+            'sale_mode' => 'kit', 'stock' => 99, 'min_stock' => 20, 'track_inventory' => true,
+            'kit_items' => $items, ...($deduct ? ['kit_deduct_components' => true] : []),
+        ]))->assertRedirect(route('admin.products.index'))->assertSessionHasNoErrors();
+
+        $kit = Product::query()->where('sale_mode', 'kit')->sole();
+        $this->assertSame(0, $kit->stock);
+        $this->assertSame(0, $kit->min_stock);
+        $this->assertFalse($kit->track_inventory);
+        $this->assertSame($deduct, $kit->kit_deduct_components);
+        $this->assertDatabaseHas('product_kit_items', ['kit_product_id' => $kit->id, 'component_product_id' => $bulk->id, 'quantity' => 0.125]);
+        $this->get(route('admin.products.edit', $kit))->assertOk()
+            ->assertSee($piece->name)->assertSee('Sin control de inventario')->assertSee('value="0.125"', false);
+
+        $this->put(route('admin.products.update', $kit), $this->productInput([
+            'sale_mode' => 'kit', 'kit_deduct_components' => ! $deduct,
+            'kit_items' => [['product_id' => $bulk->id, 'quantity' => '0.250']],
+        ]))->assertRedirect(route('admin.products.index'))->assertSessionHasNoErrors();
+
+        $this->assertSame(! $deduct, $kit->fresh()->kit_deduct_components);
+        $this->assertSame([$bulk->id], $kit->kitItems()->pluck('products.id')->all());
+        $this->assertDatabaseHas('product_kit_items', ['kit_product_id' => $kit->id, 'component_product_id' => $bulk->id, 'quantity' => 0.25]);
+    }
+
+    #[TestWith(['missing', 'kit_items.0.product_id'])]
+    #[TestWith(['inactive', 'kit_items.0.product_id'])]
+    #[TestWith(['nested', 'kit_items.0.product_id'])]
+    #[TestWith(['self', 'kit_items.0.product_id'])]
+    #[TestWith(['duplicate', 'kit_items.1.product_id'])]
+    #[TestWith(['fractional_piece', 'kit_items.0.quantity'])]
+    #[TestWith(['zero', 'kit_items.0.quantity'])]
+    #[TestWith(['negative', 'kit_items.0.quantity'])]
+    #[TestWith(['too_precise', 'kit_items.0.quantity'])]
+    #[TestWith(['empty', 'kit_items'])]
+    #[TestWith(['client_metadata', 'kit_items.0'])]
+    #[TestWith(['bulk_too_precise', 'kit_items.0.quantity'])]
+    #[TestWith(['bulk_overflow', 'kit_items.0.quantity'])]
+    public function test_invalid_kit_recipe_saves_neither_product_changes_nor_recipe(string $case, string $error): void
+    {
+        $kit = Product::factory()->kit()->create();
+        $component = Product::factory()->create([
+            'is_active' => $case !== 'inactive',
+            'sale_mode' => match ($case) {
+                'nested' => 'kit', 'bulk_too_precise', 'bulk_overflow' => 'bulk', default => 'unit'
+            },
+        ]);
+        $id = match ($case) {
+            'self' => $kit->id, 'missing' => 999999, default => $component->id
+        };
+        $quantity = match ($case) {
+            'fractional_piece' => '0.5', 'zero' => 0, 'negative' => -1, 'too_precise', 'bulk_too_precise' => '0.0001', 'bulk_overflow' => '4294967295.001', default => 1
+        };
+        $items = [['product_id' => $id, 'quantity' => $quantity]];
+        if ($case === 'client_metadata') {
+            $items[0]['sale_mode'] = 'bulk';
+            $items[0]['name'] = 'Nombre manipulado';
+        }
+        if ($case === 'duplicate') {
+            $items[] = $items[0];
+        }
+        $before = $kit->fresh()->getAttributes();
+        $recipe = DB::table('product_kit_items')->orderBy('kit_product_id')->orderBy('component_product_id')->get()->toJson();
+
+        $this->actingAs($this->admin())->put(route('admin.products.update', $kit), $this->productInput([
+            'sale_mode' => 'kit', 'kit_deduct_components' => true, 'kit_items' => $case === 'empty' ? [] : $items,
+        ]))->assertSessionHasErrors($error);
+
+        $this->assertSame($before, $kit->fresh()->getAttributes());
+        $this->assertSame($recipe, DB::table('product_kit_items')->orderBy('kit_product_id')->orderBy('component_product_id')->get()->toJson());
+    }
+
+    public function test_invalid_kit_form_restores_mode_toggle_quantities_and_authoritative_component_names(): void
+    {
+        $component = Product::factory()->bulk()->create(['name' => 'Aceite <original>', 'track_inventory' => false]);
+        $this->actingAs($this->admin())->from(route('admin.products.create'))
+            ->post(route('admin.products.store'), $this->productInput([
+                'name' => '', 'sale_mode' => 'kit', 'kit_deduct_components' => true,
+                'kit_items' => [['product_id' => $component->id, 'quantity' => '0.125']],
+            ]))->assertRedirect(route('admin.products.create'))->assertSessionHasErrors('name');
+
+        $response = $this->get(route('admin.products.create'))->assertOk()->assertSee('Aceite <original>')->assertSee('Sin control de inventario');
+        $document = new DOMDocument;
+        $document->loadHTML('<?xml encoding="UTF-8">'.$response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+        $xpath = new DOMXPath($document);
+        $this->assertSame('kit', $xpath->query('//input[@name="sale_mode"][@checked]')->item(0)->getAttribute('value'));
+        $this->assertTrue($xpath->query('//input[@id="kit_deduct_components"]')->item(0)->hasAttribute('checked'));
+        $this->assertSame('0.125', $xpath->query('//input[@name="kit_items[0][quantity]"]')->item(0)->getAttribute('value'));
+        $this->assertFalse($xpath->query('//fieldset[@data-kit-fields]')->item(0)->hasAttribute('disabled'));
+        $this->assertTrue($xpath->query('//fieldset[@data-product-inventory]')->item(0)->hasAttribute('disabled'));
+        $this->assertDatabaseCount('product_kit_items', 0);
+    }
+
+    public function test_kit_sync_failure_rolls_back_product_and_previous_recipe(): void
+    {
+        $kit = Product::factory()->kit()->create();
+        $replacement = Product::factory()->create();
+        $before = $kit->fresh()->getAttributes();
+        $recipe = DB::table('product_kit_items')->orderBy('kit_product_id')->orderBy('component_product_id')->get()->toJson();
+        $failed = false;
+        DB::listen(function (QueryExecuted $query) use (&$failed): void {
+            if (! $failed && str_starts_with($query->sql, 'insert into') && str_contains($query->sql, 'product_kit_items')) {
+                $failed = true;
+                throw new RuntimeException('Recipe persistence failed.');
+            }
+        });
+        Exceptions::fake([RuntimeException::class]);
+
+        $this->actingAs($this->admin())->put(route('admin.products.update', $kit), $this->productInput([
+            'sale_mode' => 'kit', 'kit_items' => [['product_id' => $replacement->id, 'quantity' => 2]],
+        ]))->assertInternalServerError();
+
+        $this->assertTrue($failed);
+        $this->assertSame($before, $kit->fresh()->getAttributes());
+        $this->assertSame($recipe, DB::table('product_kit_items')->orderBy('kit_product_id')->orderBy('component_product_id')->get()->toJson());
+        Exceptions::assertReported(fn (RuntimeException $exception): bool => $exception->getMessage() === 'Recipe persistence failed.');
+    }
+
+    public function test_component_search_requires_product_permission_but_not_pos_permission(): void
+    {
+        $this->get(route('admin.products.components', ['q' => 'Aceite']))->assertRedirect(route('login'));
+        $this->actingAs(User::factory()->create()->assignRole('empleado'))
+            ->getJson(route('admin.products.components', ['q' => 'Aceite']))->assertForbidden();
+
+        $manager = User::factory()->create()->givePermissionTo('admin.products.manage');
+        $this->assertFalse($manager->can('pos.access'));
+        $this->actingAs($manager)->getJson(route('admin.products.components', ['q' => 'Aceite']))
+            ->assertOk()->assertExactJson(['products' => []]);
+    }
+
+    #[TestWith(['name', 'Aceite especial'])]
+    #[TestWith(['barcode', '000(ABC)+#'])]
+    #[TestWith(['barcode2', '00-SECOND'])]
+    public function test_component_search_returns_only_active_piece_and_bulk_public_fields(string $field, string $term): void
+    {
+        $match = Product::factory()->bulk()->create([$field => $term, 'track_inventory' => false]);
+        $excluded = Product::factory()->create(['name' => $term]);
+        Product::factory()->create(['name' => $term, 'is_active' => false]);
+        Product::factory()->create(['name' => $term, 'sale_mode' => 'kit']);
+
+        $response = $this->actingAs($this->admin())->getJson(route('admin.products.components', ['q' => $term, 'exclude' => $excluded->id]))
+            ->assertOk()->assertJsonCount(1, 'products')->assertJsonPath('products.0.id', $match->id);
+
+        $this->assertSame(['id', 'name', 'barcode', 'barcode2', 'sale_mode', 'track_inventory'], array_keys($response->json('products.0')));
+        $response->assertJsonPath('products.0.sale_mode', 'bulk')->assertJsonPath('products.0.track_inventory', false);
+    }
+
+    public function test_component_search_is_limited_and_empty_queries_do_not_list_catalog(): void
+    {
+        Product::factory()->count(13)->create(['name' => 'Pieza buscada']);
+        $this->actingAs($this->admin())->getJson(route('admin.products.components', ['q' => 'Pieza buscada']))
+            ->assertOk()->assertJsonCount(12, 'products');
+        $this->getJson(route('admin.products.components'))->assertOk()->assertExactJson(['products' => []]);
+    }
+
+    public function test_converting_to_kit_never_erases_existing_physical_stock(): void
+    {
+        $product = Product::factory()->create(['stock' => 2]);
+        $component = Product::factory()->create();
+
+        $this->actingAs($this->admin())->put(route('admin.products.update', $product), $this->productInput([
+            'sale_mode' => 'kit', 'stock' => 0, 'kit_items' => [['product_id' => $component->id, 'quantity' => 1]],
+        ]))->assertSessionHasErrors('sale_mode');
+
+        $this->assertSame(2, $product->fresh()->stock);
+        $this->assertSame('unit', $product->fresh()->saleMode());
+        $this->assertSame(0, $product->kitItems()->count());
+    }
+
+    public function test_current_component_cannot_be_deleted_or_converted_to_kit(): void
+    {
+        $kit = Product::factory()->kit()->create();
+        $component = $kit->kitItems->sole();
+        $component->update(['stock' => 0]);
+
+        $this->actingAs($this->admin())->delete(route('admin.products.destroy', $component))
+            ->assertRedirect(route('admin.products.index'))->assertSessionHas('error');
+        $this->put(route('admin.products.update', $component), $this->productInput([
+            'sale_mode' => 'kit', 'kit_items' => [['product_id' => $component->id, 'quantity' => 1]],
+        ]))->assertSessionHasErrors('sale_mode');
+
+        $this->assertModelExists($component);
+        $this->assertSame('unit', $component->fresh()->saleMode());
+        $this->assertSame([$component->id], $kit->kitItems()->pluck('products.id')->all());
+    }
+
+    #[TestWith(['stock'])]
+    #[TestWith(['min_stock'])]
+    #[TestWith(['recipe'])]
+    public function test_bulk_to_piece_conversion_does_not_truncate_existing_fractional_values(string $source): void
+    {
+        $product = Product::factory()->bulk()->create(['stock' => $source === 'stock' ? 0.125 : 0, 'min_stock' => $source === 'min_stock' ? 0.5 : 0]);
+        if ($source === 'recipe') {
+            $kit = Product::factory()->kit()->create();
+            $kit->kitItems()->sync([$product->id => ['quantity' => 0.125]]);
+        }
+        $before = $product->fresh()->getAttributes();
+
+        $this->actingAs($this->admin())->put(route('admin.products.update', $product), $this->productInput(['sale_mode' => 'unit', 'stock' => 0, 'min_stock' => 0]))
+            ->assertSessionHasErrors('sale_mode');
+
+        $this->assertSame($before, $product->fresh()->getAttributes());
+    }
+
+    #[TestWith(['pending'])]
+    #[TestWith(['paid'])]
+    public function test_pending_or_returnable_direct_sales_block_mode_changes_even_without_inventory_tracking(string $status): void
+    {
+        $admin = $this->admin();
+        $product = Product::factory()->bulk()->create(['stock' => 0, 'min_stock' => 0, 'track_inventory' => false]);
+        $sale = app(SaleService::class)->create($admin, [
+            'status' => $status, 'idempotency_key' => 'mode-direct-'.$status,
+            'items' => [['product_id' => $product->id, 'quantity' => '0.5']],
+        ]);
+        $before = $sale->items->sole()->getAttributes();
+
+        $this->actingAs($admin)->put(route('admin.products.update', $product), $this->productInput(['sale_mode' => 'unit']))
+            ->assertSessionHasErrors('sale_mode');
+
+        $this->assertSame('bulk', $product->fresh()->saleMode());
+        $this->assertSame($before, $sale->items()->sole()->getAttributes());
+        $this->assertDatabaseCount('stock_movements', 0);
+    }
+
+    #[TestWith(['pending'])]
+    #[TestWith(['paid'])]
+    public function test_removed_recipe_component_keeps_mode_while_its_sale_snapshot_is_pending_or_has_physical_history(string $status): void
+    {
+        $admin = $this->admin();
+        $component = Product::factory()->bulk()->create(['stock' => 1, 'min_stock' => 0]);
+        $kit = Product::factory()->kit()->create(['kit_deduct_components' => true]);
+        $kit->kitItems()->sync([$component->id => ['quantity' => 0.125]]);
+        $sale = app(SaleService::class)->create($admin, [
+            'status' => $status, 'idempotency_key' => 'mode-component-'.$status,
+            'items' => [['product_id' => $kit->id, 'quantity' => 1]],
+        ]);
+        $kit->kitItems()->detach($component);
+        $component->update(['stock' => 0]);
+        $snapshot = $sale->items->sole()->inventory_snapshot;
+
+        $this->actingAs($admin)->put(route('admin.products.update', $component), $this->productInput(['sale_mode' => 'unit']))
+            ->assertSessionHasErrors('sale_mode');
+
+        $this->assertSame('bulk', $component->fresh()->saleMode());
+        $this->assertSame($snapshot, $sale->items()->sole()->inventory_snapshot);
+    }
+
+    #[TestWith(['unit', 'bulk'])]
+    #[TestWith(['bulk', 'unit'])]
+    #[TestWith(['unit', 'kit'])]
+    #[TestWith(['kit', 'unit'])]
+    #[TestWith(['bulk', 'kit'])]
+    #[TestWith(['kit', 'bulk'])]
+    public function test_mode_can_change_when_inventory_and_operations_are_compatible(string $from, string $to): void
+    {
+        $product = Product::factory()->create(['sale_mode' => $from, 'stock' => 0, 'min_stock' => 0]);
+        $component = Product::factory()->create();
+        if ($from === 'kit') {
+            $product->kitItems()->attach($component, ['quantity' => 1]);
+        }
+
+        $this->actingAs($this->admin())->put(route('admin.products.update', $product), $this->productInput([
+            'sale_mode' => $to, 'kit_items' => [['product_id' => $component->id, 'quantity' => 1]],
+        ]))->assertRedirect(route('admin.products.index'))->assertSessionHasNoErrors();
+
+        $this->assertSame($to, $product->fresh()->saleMode());
+        $this->assertSame($to === 'kit' ? [$component->id] : [], $product->kitItems()->pluck('products.id')->all());
+    }
+
+    public function test_clear_inventory_removes_current_recipes_but_keeps_paid_inventory_snapshots(): void
+    {
+        $admin = $this->admin();
+        $kit = Product::factory()->kit()->create(['kit_deduct_components' => true]);
+        $kit->kitItems->sole()->update(['stock' => 3]);
+        $sale = app(SaleService::class)->create($admin, [
+            'idempotency_key' => 'clear-kit-history', 'items' => [['product_id' => $kit->id, 'quantity' => 1]],
+        ]);
+        $snapshot = $sale->items->sole()->inventory_snapshot;
+        $this->assertNotEmpty($snapshot['effects']);
+
+        $this->actingAs($admin)->post(route('admin.products.clearInventory'))
+            ->assertRedirect(route('admin.products.index'))->assertSessionHasNoErrors();
+
+        $this->assertDatabaseCount('products', 0);
+        $this->assertDatabaseCount('product_kit_items', 0);
+        $this->assertSame($snapshot, $sale->items()->sole()->inventory_snapshot);
+        $this->assertNull($sale->items()->sole()->product_id);
+        $this->assertDatabaseCount('stock_movements', 1);
+    }
+
+    public function test_csv_creates_units_and_only_completes_barcode_of_existing_kit_without_touching_recipe(): void
+    {
+        $kit = Product::factory()->kit()->create(['sku' => 'KIT-CSV', 'barcode' => null, 'kit_deduct_components' => true]);
+        $recipe = DB::table('product_kit_items')->orderBy('kit_product_id')->orderBy('component_product_id')->get()->toJson();
+        $before = $kit->fresh()->getAttributes();
+        $csv = "sku,nombre,precio_venta,stock,codigo_barras,sale_mode\nKIT-CSV,No cambiar,-1,-1,000-KIT,unit\nNEW-CSV,Nuevo,10,2,000-NEW,kit";
+
+        $this->actingAs($this->admin())->post(route('admin.products.import'), [
+            'import_file' => UploadedFile::fake()->createWithContent('productos.csv', $csv),
+        ])->assertRedirect(route('admin.products.index'))->assertSessionHasNoErrors();
+
+        $after = $kit->fresh()->getAttributes();
+        unset($before['barcode'], $before['updated_at'], $after['barcode'], $after['updated_at']);
+        $this->assertSame($before, $after);
+        $this->assertSame($recipe, DB::table('product_kit_items')->orderBy('kit_product_id')->orderBy('component_product_id')->get()->toJson());
+        $this->assertSame('000-KIT', $kit->fresh()->barcode);
+        $this->assertSame('unit', Product::query()->where('sku', 'NEW-CSV')->sole()->saleMode());
+    }
+
+    /**
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    private function productInput(array $overrides = []): array
+    {
+        return ['name' => 'Producto modalidad', 'price' => '14.10', 'tax_rate' => 16, 'stock' => 0, 'is_active' => true, ...$overrides];
     }
 
     private function admin(): User

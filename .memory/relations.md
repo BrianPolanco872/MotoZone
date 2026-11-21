@@ -201,3 +201,16 @@ plan-productos-limpiar-con-historial-01 -> implementado_por -> fix-productos-lim
 fix-productos-limpiar-con-historial-01 -> implementa_feature -> feature-productos-limpiar-con-historial-01
 plan-productos-limpiar-con-historial-01 -> sustituye_contrato_en_fuente_de -> plan-productos-limpiar-tabla-01
 plan-productos-costo-vacio-01 -> implementado_por -> fix-productos-costo-vacio-01
+feature-productos-modalidades-venta-01 -> implemented_by_plan -> plan-productos-modalidades-venta-01
+plan-productos-modalidades-venta-01 -> implementa_feature -> feature-productos-modalidades-venta-01
+plan-productos-modalidades-venta-01 -> se_apoya_en -> plan-productos-limpiar-con-historial-01
+plan-productos-modalidades-venta-01 -> se_apoya_en -> plan-barcode2-productos-01
+plan-productos-modalidades-venta-01 -> considera_antecedente -> fix-preuso-motozone-lote3-01
+plan-productos-modalidades-venta-01 -> considera_bug_activo -> bug-productos-costo-vacio-01
+plan-productos-modalidades-venta-01 -> considera_antecedente -> fix-importar-csv-barcodes-01
+plan-productos-modalidades-venta-01 -> implementado_por -> fix-productos-modalidades-venta-01
+fix-productos-modalidades-venta-01 -> implementa_feature -> feature-productos-modalidades-venta-01
+feature-pos-modal-granel-bidireccional -> implemented_by_plan -> plan-pos-modal-granel-bidireccional
+plan-pos-modal-granel-bidireccional -> implementa_feature -> feature-pos-modal-granel-bidireccional
+plan-pos-modal-granel-bidireccional -> amplia -> plan-productos-modalidades-venta-01
+plan-pos-modal-granel-bidireccional -> se_apoya_en -> fix-productos-modalidades-venta-01

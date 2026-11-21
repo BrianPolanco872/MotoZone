@@ -12,6 +12,7 @@ use App\Models\StockMovement;
 use App\Models\User;
 use App\Services\DailyCutService;
 use App\Services\ReturnService;
+use App\Services\SaleService;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Arr;
@@ -94,6 +95,355 @@ class PosReturnsTest extends TestCase
         ]);
 
         return ['sale' => $sale, 'saleItem' => $saleItem, 'product' => $product];
+    }
+
+    /**
+     * @return array{sale: Sale, saleItem: SaleItem, kit: Product, sparkPlug: Product, filter: Product}
+     */
+    private function paidKitSale(User $employee, bool $deductComponents = true, bool $trackFilter = true): array
+    {
+        $sparkPlug = Product::factory()->create(['stock' => 10, 'track_inventory' => true]);
+        $filter = Product::factory()->create(['stock' => 10, 'track_inventory' => $trackFilter]);
+        $kit = Product::factory()->create([
+            'sale_mode' => Product::MODE_KIT,
+            'kit_deduct_components' => $deductComponents,
+            'price' => 100,
+            'stock' => 0,
+            'min_stock' => 0,
+            'track_inventory' => true,
+        ]);
+        $kit->kitItems()->attach([$sparkPlug->id => ['quantity' => 2], $filter->id => ['quantity' => 1]]);
+        $sale = app(SaleService::class)->create($employee, [
+            'idempotency_key' => 'paid-kit-return',
+            'items' => [['product_id' => $kit->id, 'quantity' => 3]],
+        ]);
+
+        return ['sale' => $sale, 'saleItem' => $sale->items->sole(), 'kit' => $kit, 'sparkPlug' => $sparkPlug, 'filter' => $filter];
+    }
+
+    private function requestItemReturn(User $employee, Sale $sale, SaleItem $item, int|float $quantity): SaleReturn
+    {
+        $this->actingAs($employee)->postJson(route('pos.returns.store'), [
+            'sale_id' => $sale->id,
+            'reason' => 'Devolución parcial',
+            'items' => [['sale_item_id' => $item->id, 'quantity' => $quantity]],
+        ])->assertRedirect(route('pos.returns.index'))->assertSessionHasNoErrors();
+
+        return SaleReturn::query()->where('sale_id', $sale->id)->orderByDesc('id')->firstOrFail();
+    }
+
+    public function test_returning_one_of_three_kits_restores_historical_components_after_recipe_toggle_and_tracking_change(): void
+    {
+        $employee = $this->employee();
+        $admin = User::factory()->create()->assignRole('admin');
+        $data = $this->paidKitSale($employee);
+        $snapshot = $data['saleItem']->inventory_snapshot;
+        $replacement = Product::factory()->create(['stock' => 10]);
+        $data['kit']->kitItems()->sync([$replacement->id => ['quantity' => 9]]);
+        $data['kit']->update(['kit_deduct_components' => false, 'price' => 999]);
+        $data['sparkPlug']->update(['track_inventory' => false]);
+        $return = $this->requestItemReturn($employee, $data['sale'], $data['saleItem'], 1);
+
+        $this->actingAs($admin)->putJson(route('pos.returns.approve', $return))
+            ->assertRedirect(route('pos.returns.index'))->assertSessionHasNoErrors();
+
+        $this->assertSame(SaleReturn::STATUS_APPROVED, $return->fresh()->status);
+        $this->assertSame('100.00', $return->fresh()->total);
+        $this->assertSame(1, $data['saleItem']->fresh()->returned_quantity);
+        $this->assertSame($snapshot, $data['saleItem']->fresh()->inventory_snapshot);
+        $this->assertSame(6, $data['sparkPlug']->fresh()->stock);
+        $this->assertSame(8, $data['filter']->fresh()->stock);
+        $this->assertSame(10, $replacement->fresh()->stock);
+        $this->assertSame(0, $data['kit']->fresh()->stock);
+        $this->assertDatabaseHas('stock_movements', ['product_id' => $data['sparkPlug']->id, 'type' => StockMovement::TYPE_RETURN, 'quantity' => 2]);
+        $this->assertDatabaseHas('stock_movements', ['product_id' => $data['filter']->id, 'type' => StockMovement::TYPE_RETURN, 'quantity' => 1]);
+        $this->assertDatabaseMissing('stock_movements', ['product_id' => $data['kit']->id]);
+        $this->assertDatabaseCount('stock_movements', 4);
+        $this->assertDatabaseHas('cash_movements', ['sale_id' => $data['sale']->id, 'category' => 'refund', 'amount' => 100]);
+    }
+
+    public function test_kit_sold_with_deduction_disabled_never_restores_stock_after_enabling_it(): void
+    {
+        $employee = $this->employee();
+        $admin = User::factory()->create()->assignRole('admin');
+        $data = $this->paidKitSale($employee, false);
+        $this->assertSame([], $data['saleItem']->inventory_snapshot['effects']);
+        $data['kit']->update(['kit_deduct_components' => true]);
+        $return = $this->requestItemReturn($employee, $data['sale'], $data['saleItem'], 1);
+
+        $this->actingAs($admin)->putJson(route('pos.returns.approve', $return))
+            ->assertRedirect(route('pos.returns.index'))->assertSessionHasNoErrors();
+
+        $this->assertSame(10, $data['sparkPlug']->fresh()->stock);
+        $this->assertSame(10, $data['filter']->fresh()->stock);
+        $this->assertSame(0, $data['kit']->fresh()->stock);
+        $this->assertSame(1, $data['saleItem']->fresh()->returned_quantity);
+        $this->assertSame('100.00', $return->fresh()->total);
+        $this->assertDatabaseCount('stock_movements', 0);
+        $this->assertDatabaseHas('cash_movements', ['category' => 'refund', 'amount' => 100]);
+    }
+
+    public function test_kit_return_does_not_restock_a_component_that_was_untracked_at_payment(): void
+    {
+        $employee = $this->employee();
+        $admin = User::factory()->create()->assignRole('admin');
+        $data = $this->paidKitSale($employee, true, false);
+        $this->assertSame([
+            ['product_id' => $data['sparkPlug']->id, 'product_name' => $data['sparkPlug']->name, 'quantity' => 6],
+        ], $data['saleItem']->inventory_snapshot['effects']);
+        $data['filter']->update(['track_inventory' => true]);
+        $return = $this->requestItemReturn($employee, $data['sale'], $data['saleItem'], 1);
+
+        $this->actingAs($admin)->putJson(route('pos.returns.approve', $return))->assertRedirect()->assertSessionHasNoErrors();
+
+        $this->assertSame(6, $data['sparkPlug']->fresh()->stock);
+        $this->assertSame(10, $data['filter']->fresh()->stock);
+        $this->assertDatabaseMissing('stock_movements', ['product_id' => $data['filter']->id]);
+        $this->assertDatabaseCount('stock_movements', 2);
+        $this->assertDatabaseHas('cash_movements', ['category' => 'refund', 'amount' => 100]);
+    }
+
+    public function test_bulk_partial_return_preserves_exact_quantities_and_historical_debit(): void
+    {
+        $employee = $this->employee();
+        $admin = User::factory()->create()->assignRole('admin');
+        $product = Product::factory()->bulk()->create(['stock' => 2.75, 'price' => 14.10]);
+        $sale = app(SaleService::class)->create($employee, [
+            'idempotency_key' => 'bulk-partial-return',
+            'items' => [['product_id' => $product->id, 'quantity' => 0.5]],
+        ]);
+        $item = $sale->items->sole();
+        $this->assertSame(2.25, $product->fresh()->stock);
+        $product->update(['track_inventory' => false]);
+        $return = $this->requestItemReturn($employee, $sale, $item, 0.125);
+
+        $this->actingAs($admin)->putJson(route('pos.returns.approve', $return))->assertRedirect()->assertSessionHasNoErrors();
+
+        $this->assertSame(2.375, $product->fresh()->stock);
+        $this->assertSame(0.5, $item->fresh()->quantity);
+        $this->assertSame(0.125, $item->fresh()->returned_quantity);
+        $this->assertSame(0.375, $item->fresh()->availableReturnQuantity());
+        $this->assertSame(0.125, $return->items()->sole()->quantity);
+        $this->assertSame('1.76', $return->fresh()->total);
+        $movement = StockMovement::query()->where('type', StockMovement::TYPE_RETURN)->sole();
+        $this->assertSame(0.125, $movement->quantity);
+        $this->assertSame(2.25, $movement->stock_before);
+        $this->assertSame(2.375, $movement->stock_after);
+        $this->assertDatabaseHas('cash_movements', ['sale_id' => $sale->id, 'category' => 'refund', 'amount' => 1.76]);
+    }
+
+    public function test_whole_kit_return_restores_its_fractional_bulk_component_exactly(): void
+    {
+        $employee = $this->employee();
+        $admin = User::factory()->create()->assignRole('admin');
+        $oil = Product::factory()->bulk()->create(['stock' => 1]);
+        $kit = Product::factory()->create([
+            'sale_mode' => Product::MODE_KIT, 'kit_deduct_components' => true,
+            'stock' => 0, 'min_stock' => 0, 'track_inventory' => false, 'price' => 100,
+        ]);
+        $kit->kitItems()->attach($oil->id, ['quantity' => 0.125]);
+        $sale = app(SaleService::class)->create($employee, [
+            'idempotency_key' => 'kit-bulk-return',
+            'items' => [['product_id' => $kit->id, 'quantity' => 3]],
+        ]);
+        $this->assertSame(0.625, $oil->fresh()->stock);
+        $return = $this->requestItemReturn($employee, $sale, $sale->items->sole(), 1);
+
+        $this->actingAs($admin)->putJson(route('pos.returns.approve', $return))->assertRedirect()->assertSessionHasNoErrors();
+
+        $this->assertSame(0.75, $oil->fresh()->stock);
+        $this->assertSame(1, $sale->items()->sole()->returned_quantity);
+        $this->assertSame('100.00', $return->fresh()->total);
+        $this->assertDatabaseHas('stock_movements', ['product_id' => $oil->id, 'type' => StockMovement::TYPE_RETURN, 'quantity' => 0.125]);
+        $this->assertDatabaseHas('cash_movements', ['sale_id' => $sale->id, 'category' => 'refund', 'amount' => 100]);
+    }
+
+    public function test_three_milliunit_returns_reconcile_to_two_cents_and_cannot_refund_more(): void
+    {
+        $employee = $this->employee();
+        $admin = User::factory()->create()->assignRole('admin');
+        $product = Product::factory()->bulk()->create(['stock' => 1, 'price' => 5]);
+        $sale = app(SaleService::class)->create($employee, [
+            'idempotency_key' => 'bulk-cent-reconciliation',
+            'items' => [['product_id' => $product->id, 'quantity' => 0.003]],
+        ]);
+        $item = $sale->items->sole();
+        $this->assertSame('0.02', $item->line_total);
+
+        foreach (['0.01', '0.00', '0.01'] as $expectedRefund) {
+            $return = $this->requestItemReturn($employee, $sale, $item, 0.001);
+            $this->actingAs($admin)->putJson(route('pos.returns.approve', $return))->assertRedirect()->assertSessionHasNoErrors();
+            $this->assertSame($expectedRefund, $return->fresh()->total);
+        }
+
+        $this->assertSame(0.003, $item->fresh()->returned_quantity);
+        $this->assertSame(0, $item->fresh()->availableReturnQuantity());
+        $this->assertSame(1, $product->fresh()->stock);
+        $this->assertSame(0.02, (float) CashMovement::query()->where('category', 'refund')->sum('amount'));
+        $this->assertSame(0.02, (float) SaleReturn::query()->where('status', SaleReturn::STATUS_APPROVED)->sum('total'));
+        $this->actingAs($employee)->postJson(route('pos.returns.store'), [
+            'sale_id' => $sale->id, 'reason' => 'No debe exceder el saldo',
+            'items' => [['sale_item_id' => $item->id, 'quantity' => 0.001]],
+        ])->assertUnprocessable()->assertJsonValidationErrors('items');
+        $this->assertDatabaseCount('sale_returns', 3);
+        $this->assertSame(3, CashMovement::query()->where('category', 'refund')->count());
+        $this->assertSame(0.003, $item->fresh()->returned_quantity);
+    }
+
+    public function test_pending_return_approvals_recalculate_cents_against_the_current_refund_balance(): void
+    {
+        $employee = $this->employee();
+        $admin = User::factory()->create()->assignRole('admin');
+        $product = Product::factory()->bulk()->create(['stock' => 1, 'price' => 5]);
+        $sale = app(SaleService::class)->create($employee, [
+            'idempotency_key' => 'pending-refund-cents',
+            'items' => [['product_id' => $product->id, 'quantity' => 0.003]],
+        ]);
+        $item = $sale->items->sole();
+        $first = $this->requestItemReturn($employee, $sale, $item, 0.001);
+        $second = $this->requestItemReturn($employee, $sale, $item, 0.001);
+        $third = $this->requestItemReturn($employee, $sale, $item, 0.001);
+        $this->assertSame(['0.01', '0.01', '0.01'], [$first->total, $second->total, $third->total]);
+
+        foreach ([$first, $second, $third] as $return) {
+            $this->actingAs($admin)->putJson(route('pos.returns.approve', $return))->assertRedirect()->assertSessionHasNoErrors();
+        }
+
+        $this->assertSame(['0.01', '0.00', '0.01'], SaleReturn::query()->orderBy('id')->pluck('total')->all());
+        $this->assertSame(0.02, (float) CashMovement::query()->where('category', 'refund')->sum('amount'));
+        $this->assertSame(0.003, $item->fresh()->returned_quantity);
+        $this->assertSame(1, $product->fresh()->stock);
+    }
+
+    public function test_approval_of_overlapping_pending_bulk_returns_returns_422_without_exceeding_quantity_or_cash(): void
+    {
+        $employee = $this->employee();
+        $admin = User::factory()->create()->assignRole('admin');
+        $product = Product::factory()->bulk()->create(['stock' => 1, 'price' => 5]);
+        $sale = app(SaleService::class)->create($employee, [
+            'idempotency_key' => 'pending-refund-overlap',
+            'items' => [['product_id' => $product->id, 'quantity' => 0.003]],
+        ]);
+        $item = $sale->items->sole();
+        $first = $this->requestItemReturn($employee, $sale, $item, 0.002);
+        $second = $this->requestItemReturn($employee, $sale, $item, 0.002);
+        $this->actingAs($admin)->putJson(route('pos.returns.approve', $first))->assertRedirect()->assertSessionHasNoErrors();
+
+        $this->putJson(route('pos.returns.approve', $second))->assertUnprocessable()->assertJsonValidationErrors('items');
+
+        $this->assertSame(SaleReturn::STATUS_PENDING, $second->fresh()->status);
+        $this->assertSame(0.002, $item->fresh()->returned_quantity);
+        $this->assertSame(0.999, $product->fresh()->stock);
+        $this->assertSame(0.01, (float) CashMovement::query()->where('category', 'refund')->sum('amount'));
+        $this->assertSame(1, CashMovement::query()->where('category', 'refund')->count());
+        $this->assertSame(1, StockMovement::query()->where('type', StockMovement::TYPE_RETURN)->count());
+    }
+
+    public function test_fractional_kit_return_returns_422_without_any_refund_or_restock(): void
+    {
+        $employee = $this->employee();
+        $data = $this->paidKitSale($employee);
+
+        $this->actingAs($employee)->postJson(route('pos.returns.store'), [
+            'sale_id' => $data['sale']->id, 'reason' => 'Medio paquete',
+            'items' => [['sale_item_id' => $data['saleItem']->id, 'quantity' => 0.5]],
+        ])->assertUnprocessable()->assertJsonValidationErrors('items')
+            ->assertJsonPath('errors.items.0', 'Solo los productos a granel permiten devoluciones fraccionarias.');
+
+        $this->assertSame(0, $data['saleItem']->fresh()->returned_quantity);
+        $this->assertSame(4, $data['sparkPlug']->fresh()->stock);
+        $this->assertSame(7, $data['filter']->fresh()->stock);
+        $this->assertDatabaseCount('sale_returns', 0);
+        $this->assertSame(0, CashMovement::query()->where('category', 'refund')->count());
+        $this->assertSame(0, StockMovement::query()->where('type', StockMovement::TYPE_RETURN)->count());
+    }
+
+    public function test_deleted_kit_component_is_not_recreated_but_refund_and_surviving_component_are_preserved(): void
+    {
+        $employee = $this->employee();
+        $admin = User::factory()->create()->assignRole('admin');
+        $data = $this->paidKitSale($employee);
+        $snapshot = $data['saleItem']->inventory_snapshot;
+        $data['kit']->kitItems()->detach($data['sparkPlug']->id);
+        $data['sparkPlug']->delete();
+        $return = $this->requestItemReturn($employee, $data['sale'], $data['saleItem'], 1);
+
+        $this->actingAs($admin)->putJson(route('pos.returns.approve', $return))->assertRedirect()->assertSessionHasNoErrors();
+
+        $this->assertModelMissing($data['sparkPlug']);
+        $this->assertDatabaseCount('products', 2);
+        $this->assertSame(8, $data['filter']->fresh()->stock);
+        $this->assertSame($snapshot, $data['saleItem']->fresh()->inventory_snapshot);
+        $this->assertSame('100.00', $return->fresh()->total);
+        $this->assertSame(1, $data['saleItem']->fresh()->returned_quantity);
+        $this->assertDatabaseHas('cash_movements', ['category' => 'refund', 'amount' => 100]);
+        $this->assertSame(1, StockMovement::query()->where('type', StockMovement::TYPE_RETURN)->count());
+        $this->assertDatabaseHas('stock_movements', ['product_id' => $data['filter']->id, 'type' => StockMovement::TYPE_RETURN, 'quantity' => 1]);
+    }
+
+    #[TestWith([true, false])]
+    #[TestWith([false, true])]
+    public function test_pending_kit_resolves_current_tracking_at_charge_and_return_uses_that_actual_effect(bool $trackedWhenSaved, bool $trackedWhenCharged): void
+    {
+        $employee = $this->employee();
+        $admin = User::factory()->create()->assignRole('admin');
+        $component = Product::factory()->create(['stock' => 10, 'track_inventory' => $trackedWhenSaved]);
+        $kit = Product::factory()->create([
+            'sale_mode' => Product::MODE_KIT, 'kit_deduct_components' => true,
+            'stock' => 0, 'min_stock' => 0, 'track_inventory' => false, 'price' => 100,
+        ]);
+        $kit->kitItems()->attach($component->id, ['quantity' => 2]);
+        $sale = app(SaleService::class)->create($employee, [
+            'idempotency_key' => 'pending-track-return', 'status' => 'pending',
+            'items' => [['product_id' => $kit->id, 'quantity' => 3]],
+        ]);
+        $item = $sale->items->sole();
+        $this->assertNull($item->inventory_snapshot['effects']);
+        $this->assertSame(10, $component->fresh()->stock);
+        $this->assertDatabaseCount('cash_movements', 0);
+        $this->assertDatabaseCount('stock_movements', 0);
+        $component->update(['track_inventory' => $trackedWhenCharged]);
+        $this->actingAs($employee)->postJson(route('pos.sales.charge', $sale), [])->assertOk();
+        $this->assertSame($trackedWhenCharged ? [
+            ['product_id' => $component->id, 'product_name' => $component->name, 'quantity' => 6],
+        ] : [], $item->fresh()->inventory_snapshot['effects']);
+        $this->assertSame($trackedWhenCharged ? 4 : 10, $component->fresh()->stock);
+        $component->update(['track_inventory' => ! $trackedWhenCharged]);
+        $return = $this->requestItemReturn($employee, $sale->fresh(), $item, 1);
+
+        $this->actingAs($admin)->putJson(route('pos.returns.approve', $return))->assertRedirect()->assertSessionHasNoErrors();
+
+        $this->assertSame($trackedWhenCharged ? 6 : 10, $component->fresh()->stock);
+        $this->assertSame($trackedWhenCharged ? 1 : 0, StockMovement::query()->where('type', StockMovement::TYPE_RETURN)->count());
+        $this->assertSame('100.00', $return->fresh()->total);
+        $this->assertDatabaseHas('cash_movements', ['sale_id' => $sale->id, 'category' => 'refund', 'amount' => 100]);
+    }
+
+    public function test_bulk_returns_preserve_request_and_approval_permissions(): void
+    {
+        $employee = $this->employee();
+        $product = Product::factory()->bulk()->create(['stock' => 1, 'price' => 10]);
+        $sale = app(SaleService::class)->create($employee, [
+            'idempotency_key' => 'bulk-return-permissions',
+            'items' => [['product_id' => $product->id, 'quantity' => 0.5]],
+        ]);
+        $item = $sale->items->sole();
+        $unauthorized = User::factory()->create()->assignRole('empleado');
+        $unauthorized->givePermissionTo(['pos.access', 'pos.return.do']);
+
+        $this->actingAs($unauthorized)->postJson(route('pos.returns.store'), [
+            'sale_id' => $sale->id, 'reason' => 'Sin permiso',
+            'items' => [['sale_item_id' => $item->id, 'quantity' => 0.125]],
+        ])->assertForbidden();
+
+        $this->assertDatabaseCount('sale_returns', 0);
+        $return = $this->requestItemReturn($employee, $sale, $item, 0.125);
+        $this->actingAs($employee)->putJson(route('pos.returns.approve', $return))->assertForbidden();
+        $this->assertSame(SaleReturn::STATUS_PENDING, $return->fresh()->status);
+        $this->assertSame(0, $item->fresh()->returned_quantity);
+        $this->assertSame(0.5, $product->fresh()->stock);
+        $this->assertSame(0, CashMovement::query()->where('category', 'refund')->count());
+        $this->assertSame(0, StockMovement::query()->where('type', StockMovement::TYPE_RETURN)->count());
     }
 
     public function test_employee_can_request_return_for_paid_sale(): void
@@ -262,9 +612,11 @@ class PosReturnsTest extends TestCase
             'type' => 'out',
             'happened_at' => now()->toDateTimeString(),
         ]);
-        $this->assertSame([
-            ...$itemBefore, 'product_id' => null, 'returned_quantity' => 1,
-        ], $saleItem->fresh()->getAttributes());
+        $this->assertSame(
+            Arr::except([...$itemBefore, 'product_id' => null], ['returned_quantity']),
+            Arr::except($saleItem->fresh()->getAttributes(), ['returned_quantity']),
+        );
+        $this->assertSame(1, $saleItem->fresh()->returned_quantity);
         $this->assertDatabaseCount('products', 0);
         $this->assertDatabaseCount('stock_movements', 1);
         $this->assertSame(

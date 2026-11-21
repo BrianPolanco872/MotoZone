@@ -34,14 +34,15 @@
                             @if ($settings['ticket']['show_sku'])
                                 {{ $item->sku ?: $item->barcode }} ·
                             @endif
-                            ${{ number_format((float) $item->unit_price, 2) }} c/u
+                            ${{ number_format((float) $item->unit_price, 2) }} {{ $item->saleMode() === \App\Models\Product::MODE_KIT ? 'por paquete' : 'por unidad' }}
+                            @if ($item->isBulk()) · A granel @endif
                         </span>
                     </td>
-                    <td class="num">{{ $item->quantity }}</td>
+                    <td class="num">{{ \App\Support\Quantity::format($item->quantity) }}</td>
                     <td class="num">${{ number_format((float) $item->line_total, 2) }}</td>
                 </tr>
-                @if ((int) $item->returned_quantity > 0)
-                    <tr><td colspan="3" class="muted">Devueltas: {{ $item->returned_quantity }} pieza(s)</td></tr>
+                @if ($item->returned_quantity > 0)
+                    <tr><td colspan="3" class="muted">Cantidad devuelta{{ $item->isBulk() ? ' a granel' : ($item->saleMode() === \App\Models\Product::MODE_KIT ? ' en paquetes' : ' en piezas') }}: {{ \App\Support\Quantity::format($item->returned_quantity) }}</td></tr>
                 @endif
             @endforeach
         </tbody>

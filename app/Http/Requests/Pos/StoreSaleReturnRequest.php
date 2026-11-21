@@ -2,6 +2,8 @@
 
 namespace App\Http\Requests\Pos;
 
+use App\Support\Quantity;
+use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -21,8 +23,13 @@ class StoreSaleReturnRequest extends FormRequest
             'sale_id' => ['required', 'integer', Rule::exists('sales', 'id')],
             'reason' => ['required', 'string', 'max:500'],
             'items' => ['required', 'array', 'min:1'],
-            'items.*.sale_item_id' => ['required', 'integer', Rule::exists('sale_items', 'id')],
-            'items.*.quantity' => ['required', 'integer', 'min:1', 'max:9999'],
+            'items.*' => ['required', 'array'],
+            'items.*.sale_item_id' => ['required', 'integer', 'distinct', Rule::exists('sale_items', 'id')],
+            'items.*.quantity' => ['required', 'numeric', 'min:0', 'max:9999', function (string $attribute, mixed $value, Closure $fail): void {
+                if (! Quantity::valid($value)) {
+                    $fail('La cantidad debe tener como máximo tres decimales.');
+                }
+            }],
         ];
     }
 

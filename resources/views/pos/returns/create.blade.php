@@ -53,7 +53,7 @@
         <section class="rounded-2xl border border-mz-border bg-mz-bg-surface shadow-xl shadow-black/20 overflow-hidden">
             <div class="border-b border-mz-border px-5 py-4 bg-mz-bg-surface-2/30">
                 <h2 class="text-sm font-bold text-white">Productos de la venta a devolver</h2>
-                <p class="text-xs text-mz-text-muted mt-0.5">Ingresa las piezas que el cliente regresa al establecimiento. Solo se permite devolver piezas aún disponibles.</p>
+                <p class="text-xs text-mz-text-muted mt-0.5">Ingresa la cantidad que el cliente regresa. Granel permite hasta 3 decimales; piezas y paquetes, solo enteros. No se puede superar la cantidad disponible para devolución.</p>
             </div>
 
             <div class="overflow-x-auto pos-scrollbar">
@@ -71,30 +71,33 @@
                     <tbody class="divide-y divide-mz-border-light/40">
                         @foreach ($sale->items as $index => $item)
                             @php($available = $item->availableReturnQuantity())
-                            <tr @class(['group transition-colors duration-150 hover:bg-mz-bg-surface-2/40', 'opacity-50 bg-mz-bg-primary/20' => $available === 0])>
+                            <tr @class(['group transition-colors duration-150 hover:bg-mz-bg-surface-2/40', 'opacity-50 bg-mz-bg-primary/20' => ! ($available > 0)])>
                                 <td class="px-5 py-3.5">
                                     <p class="font-bold text-sm text-mz-text-primary group-hover:text-mz-accent-primary transition-colors">{{ $item->product_name }}</p>
                                     <p class="text-xs text-mz-text-muted font-mono mt-0.5">{{ $item->sku ?: ($item->barcode ?: 'S/C') }}</p>
+                                    <p class="text-xs text-mz-text-muted">{{ match ($item->saleMode()) { \App\Models\Product::MODE_BULK => 'A granel', \App\Models\Product::MODE_KIT => 'Paquete (kit)', default => 'Por unidad/pieza' } }}</p>
                                 </td>
                                 <td class="whitespace-nowrap px-4 py-3.5 text-right font-display text-base font-bold tabular-nums text-white">${{ number_format((float) $item->unit_price, 2) }}</td>
-                                <td class="whitespace-nowrap px-4 py-3.5 text-center font-medium text-mz-text-secondary tabular-nums">{{ $item->quantity }}</td>
-                                <td class="whitespace-nowrap px-4 py-3.5 text-center font-medium text-mz-text-muted tabular-nums">{{ $item->returned_quantity }}</td>
+                                <td class="whitespace-nowrap px-4 py-3.5 text-center font-medium text-mz-text-secondary tabular-nums">{{ \App\Support\Quantity::format($item->quantity) }}</td>
+                                <td class="whitespace-nowrap px-4 py-3.5 text-center font-medium text-mz-text-muted tabular-nums">{{ \App\Support\Quantity::format($item->returned_quantity) }}</td>
                                 <td class="whitespace-nowrap px-4 py-3.5 text-center">
                                     <span @class([
                                         'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold tabular-nums',
                                         'bg-mz-success/15 text-mz-success border border-mz-success/30' => $available > 0,
-                                        'bg-mz-bg-surface-2 text-mz-text-muted border border-mz-border-light' => $available === 0,
-                                    ])>{{ $available }}</span>
+                                        'bg-mz-bg-surface-2 text-mz-text-muted border border-mz-border-light' => ! ($available > 0),
+                                    ])>{{ \App\Support\Quantity::format($available) }}</span>
                                 </td>
                                 <td class="whitespace-nowrap px-4 py-3.5 text-center">
-                                    <input type="hidden" name="items[{{ $index }}][sale_item_id]" value="{{ $item->id }}">
+                                    <input type="hidden" name="items[{{ $index }}][sale_item_id]" value="{{ $item->id }}" @disabled(! ($available > 0))>
                                     <input
                                         type="number"
                                         name="items[{{ $index }}][quantity]"
                                         min="0"
-                                        max="{{ $available }}"
+                                        step="{{ $item->isBulk() ? '0.001' : '1' }}"
+                                        max="{{ \App\Support\Quantity::format($available) }}"
+                                        aria-label="Cantidad a devolver de {{ $item->product_name }}"
                                         value="{{ old("items.{$index}.quantity", 0) }}"
-                                        @disabled($available === 0)
+                                        @disabled(! ($available > 0))
                                         class="h-10 w-24 rounded-xl border border-mz-border-light bg-mz-bg-primary/90 px-2 text-center text-base font-bold tabular-nums text-white focus:border-mz-accent-primary focus:bg-mz-bg-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/20 disabled:opacity-40 transition-all shadow-inner"
                                     >
                                 </td>

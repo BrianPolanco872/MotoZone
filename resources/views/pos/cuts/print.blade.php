@@ -218,7 +218,7 @@
             <thead>
                 <tr>
                     <th>Departamento</th>
-                    <th class="num">Piezas</th>
+                    <th class="num">Cantidad vendida (medidas mixtas)</th>
                     <th class="num">Tickets</th>
                     <th class="num">Importe</th>
                 </tr>
@@ -227,7 +227,7 @@
                 @forelse ($departments as $department)
                     <tr>
                         <td>{{ $department['name'] }}</td>
-                        <td class="num">{{ $department['quantity'] }}</td>
+                        <td class="num">{{ \App\Support\Quantity::format($department['quantity']) }}</td>
                         <td class="num">{{ $department['tickets'] }}</td>
                         <td class="num">{{ $money($department['total']) }}</td>
                     </tr>

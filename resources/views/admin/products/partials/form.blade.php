@@ -2,6 +2,9 @@
     $isEdit = $product->exists;
     $labelClass = 'block text-sm font-medium text-mz-text-secondary';
     $errorClass = 'mt-1 text-xs font-medium text-mz-error';
+    $saleMode = old('sale_mode', $product->saleMode());
+    $isKit = $saleMode === \App\Models\Product::MODE_KIT;
+    $stockStep = $saleMode === \App\Models\Product::MODE_BULK ? '0.001' : '1';
 @endphp
 
 @if ($errors->any())
@@ -15,10 +18,11 @@
     </x-alert>
 @endif
 
-<form id="product-form" data-product-form action="{{ $action }}" method="POST" enctype="multipart/form-data" class="space-y-5">
+<form id="product-form" data-product-form data-components-config="{{ json_encode(['url' => route('admin.products.components'), 'exclude' => $product->id], JSON_THROW_ON_ERROR) }}" action="{{ $action }}" method="POST" enctype="multipart/form-data" class="space-y-5">
     @csrf
     @if ($method !== 'POST')
         @method($method)
+        <input type="hidden" name="original_stock" value="{{ old('original_stock', $product->stock) }}">
     @endif
 
     <div class="grid grid-cols-1 gap-5 lg:grid-cols-3">
@@ -49,6 +53,60 @@
                         @error('description') <p class="{{ $errorClass }}">{{ $message }}</p> @enderror
                     </div>
                 </div>
+            </x-card>
+
+            <x-card padded>
+                <fieldset aria-describedby="sale-mode-help sale-mode-error">
+                    <legend class="text-base font-semibold text-mz-text-primary">¿Cómo se vende este producto?</legend>
+                    <p id="sale-mode-help" class="mt-1 text-xs text-mz-text-secondary">El precio y costo capturados corresponden al producto o paquete completo.</p>
+                    <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:gap-5">
+                        @foreach (['unit' => 'Por unidad/pieza', 'bulk' => 'A granel', 'kit' => 'Como paquete (kit)'] as $mode => $label)
+                            <label for="sale_mode_{{ $mode }}" class="flex items-center gap-2 text-sm text-mz-text-secondary">
+                                <input id="sale_mode_{{ $mode }}" type="radio" name="sale_mode" value="{{ $mode }}" @checked($saleMode === $mode) required class="mz-checkbox">
+                                {{ $label }}
+                            </label>
+                        @endforeach
+                    </div>
+                    <p id="sale-mode-error" class="{{ $errorClass }}">{{ $errors->first('sale_mode') }}</p>
+                </fieldset>
+
+                <fieldset data-kit-fields @disabled(! $isKit) @if (! $isKit) hidden @endif class="mt-5 space-y-4" aria-describedby="kit-items-error">
+                    <legend class="text-sm font-semibold text-mz-text-primary">Contenido del paquete</legend>
+                    <div>
+                        <label for="component-search" class="{{ $labelClass }}">Buscar por nombre o código de barras</label>
+                        <input id="component-search" type="search" autocomplete="off" class="mz-input mt-1.5 h-11 w-full" aria-describedby="component-search-help component-status" aria-controls="component-results">
+                        <p id="component-search-help" class="mt-1 text-xs text-mz-text-secondary">Agrega productos por pieza o a granel. No se permiten otros paquetes.</p>
+                        <p id="component-status" data-component-status role="status" aria-live="polite" class="mt-1 text-xs text-mz-text-secondary"></p>
+                        <ul id="component-results" data-component-results class="mt-2 space-y-2"></ul>
+                    </div>
+
+                    <div data-kit-rows class="space-y-3">
+                        @foreach ($kitRows as $row)
+                            <div data-kit-row data-index="{{ $row['index'] }}" class="rounded-md border border-mz-border p-3">
+                                <p class="text-sm font-medium text-mz-text-primary">{{ $row['name'] }}</p>
+                                <p class="text-xs text-mz-text-secondary">{{ $row['sale_mode'] === 'bulk' ? 'A granel' : 'Por unidad/pieza' }}{{ ! $row['track_inventory'] ? ' · Sin control de inventario' : '' }}</p>
+                                <input data-component-id type="hidden" name="kit_items[{{ $row['index'] }}][product_id]" value="{{ $row['product_id'] }}">
+                                @error('kit_items.'.$row['index'].'.product_id') <p class="{{ $errorClass }}">{{ $message }}</p> @enderror
+                                <div class="mt-2 flex items-end gap-3">
+                                    <div class="min-w-0 flex-1">
+                                        <label for="kit_quantity_{{ $row['index'] }}" class="{{ $labelClass }}">Cantidad por paquete de {{ $row['name'] }}</label>
+                                        <input id="kit_quantity_{{ $row['index'] }}" name="kit_items[{{ $row['index'] }}][quantity]" type="number" min="{{ $row['sale_mode'] === 'bulk' ? '0.001' : '1' }}" step="{{ $row['sale_mode'] === 'bulk' ? '0.001' : '1' }}" max="4294967295" value="{{ $row['quantity'] }}" required aria-invalid="{{ $errors->has('kit_items.'.$row['index'].'.quantity') ? 'true' : 'false' }}" aria-describedby="kit_quantity_error_{{ $row['index'] }}" class="mz-input mt-1.5 h-11 w-full">
+                                    </div>
+                                    <button type="button" data-remove-component class="x-button x-button-secondary size-sm" aria-label="Quitar {{ $row['name'] }} del paquete">Quitar</button>
+                                </div>
+                                <p id="kit_quantity_error_{{ $row['index'] }}" class="{{ $errorClass }}">{{ $errors->first('kit_items.'.$row['index'].'.quantity') }}</p>
+                            </div>
+                        @endforeach
+                    </div>
+                    <p id="kit-items-error" class="{{ $errorClass }}">{{ $errors->first('kit_items') }}</p>
+                    <input type="hidden" name="kit_deduct_components" value="0">
+                    <label for="kit_deduct_components" class="flex items-start gap-3 text-sm text-mz-text-secondary">
+                        <input id="kit_deduct_components" name="kit_deduct_components" type="checkbox" value="1" @checked(old('kit_deduct_components', $product->kit_deduct_components ?? false)) class="mz-checkbox mt-0.5">
+                        <span>Descontar del inventario los productos del paquete al vender</span>
+                    </label>
+                    <p class="text-xs text-mz-text-secondary">El paquete no tiene existencia propia. Los componentes sin control de inventario no se descuentan.</p>
+                    <noscript><p class="text-sm text-mz-text-secondary">Activa JavaScript para buscar, agregar o quitar componentes. No se puede guardar un paquete vacío.</p></noscript>
+                </fieldset>
             </x-card>
 
             {{-- Identificación --}}
@@ -120,7 +178,7 @@
                     <p class="text-xs text-mz-text-secondary">Si el producto no usa inventario, se puede vender aunque la existencia sea cero.</p>
                 </div>
 
-                <div class="mt-4 space-y-4">
+                <fieldset data-product-inventory @disabled($isKit) @if ($isKit) hidden @endif class="mt-4 space-y-4">
                     <input type="hidden" name="track_inventory" value="0">
                     <label class="flex items-start gap-3 text-sm text-mz-text-secondary">
                         <input id="track_inventory" name="track_inventory" type="checkbox" value="1" @checked(old('track_inventory', $isEdit ? $product->track_inventory : true)) class="mz-checkbox mt-0.5">
@@ -133,18 +191,18 @@
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div>
                             <label for="stock" class="{{ $labelClass }}">Cantidad actual</label>
-                            <input id="stock" name="stock" type="number" step="1" min="0" value="{{ old('stock', $product->stock ?? 0) }}" required class="mz-input mt-1.5 h-11 w-full" placeholder="0">
+                            <input id="stock" name="stock" type="number" step="{{ $stockStep }}" min="0" max="4294967295" value="{{ old('stock', $product->stock ?? 0) }}" required class="mz-input mt-1.5 h-11 w-full" placeholder="0">
                             @error('stock') <p class="{{ $errorClass }}">{{ $message }}</p> @enderror
                         </div>
 
                         <div>
                             <label for="min_stock" class="{{ $labelClass }}">Mínimo para alerta</label>
-                            <input id="min_stock" name="min_stock" type="number" step="1" min="0" value="{{ old('min_stock', $product->min_stock ?? 0) }}" class="mz-input mt-1.5 h-11 w-full" placeholder="0">
-                            <p class="mt-1 text-xs text-mz-text-secondary">Se avisa cuando queden estas piezas o menos.</p>
+                            <input id="min_stock" name="min_stock" type="number" step="{{ $stockStep }}" min="0" max="4294967295" value="{{ old('min_stock', $product->min_stock ?? 0) }}" class="mz-input mt-1.5 h-11 w-full" placeholder="0">
+                            <p class="mt-1 text-xs text-mz-text-secondary">Se avisa cuando quede esta cantidad o menos.</p>
                             @error('min_stock') <p class="{{ $errorClass }}">{{ $message }}</p> @enderror
                         </div>
                     </div>
-                </div>
+                </fieldset>
             </x-card>
         </div>
 

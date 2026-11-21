@@ -31,6 +31,8 @@ class ProductFactory extends Factory
             'stock' => fake()->numberBetween(0, 40),
             'min_stock' => fake()->numberBetween(0, 5),
             'track_inventory' => true,
+            'sale_mode' => Product::MODE_UNIT,
+            'kit_deduct_components' => false,
             'featured' => fake()->boolean(25),
             'is_active' => true,
         ];
@@ -41,6 +43,27 @@ class ProductFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'stock' => fake()->numberBetween(1, Product::LOW_STOCK_THRESHOLD),
         ]);
+    }
+
+    public function bulk(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'sale_mode' => Product::MODE_BULK,
+        ]);
+    }
+
+    public function kit(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'sale_mode' => Product::MODE_KIT,
+            'stock' => 0,
+            'min_stock' => 0,
+            'track_inventory' => false,
+        ])->afterCreating(function (Product $product): void {
+            if (! $product->kitItems()->exists()) {
+                $product->kitItems()->attach(Product::factory()->create(), ['quantity' => 1]);
+            }
+        });
     }
 
     public function outOfStock(): static

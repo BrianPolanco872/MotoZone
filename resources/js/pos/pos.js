@@ -42,6 +42,21 @@ if (configElement) {
     const customProductPrice = document.getElementById('custom-product-price');
     const customProductQuantity = document.getElementById('custom-product-quantity');
     const customProductError = document.getElementById('custom-product-error');
+    const bulkDialog = document.getElementById('bulk-dialog');
+    const bulkForm = document.getElementById('bulk-form');
+    const bulkCloseBtn = document.getElementById('bulk-close-btn');
+    const bulkName = document.getElementById('bulk-name');
+    const bulkPrice = document.getElementById('bulk-price');
+    const bulkStockInfo = document.getElementById('bulk-stock-info');
+    const bulkAvailableStock = document.getElementById('bulk-available-stock');
+    const bulkQuantity = document.getElementById('bulk-quantity');
+    const bulkAmount = document.getElementById('bulk-amount');
+    const bulkTotal = document.getElementById('bulk-total');
+    const bulkError = document.getElementById('bulk-error');
+    const bulkCancel = document.getElementById('bulk-cancel');
+    const bulkAccept = document.getElementById('bulk-accept');
+    let bulkProduct = null;
+    let isUpdatingBulk = false;
 
     // Estado para detectar escáner
     let isScanning = false;
@@ -185,7 +200,15 @@ if (configElement) {
         }
     };
 
-    const lineTotal = (item) => round(item.unit_price * item.quantity);
+    const lineTotal = (item) => Math.round(Math.round(item.unit_price * 100) * Math.round(item.quantity * 1000) / 1000) / 100;
+    const formatQuantity = (value) => String(Number(Number(value).toFixed(3)));
+    const validQuantity = (value, mode = 'unit') => {
+        return /^\d+(?:\.\d{1,3})?$/.test(String(value)) && Number(value) > 0 && Number(value) <= 9999
+            && (mode === 'bulk' || Number.isInteger(Number(value)));
+    };
+    const stockFor = (product) => product.sale_mode === 'kit'
+        ? (product.available_stock == null ? null : Number(product.available_stock))
+        : (product.track_inventory ? Number(product.available_stock ?? product.stock) : null);
 
     const totals = () => {
         let subtotal = 0;
@@ -195,7 +218,7 @@ if (configElement) {
         items.forEach((item) => {
             const line = lineTotal(item);
             const rate = Number(item.tax_rate) || 0;
-            const lineSubtotal = line / (1 + rate);
+            const lineSubtotal = round(line / (1 + Math.max(0, rate)));
 
             total += line;
             subtotal += lineSubtotal;
@@ -214,7 +237,7 @@ if (configElement) {
         subtotalEl.textContent = formatMoney(result.subtotal);
         taxEl.textContent = formatMoney(result.tax);
         totalEl.textContent = formatMoney(result.total);
-        itemsCount.textContent = `${items.reduce((sum, item) => sum + item.quantity, 0)} ${items.length === 1 ? 'artículo' : 'artículos'}`;
+        itemsCount.textContent = `${items.length} ${items.length === 1 ? 'renglón' : 'renglones'}`;
         emptyState.classList.toggle('hidden', items.length > 0);
     };
 
@@ -230,11 +253,11 @@ if (configElement) {
                 : `<span class="tabular-nums font-medium text-mz-text-secondary">${formatMoney(item.unit_price)}</span>`;
 
             const quantityControl = !locked
-                ? `<input type="number" step="1" min="1" value="${item.quantity}" data-action="quantity" data-index="${index}" class="h-9 w-20 rounded-lg border border-mz-border-light bg-mz-bg-surface-2 px-2 text-center text-sm font-bold tabular-nums text-mz-text-primary focus:border-mz-accent-primary focus:bg-mz-bg-surface focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/20 transition-all">`
-                : `<span class="tabular-nums font-bold text-mz-text-secondary">${item.quantity}</span>`;
+                ? `<input type="number" step="${item.sale_mode === 'bulk' ? '0.001' : '1'}" min="${item.sale_mode === 'bulk' ? '0.001' : '1'}" max="9999" value="${formatQuantity(item.quantity)}" aria-label="Cantidad de ${escapeHtml(item.name)}" data-action="quantity" data-index="${index}" class="h-9 w-24 rounded-lg border border-mz-border-light bg-mz-bg-surface-2 px-2 text-center text-sm font-bold tabular-nums text-mz-text-primary focus:border-mz-accent-primary focus:bg-mz-bg-surface focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/20 transition-all">`
+                : `<span class="tabular-nums font-bold text-mz-text-secondary">${formatQuantity(item.quantity)}</span>`;
 
             const stockLabel = item.track_inventory
-                ? `${item.stock ?? 0} disp.`
+                ? `${formatQuantity(item.stock ?? 0)} disp.`
                 : 'Sin control';
 
             row.innerHTML = `
@@ -244,7 +267,7 @@ if (configElement) {
                         <span class="font-mono text-[11px] text-mz-text-muted/80">${escapeHtml(item.barcode || item.barcode2 || item.sku || 'S/C')}</span>
                     </div>
                 </td>
-                <td class="whitespace-nowrap px-4 py-3 text-right">${priceControl}</td>
+                <td class="whitespace-nowrap px-4 py-3 text-right">${priceControl}${item.sale_mode === 'bulk' ? '<span class="block text-[11px] text-mz-text-muted">por unidad</span>' : ''}</td>
                 <td class="whitespace-nowrap px-4 py-3 text-center">${quantityControl}</td>
                 <td class="whitespace-nowrap px-4 py-3 text-right font-bold tabular-nums text-mz-text-primary font-display text-base">${formatMoney(lineTotal(item))}</td>
                 <td class="whitespace-nowrap px-4 py-3 text-right text-xs">
@@ -269,7 +292,13 @@ if (configElement) {
         return round(product.price);
     };
 
-    const addProduct = (product, quantity = 1) => {
+    const isBulkProduct = (product) => {
+        if (!product) return false;
+        const mode = String(product.sale_mode || '').trim().toLowerCase();
+        return mode === 'bulk' || mode === 'granel';
+    };
+
+    const addProduct = (product, quantity = 1, confirmedBulk = false) => {
         clearError();
 
         if (pendingSaleId !== null) {
@@ -277,22 +306,34 @@ if (configElement) {
             return;
         }
 
-        if (product.track_inventory && Number(product.stock) <= 0) {
+        if (isBulkProduct(product) && !confirmedBulk) {
+            return openBulkModal(product);
+        }
+
+        const stock = stockFor(product);
+
+        if (stock !== null && stock <= 0) {
             showError(`«${product.name}» está agotado.`);
-            return;
+            return false;
         }
 
         const existing = items.find((item) => item.product_id === product.id);
+        const nextQuantity = (Math.round((existing?.quantity ?? 0) * 1000) + Math.round(quantity * 1000)) / 1000;
+
+        if (!validQuantity(quantity, product.sale_mode) || !validQuantity(nextQuantity, product.sale_mode)) {
+            showError('La cantidad debe ser positiva, hasta 9999; solo granel permite hasta 3 decimales.');
+            return false;
+        }
+
+        if (stock !== null && nextQuantity > stock) {
+            showError(`No hay existencia suficiente de «${product.name}». Disponible: ${formatQuantity(stock)}.`);
+            return false;
+        }
 
         if (existing) {
-            const nextQuantity = existing.quantity + quantity;
-
-            if (existing.track_inventory && nextQuantity > Number(existing.stock)) {
-                showError(`No hay existencia suficiente de «${existing.name}». Disponible: ${existing.stock}.`);
-                return;
-            }
-
             existing.quantity = nextQuantity;
+            existing.stock = stock;
+            existing.track_inventory = stock !== null;
         } else {
             items.push({
                 product_id: product.id,
@@ -304,11 +345,12 @@ if (configElement) {
                 wholesale_price: product.wholesale_price === null ? null : round(product.wholesale_price),
                 unit_price: priceFor(product),
                 manual_price: null,
+                sale_mode: product.sale_mode ?? 'unit',
                 quantity,
                 tax_rate: Number(product.tax_rate) || 0,
-                stock: product.track_inventory ? Number(product.stock) : null,
+                stock,
                 min_stock: Number(product.min_stock) || 0,
-                track_inventory: Boolean(product.track_inventory),
+                track_inventory: stock !== null,
             });
         }
 
@@ -316,7 +358,243 @@ if (configElement) {
         searchInput.value = '';
         resultsBox.classList.add('hidden');
         searchInput.focus();
+        return true;
     };
+
+    const openBulkModal = (product) => {
+        if (!bulkDialog) {
+            return false;
+        }
+
+        if (bulkDialog.open) {
+            return false;
+        }
+
+        bulkProduct = product;
+        if (bulkName) {
+            bulkName.textContent = product.name;
+        }
+
+        const existingItem = items.find((item) => item.product_id === bulkProduct.id);
+        const unitPrice = existingItem ? existingItem.unit_price : priceFor(bulkProduct);
+        if (bulkPrice) {
+            bulkPrice.textContent = formatMoney(unitPrice);
+        }
+
+        const stock = stockFor(bulkProduct);
+        if (bulkAvailableStock) {
+            bulkAvailableStock.textContent = stock !== null ? formatQuantity(stock) : 'Ilimitada';
+        }
+        if (bulkStockInfo) {
+            bulkStockInfo.classList.remove('hidden');
+        }
+
+        if (bulkError) {
+            bulkError.classList.add('hidden');
+            bulkError.textContent = '';
+        }
+
+        isUpdatingBulk = true;
+        if (bulkQuantity) {
+            bulkQuantity.value = '1.00';
+        }
+        const initialAmount = Math.round(1 * unitPrice * 100) / 100;
+        if (bulkAmount) {
+            bulkAmount.value = initialAmount.toFixed(2);
+        }
+        if (bulkTotal) {
+            bulkTotal.textContent = formatMoney(initialAmount);
+        }
+        isUpdatingBulk = false;
+
+        resultsBox?.classList.add('hidden');
+        if (searchInput) {
+            searchInput.value = '';
+        }
+
+        bulkDialog.showModal();
+        bulkQuantity?.focus();
+        bulkQuantity?.select();
+        setTimeout(() => {
+            bulkQuantity?.focus();
+            bulkQuantity?.select();
+        }, 50);
+
+        return false;
+    };
+
+    const validateBulkStock = (qty) => {
+        if (!bulkProduct || !bulkError) {
+            return true;
+        }
+
+        const stock = stockFor(bulkProduct);
+        if (stock !== null) {
+            const existing = items.find((item) => item.product_id === bulkProduct.id);
+            const currentInCart = existing ? Number(existing.quantity) : 0;
+            const totalNeeded = (Math.round(currentInCart * 1000) + Math.round(qty * 1000)) / 1000;
+            if (totalNeeded > stock) {
+                bulkError.textContent = `No hay existencia suficiente de «${bulkProduct.name}». Disponible: ${formatQuantity(stock)}${currentInCart > 0 ? ` (${formatQuantity(currentInCart)} en ticket)` : ''}.`;
+                bulkError.classList.remove('hidden');
+                return false;
+            }
+        }
+
+        bulkError.classList.add('hidden');
+        bulkError.textContent = '';
+        return true;
+    };
+
+    const closeBulkModal = () => {
+        bulkProduct = null;
+        if (bulkDialog?.open) {
+            bulkDialog.close();
+        }
+        searchInput?.focus();
+    };
+
+    const confirmBulk = () => {
+        if (!bulkProduct) {
+            return;
+        }
+
+        const rawVal = bulkQuantity?.value.trim() ?? '';
+        const qty = parseFloat(rawVal);
+
+        if (isNaN(qty) || qty <= 0 || !validQuantity(rawVal, 'bulk')) {
+            if (bulkError) {
+                bulkError.textContent = 'Escribe una cantidad de 0.001 a 9999, con hasta 3 decimales.';
+                bulkError.classList.remove('hidden');
+            }
+            bulkQuantity?.focus();
+            return;
+        }
+
+        if (!validateBulkStock(qty)) {
+            bulkQuantity?.focus();
+            return;
+        }
+
+        const productToAdd = bulkProduct;
+        closeBulkModal();
+
+        if (!addProduct(productToAdd, qty, true)) {
+            if (bulkError) {
+                bulkError.textContent = 'No se pudo agregar. Revisa la cantidad y la existencia disponible.';
+                bulkError.classList.remove('hidden');
+            }
+        }
+    };
+
+    bulkQuantity?.addEventListener('input', () => {
+        if (isUpdatingBulk || !bulkProduct) {
+            return;
+        }
+
+        isUpdatingBulk = true;
+        const raw = bulkQuantity.value.trim();
+        const qty = parseFloat(raw);
+        const existingItem = items.find((item) => item.product_id === bulkProduct.id);
+        const unitPrice = existingItem ? existingItem.unit_price : priceFor(bulkProduct);
+
+        if (!isNaN(qty) && qty > 0 && unitPrice > 0) {
+            const amount = Math.round(qty * unitPrice * 100) / 100;
+            if (bulkAmount) {
+                bulkAmount.value = amount.toFixed(2);
+            }
+            if (bulkTotal) {
+                bulkTotal.textContent = formatMoney(amount);
+            }
+            validateBulkStock(qty);
+        } else {
+            if (bulkAmount) {
+                bulkAmount.value = '';
+            }
+            if (bulkTotal) {
+                bulkTotal.textContent = formatMoney(0);
+            }
+            if (raw !== '') {
+                if (bulkError) {
+                    bulkError.textContent = 'Escribe una cantidad válida mayor a 0.';
+                    bulkError.classList.remove('hidden');
+                }
+            } else if (bulkError) {
+                bulkError.classList.add('hidden');
+            }
+        }
+        isUpdatingBulk = false;
+    });
+
+    bulkAmount?.addEventListener('input', () => {
+        if (isUpdatingBulk || !bulkProduct) {
+            return;
+        }
+
+        isUpdatingBulk = true;
+        const raw = bulkAmount.value.trim();
+        const amt = parseFloat(raw);
+        const existingItem = items.find((item) => item.product_id === bulkProduct.id);
+        const unitPrice = existingItem ? existingItem.unit_price : priceFor(bulkProduct);
+
+        if (!isNaN(amt) && amt > 0 && unitPrice > 0) {
+            const rawQty = amt / unitPrice;
+            const qty = Math.round(rawQty * 1000) / 1000;
+            const decimals = (qty * 100) % 1 === 0 ? 2 : 3;
+            if (bulkQuantity) {
+                bulkQuantity.value = qty.toFixed(decimals);
+            }
+            if (bulkTotal) {
+                bulkTotal.textContent = formatMoney(amt);
+            }
+            validateBulkStock(qty);
+        } else {
+            if (bulkQuantity) {
+                bulkQuantity.value = '';
+            }
+            if (bulkTotal) {
+                bulkTotal.textContent = formatMoney(0);
+            }
+            if (raw !== '') {
+                if (bulkError) {
+                    bulkError.textContent = 'Escribe un importe válido mayor a 0.';
+                    bulkError.classList.remove('hidden');
+                }
+            } else if (bulkError) {
+                bulkError.classList.add('hidden');
+            }
+        }
+        isUpdatingBulk = false;
+    });
+
+    const handleBulkKeydown = (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault?.();
+            event.stopPropagation?.();
+            confirmBulk();
+        } else if (event.key === 'Escape') {
+            event.preventDefault?.();
+            event.stopPropagation?.();
+            closeBulkModal();
+        }
+    };
+
+    bulkQuantity?.addEventListener('keydown', handleBulkKeydown);
+    bulkAmount?.addEventListener('keydown', handleBulkKeydown);
+    bulkAccept?.addEventListener('click', confirmBulk);
+    bulkCancel?.addEventListener('click', closeBulkModal);
+    bulkCloseBtn?.addEventListener('click', closeBulkModal);
+    bulkForm?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        confirmBulk();
+    });
+    bulkDialog?.addEventListener('cancel', (event) => {
+        event.preventDefault();
+        closeBulkModal();
+    });
+    bulkDialog?.addEventListener('close', () => {
+        bulkProduct = null;
+        searchInput?.focus();
+    });
 
     const showCustomProductError = (message) => {
         if (!customProductError) {
@@ -337,6 +615,11 @@ if (configElement) {
 
         const existing = items.find((item) => item.is_custom && item.name === name && item.unit_price === round(price));
 
+        if (!validQuantity(quantity) || !validQuantity((existing?.quantity ?? 0) + quantity)) {
+            showCustomProductError('La cantidad debe ser un entero de 1 a 9999.');
+            return;
+        }
+
         if (existing) {
             existing.quantity = existing.quantity + quantity;
         } else {
@@ -352,6 +635,7 @@ if (configElement) {
                 wholesale_price: null,
                 unit_price: round(price),
                 manual_price: round(price),
+                sale_mode: 'unit',
                 quantity,
                 tax_rate: 0,
                 stock: null,
@@ -377,6 +661,21 @@ if (configElement) {
         });
 
         renderCart();
+
+        if (bulkDialog?.open && bulkProduct) {
+            const unitPrice = priceFor(bulkProduct);
+            if (bulkPrice) {
+                bulkPrice.textContent = formatMoney(unitPrice);
+            }
+            const qty = parseFloat(bulkQuantity?.value) || 1;
+            const amount = Math.round(qty * unitPrice * 100) / 100;
+            if (bulkAmount) {
+                bulkAmount.value = amount.toFixed(2);
+            }
+            if (bulkTotal) {
+                bulkTotal.textContent = formatMoney(amount);
+            }
+        }
     };
 
     const renderResults = (products) => {
@@ -628,6 +927,7 @@ if (configElement) {
                 wholesale_price: null,
                 unit_price: Number(item.unit_price),
                 manual_price: null,
+                sale_mode: item.sale_mode ?? 'unit',
                 quantity: Number(item.quantity),
                 tax_rate: Number(item.tax_rate) || 0,
                 stock: null,
@@ -705,7 +1005,7 @@ if (configElement) {
         });
     });
 
-    cartBody?.addEventListener('input', (event) => {
+    const editCart = (event) => {
         const input = event.target.closest('[data-action]');
 
         if (!input) {
@@ -715,16 +1015,27 @@ if (configElement) {
         const index = Number(input.dataset.index);
         const item = items[index];
 
-        if (!item) {
+        if (!item || pendingSaleId !== null) {
             return;
         }
 
         if (input.dataset.action === 'quantity') {
-            let quantity = Math.max(1, Math.floor(Number(input.value) || 1));
+            if (event.type === 'input') {
+                return;
+            }
+
+            if (!validQuantity(input.value, item.sale_mode)) {
+                showError('La cantidad debe ser positiva, hasta 9999; solo granel permite hasta 3 decimales.');
+                input.value = formatQuantity(item.quantity);
+                return;
+            }
+
+            const quantity = Number(input.value);
 
             if (item.track_inventory && quantity > Number(item.stock)) {
-                quantity = Number(item.stock);
-                showError(`Solo hay ${item.stock} piezas de «${item.name}».`);
+                showError(`Solo hay ${formatQuantity(item.stock)} disponibles de «${item.name}».`);
+                input.value = formatQuantity(item.quantity);
+                return;
             }
 
             item.quantity = quantity;
@@ -744,7 +1055,9 @@ if (configElement) {
             const cells = row.querySelectorAll('td');
             cells[3].textContent = formatMoney(lineTotal(item));
         }
-    });
+    };
+    cartBody?.addEventListener('input', editCart);
+    cartBody?.addEventListener('change', editCart);
 
     cartBody?.addEventListener('click', (event) => {
         const button = event.target.closest('[data-action="remove"]');
@@ -765,7 +1078,7 @@ if (configElement) {
 
         const name = customProductName?.value.trim();
         const price = Number(customProductPrice?.value);
-        const quantity = Math.max(1, Math.floor(Number(customProductQuantity?.value) || 1));
+        const quantity = Number(customProductQuantity?.value);
 
         if (!name) {
             showCustomProductError('Escribe el nombre del producto.');
@@ -776,6 +1089,12 @@ if (configElement) {
         if (!Number.isFinite(price) || price <= 0) {
             showCustomProductError('Escribe un precio válido mayor a cero.');
             customProductPrice?.focus();
+            return;
+        }
+
+        if (!validQuantity(customProductQuantity?.value)) {
+            showCustomProductError('La cantidad debe ser un entero de 1 a 9999.');
+            customProductQuantity?.focus();
             return;
         }
 

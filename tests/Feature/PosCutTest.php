@@ -7,6 +7,7 @@ use App\Models\DailyCut;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleItem;
+use App\Models\SaleReturn;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -193,6 +194,80 @@ class PosCutTest extends TestCase
         $response->assertOk();
         $response->assertSee('$100.00'); // Ventas
         $response->assertSee('$26.21'); // Ganancia = total 100 - IVA 13.79 - costo 60
+        $this->assertSame(1, $response->viewData('totals')['departments'][0]['quantity']);
+    }
+
+    public function test_cut_preserves_bulk_quantities_and_kit_revenue_with_fractional_refunds(): void
+    {
+        $this->freezeTime();
+        $employee = $this->employeeWithCut();
+        $bulk = Product::factory()->bulk()->create();
+        $kit = Product::factory()->kit()->create();
+        $sale = $this->makePaidSale($employee, 125.00, 'cut-fractional');
+        $bulkItem = $sale->items()->create([
+            'product_id' => $bulk->id,
+            'product_name' => 'Aceite a granel',
+            'sale_mode' => Product::MODE_BULK,
+            'category_name' => 'Mostrador',
+            'quantity' => 0.25,
+            'unit_price' => 100,
+            'line_total' => 25,
+            'line_cost' => 10,
+        ]);
+        $sale->items()->create([
+            'product_id' => $kit->id,
+            'product_name' => 'Paquete comercial',
+            'sale_mode' => Product::MODE_KIT,
+            'category_name' => 'Mostrador',
+            'quantity' => 1,
+            'unit_price' => 100,
+            'line_total' => 100,
+            'line_cost' => 60,
+        ]);
+        $return = $sale->returns()->create([
+            'requested_by' => $employee->id,
+            'approved_by' => $employee->id,
+            'status' => SaleReturn::STATUS_APPROVED,
+            'reason' => 'Devolución parcial de granel',
+            'total' => 12.50,
+            'approved_at' => now(),
+        ]);
+        $return->items()->create([
+            'sale_item_id' => $bulkItem->id,
+            'quantity' => 0.125,
+            'unit_price' => 100,
+            'line_total' => 12.50,
+        ]);
+
+        $response = $this->actingAs($employee)->get(route('pos.cuts.index'));
+
+        $response->assertOk()->assertSee('Cantidad vendida (medidas mixtas)')->assertSee('1.25');
+        $totals = $response->viewData('totals');
+        $this->assertSame([['name' => 'Mostrador', 'quantity' => 1.25, 'total' => 125.0, 'tickets' => 1]], $totals['departments']);
+        $this->assertSame(112.5, $totals['totals']['net_sales']);
+        $this->assertSame(47.5, $totals['totals']['profit']);
+        $this->get(route('pos.cuts.print'))->assertOk()->assertSee('1.25')->assertDontSee('1.250');
+    }
+
+    public function test_printed_legacy_cut_keeps_saved_integer_quantities_instead_of_rebuilding_them(): void
+    {
+        $this->freezeTime();
+        $employee = $this->employeeWithCut();
+        DailyCut::create([
+            'cut_key' => DailyCut::keyFor(now()->toDateString(), DailyCut::SCOPE_EMPLOYEE, $employee->id),
+            'cut_date' => now()->toDateString(),
+            'scope' => DailyCut::SCOPE_EMPLOYEE,
+            'user_id' => $employee->id,
+            'version' => 1,
+            'totals' => ['departments' => [['name' => 'Histórico', 'quantity' => 7, 'total' => 700, 'tickets' => 2]]],
+            'generated_by' => $employee->id,
+            'generated_at' => now(),
+        ]);
+
+        $response = $this->actingAs($employee)->get(route('pos.cuts.print'));
+
+        $response->assertOk()->assertSee('Histórico')->assertSee('<td class="num">7</td>', false)->assertSee('$700.00');
+        $this->assertSame(7, $response->viewData('totals')['departments'][0]['quantity']);
     }
 
     public function test_own_cut_shows_finalize_day_button(): void

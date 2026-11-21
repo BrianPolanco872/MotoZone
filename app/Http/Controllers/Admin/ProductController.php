@@ -7,10 +7,12 @@ use App\Http\Requests\Admin\ProductRequest;
 use App\Models\Product;
 use App\Models\StockMovement;
 use App\Services\AuditLogService;
+use App\Support\Quantity;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\QueryException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -29,6 +31,7 @@ class ProductController extends Controller
         $reviewFilter = (string) $request->query('revision', '');
 
         $products = Product::query()
+            ->with('kitItems')
             ->search($search)
             ->when($stockFilter === 'bajo', fn (Builder $query) => $query->active()->lowStock())
             ->when($stockFilter === 'agotado', fn (Builder $query) => $query->active()->outOfStock())
@@ -48,19 +51,27 @@ class ProductController extends Controller
 
     public function destroy(Product $product): RedirectResponse
     {
-        // Verificar si el producto tiene movimientos antes de permitir el borrado
-        if ($product->saleItems()->exists() || $product->stockMovements()->exists()) {
+        return DB::transaction(function () use ($product): RedirectResponse {
+            $product = Product::query()->whereKey($product->id)->lockForUpdate()->firstOrFail();
+
+            if ($product->usedInKits()->exists()) {
+                return redirect()->route('admin.products.index')
+                    ->with('error', "No se puede eliminar «{$product->name}» porque forma parte de un paquete. Quita primero el componente de sus recetas.");
+            }
+
+            if ($product->saleItems()->exists() || $product->stockMovements()->exists()) {
+                return redirect()
+                    ->route('admin.products.index')
+                    ->with('error', "No se puede eliminar «{$product->name}» porque tiene ventas o movimientos registrados.");
+            }
+
+            $name = $product->name;
+            $product->delete();
+
             return redirect()
                 ->route('admin.products.index')
-                ->with('error', "No se puede eliminar «{$product->name}» porque tiene ventas o movimientos registrados.");
-        }
-
-        $name = $product->name;
-        $product->delete();
-
-        return redirect()
-            ->route('admin.products.index')
-            ->with('status', "Producto «{$name}» eliminado correctamente.");
+                ->with('status', "Producto «{$name}» eliminado correctamente.");
+        }, 3);
     }
 
     public function massUpdate(Request $request): RedirectResponse
@@ -362,18 +373,26 @@ class ProductController extends Controller
     {
         return view('admin.products.create', [
             'product' => new Product,
+            'kitRows' => $this->kitRows(new Product),
         ]);
     }
 
     public function store(ProductRequest $request): RedirectResponse
     {
-        $data = $this->productData($request);
+        $product = DB::transaction(function () use ($request): Product {
+            $components = $this->lockProducts($request);
+            $request->validateSaleConfiguration(null, $components);
+            $data = $this->productData($request);
 
-        if ($request->hasFile('image')) {
-            $data['image_path'] = $request->file('image')->store('products', 'public');
-        }
+            if ($request->hasFile('image')) {
+                $data['image_path'] = $request->file('image')->store('products', 'public');
+            }
 
-        $product = Product::create($data);
+            $product = Product::create($data);
+            $this->syncKitItems($request, $product);
+
+            return $product;
+        }, 3);
 
         return redirect()
             ->route('admin.products.index')
@@ -384,26 +403,132 @@ class ProductController extends Controller
     {
         return view('admin.products.edit', [
             'product' => $product,
+            'kitRows' => $this->kitRows($product),
         ]);
     }
 
     public function update(ProductRequest $request, Product $product): RedirectResponse
     {
-        $data = $this->productData($request, $product);
+        $oldImage = $product->image_path;
+        $product = DB::transaction(function () use ($request, $product): Product {
+            $products = $this->lockProducts($request, $product);
+            $lockedProduct = $products->get($product->id);
+            abort_if($lockedProduct === null, 404);
 
-        if ($request->hasFile('image')) {
-            $data['image_path'] = $request->file('image')->store('products', 'public');
-
-            if ($product->image_path) {
-                Storage::disk('public')->delete($product->image_path);
+            if ($lockedProduct->saleMode() !== $product->saleMode()) {
+                throw ValidationException::withMessages(['sale_mode' => 'La modalidad cambió mientras editabas. Recarga el producto antes de guardar.']);
             }
-        }
 
-        $product->update($data);
+            $request->validateSaleConfiguration($lockedProduct, $products);
+            $data = $this->productData($request, $lockedProduct);
+
+            if (array_key_exists('stock', $data) && Quantity::milli($lockedProduct->stock) !== Quantity::milli($request->validated('original_stock', $product->stock))) {
+                throw ValidationException::withMessages(['stock' => 'Las existencias cambiaron desde que abriste el producto. Recarga la ficha y revisa la cantidad antes de guardar.']);
+            }
+
+            if ($request->hasFile('image')) {
+                $data['image_path'] = $request->file('image')->store('products', 'public');
+            }
+
+            $lockedProduct->update($data);
+            $this->syncKitItems($request, $lockedProduct);
+
+            return $lockedProduct;
+        }, 3);
+
+        if ($request->hasFile('image') && $oldImage) {
+            Storage::disk('public')->delete($oldImage);
+        }
 
         return redirect()
             ->route('admin.products.index')
             ->with('status', "Producto «{$product->name}» actualizado correctamente.");
+    }
+
+    public function components(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'q' => ['nullable', 'string', 'max:255'],
+            'exclude' => ['nullable', 'integer', 'min:1'],
+        ]);
+        $term = trim($data['q'] ?? '');
+
+        if ($term === '') {
+            return response()->json(['products' => []]);
+        }
+
+        $products = Product::query()->active()->where('sale_mode', '!=', Product::MODE_KIT)
+            ->when($data['exclude'] ?? null, fn (Builder $query, mixed $id) => $query->whereKeyNot($id))
+            ->where(fn (Builder $query) => $query->where('name', 'like', "%{$term}%")
+                ->orWhere('barcode', 'like', "%{$term}%")->orWhere('barcode2', 'like', "%{$term}%"))
+            ->orderBy('name')->orderBy('id')->limit(12)
+            ->get(['id', 'name', 'barcode', 'barcode2', 'sale_mode', 'track_inventory']);
+
+        return response()->json(['products' => $products]);
+    }
+
+    /** @return Collection<int, Product> */
+    private function lockProducts(ProductRequest $request, ?Product $product = null): Collection
+    {
+        $ids = array_column($request->validated('kit_items', []), 'product_id');
+
+        if ($product !== null) {
+            $ids[] = $product->id;
+        }
+
+        return Product::query()->whereKey($ids)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+    }
+
+    private function syncKitItems(ProductRequest $request, Product $product): void
+    {
+        $items = [];
+
+        if ($product->isKit()) {
+            foreach ($request->validated('kit_items', []) as $item) {
+                $items[$item['product_id']] = ['quantity' => Quantity::number(Quantity::milli($item['quantity']))];
+            }
+        }
+
+        $product->kitItems()->sync($items);
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function kitRows(Product $product): array
+    {
+        $items = session()->getOldInput('kit_items');
+
+        if (! session()->hasOldInput()) {
+            $items = $product->exists ? $product->kitItems->map(fn (Product $component): array => [
+                'product_id' => $component->id, 'quantity' => $component->pivot->quantity,
+            ])->all() : [];
+        }
+
+        if (! is_array($items)) {
+            return [];
+        }
+
+        $components = Product::query()->whereKey(collect($items)->pluck('product_id')->filter(fn (mixed $id): bool => is_scalar($id))->all())
+            ->get(['id', 'name', 'sale_mode', 'track_inventory'])->keyBy('id');
+        $rows = [];
+
+        foreach ($items as $index => $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $id = $item['product_id'] ?? '';
+            $component = is_scalar($id) ? $components->get($id) : null;
+            $rows[] = [
+                'index' => $index,
+                'product_id' => is_scalar($id) ? $id : '',
+                'quantity' => is_scalar($item['quantity'] ?? null) ? $item['quantity'] : '',
+                'name' => $component?->name ?? 'Producto no disponible',
+                'sale_mode' => $component?->saleMode() ?? Product::MODE_UNIT,
+                'track_inventory' => $component?->track_inventory ?? false,
+            ];
+        }
+
+        return $rows;
     }
 
     /**
@@ -425,6 +550,8 @@ class ProductController extends Controller
             'track_inventory',
             'featured',
             'is_active',
+            'sale_mode',
+            'kit_deduct_components',
         ]);
 
         if ($product === null) {
@@ -435,6 +562,13 @@ class ProductController extends Controller
         $data['description'] = $request->validated('description', $product?->description ?? '') ?? '';
         $data['cost'] = $request->validated('cost', $product?->cost ?? 0) ?? 0;
         $data['min_stock'] = $request->validated('min_stock', $product?->min_stock ?? 0) ?? 0;
+        if ($data['sale_mode'] === Product::MODE_KIT) {
+            $data['track_inventory'] = false;
+            $data['stock'] = 0;
+            $data['min_stock'] = 0;
+        } else {
+            $data['kit_deduct_components'] = false;
+        }
         $data['slug'] = $this->uniqueSlug($data['name'], $product);
         $data['tax_rate'] = round(((float) $request->validated('tax_rate')) / 100, 4);
 

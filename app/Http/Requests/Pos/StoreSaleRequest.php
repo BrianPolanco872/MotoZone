@@ -2,6 +2,8 @@
 
 namespace App\Http\Requests\Pos;
 
+use App\Support\Quantity;
+use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -14,10 +16,14 @@ class StoreSaleRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        if (! is_array($this->input('items', []))) {
+            return;
+        }
+
         $items = collect($this->input('items', []))
-            ->map(fn (array $item): array => [
-                'product_id' => isset($item['product_id']) ? (int) $item['product_id'] : null,
-                'quantity' => (int) ($item['quantity'] ?? 0),
+            ->map(fn (mixed $item): mixed => ! is_array($item) ? $item : [
+                'product_id' => $item['product_id'] ?? null,
+                'quantity' => $item['quantity'] ?? null,
                 'unit_price' => isset($item['unit_price']) && is_numeric($item['unit_price']) ? (float) $item['unit_price'] : null,
                 'wholesale' => filter_var($item['wholesale'] ?? false, FILTER_VALIDATE_BOOLEAN),
                 'is_custom' => filter_var($item['is_custom'] ?? false, FILTER_VALIDATE_BOOLEAN),
@@ -40,11 +46,16 @@ class StoreSaleRequest extends FormRequest
     {
         return [
             'items' => ['required', 'array', 'min:1'],
+            'items.*' => ['required', 'array'],
             'items.*.product_id' => ['nullable', 'required_unless:items.*.is_custom,true', 'integer', 'min:1'],
             'items.*.is_custom' => ['boolean'],
             'items.*.custom_name' => ['nullable', 'required_if:items.*.is_custom,true', 'string', 'max:255'],
             'items.*.custom_price' => ['nullable', 'required_if:items.*.is_custom,true', 'numeric', 'min:0.01'],
-            'items.*.quantity' => ['required', 'integer', 'min:1', 'max:9999'],
+            'items.*.quantity' => ['required', 'numeric', 'min:0.001', 'max:9999', function (string $attribute, mixed $value, Closure $fail): void {
+                if (! Quantity::valid($value)) {
+                    $fail('La cantidad debe tener como máximo tres decimales.');
+                }
+            }],
             'items.*.unit_price' => ['nullable', 'numeric', 'min:0'],
             'items.*.wholesale' => ['boolean'],
             'status' => ['required', Rule::in(['paid', 'pending'])],

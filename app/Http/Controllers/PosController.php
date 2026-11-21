@@ -72,14 +72,16 @@ class PosController extends Controller
         }
 
         $products = Product::query()
+            ->with('kitItems')
             ->active()
             ->where(function ($query) use ($term): void {
                 $query->where('barcode', $term)
                     ->orWhere('barcode2', $term)
+                    ->orWhere('sku', $term)
                     ->orWhere('name', 'like', "%{$term}%")
                     ->orWhere('brand', 'like', "%{$term}%");
             })
-            ->orderByRaw('CASE WHEN barcode = ? OR barcode2 = ? THEN 0 ELSE 1 END', [$term, $term])
+            ->orderByRaw('CASE WHEN barcode = ? OR barcode2 = ? OR sku = ? THEN 0 ELSE 1 END', [$term, $term, $term])
             ->orderBy('name')
             ->limit(12)
             ->get();
@@ -121,6 +123,8 @@ class PosController extends Controller
                     'sku' => $item->sku,
                     'barcode' => $item->barcode,
                     'unit_price' => (float) $item->unit_price,
+                    'sale_mode' => $item->sale_mode ?? Product::MODE_UNIT,
+                    'kit_deduct_components' => (bool) ($item->inventory_snapshot['kit_deduct_components'] ?? false),
                     'quantity' => $item->quantity,
                     'tax_rate' => (float) $item->tax_rate,
                     'stock' => null,
@@ -146,6 +150,7 @@ class PosController extends Controller
             ->pluck('product_id');
 
         $products = Product::query()
+            ->with('kitItems')
             ->active()
             ->whereIn('id', $ids)
             ->get()
@@ -154,7 +159,7 @@ class PosController extends Controller
         $ordered = $ids->map(fn ($id) => $products->get($id))->filter()->values();
 
         if ($ordered->isEmpty()) {
-            $ordered = Product::query()->active()->featured()->orderBy('name')->limit(8)->get();
+            $ordered = Product::query()->with('kitItems')->active()->featured()->orderBy('name')->limit(8)->get();
         }
 
         return $ordered->map(fn (Product $product): array => $this->productPayload($product))->all();
@@ -165,6 +170,8 @@ class PosController extends Controller
      */
     private function productPayload(Product $product): array
     {
+        $availableStock = $product->availableStock();
+
         return [
             'id' => $product->id,
             'name' => $product->name,
@@ -174,9 +181,12 @@ class PosController extends Controller
             'price' => (float) $product->price,
             'wholesale_price' => $product->wholesalePrice(),
             'tax_rate' => (float) $product->tax_rate,
-            'stock' => $product->stock,
+            'sale_mode' => $product->saleMode(),
+            'kit_deduct_components' => (bool) $product->kit_deduct_components,
+            'available_stock' => $availableStock,
+            'stock' => $availableStock,
             'min_stock' => $product->min_stock,
-            'track_inventory' => $product->track_inventory,
+            'track_inventory' => $availableStock !== null,
             'brand' => $product->brand,
             'image_path' => $product->image_path,
             'in_stock' => $product->isInStock(),

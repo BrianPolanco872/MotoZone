@@ -38,7 +38,8 @@ class PosProductSearchTest extends TestCase
             $this->actingAs($employee)
                 ->getJson(route('pos.products.search', ['q' => $code]))
                 ->assertOk()
-                ->assertJsonPath('products.0.id', $product->id);
+                ->assertJsonPath('products.0.id', $product->id)
+                ->assertJsonPath('products.0.sale_mode', Product::MODE_UNIT);
         }
 
         $this->actingAs($employee)
@@ -122,5 +123,91 @@ class PosProductSearchTest extends TestCase
                 ->assertOk()
                 ->assertJsonPath('products.0.id', $product->id);
         }
+    }
+
+    public function test_pos_search_exposes_bulk_precision_and_mode_without_costs_or_recipe(): void
+    {
+        $product = Product::factory()->bulk()->create([
+            'stock' => 2.750,
+            'min_stock' => 0.500,
+            'price' => 14.10,
+            'cost' => 7.50,
+            'track_inventory' => true,
+        ]);
+        $employee = User::factory()->create()->assignRole('empleado');
+        $employee->givePermissionTo('pos.access');
+
+        $this->actingAs($employee)
+            ->getJson(route('pos.products.search', ['q' => $product->barcode]))
+            ->assertOk()
+            ->assertJsonPath('products.0.sale_mode', Product::MODE_BULK)
+            ->assertJsonPath('products.0.kit_deduct_components', false)
+            ->assertJsonPath('products.0.stock', 2.75)
+            ->assertJsonPath('products.0.available_stock', 2.75)
+            ->assertJsonPath('products.0.min_stock', 0.5)
+            ->assertJsonPath('products.0.track_inventory', true)
+            ->assertJsonMissingPath('products.0.cost')
+            ->assertJsonMissingPath('products.0.kit_items');
+    }
+
+    #[TestWith([true, true, 3])]
+    #[TestWith([true, false, null])]
+    #[TestWith([false, true, null])]
+    public function test_search_and_frequent_kit_payload_uses_component_availability_not_parent_stock(bool $deduct, bool $controlled, ?int $available): void
+    {
+        $kit = Product::factory()->kit()->create([
+            'kit_deduct_components' => $deduct,
+            'featured' => true,
+        ]);
+        $component = $kit->kitItems()->sole();
+        $component->update(['stock' => 6, 'track_inventory' => $controlled, 'featured' => false]);
+        $kit->kitItems()->updateExistingPivot($component->id, ['quantity' => 2]);
+        $employee = User::factory()->create()->assignRole('empleado');
+        $employee->givePermissionTo('pos.access');
+        $this->actingAs($employee);
+
+        foreach ([route('pos.products.search', ['q' => $kit->barcode]), route('pos.products.frequent')] as $url) {
+            $this->getJson($url)
+                ->assertOk()
+                ->assertJsonPath('products.0.id', $kit->id)
+                ->assertJsonPath('products.0.sale_mode', Product::MODE_KIT)
+                ->assertJsonPath('products.0.kit_deduct_components', $deduct)
+                ->assertJsonPath('products.0.stock', $available)
+                ->assertJsonPath('products.0.available_stock', $available)
+                ->assertJsonPath('products.0.track_inventory', $available !== null)
+                ->assertJsonPath('products.0.in_stock', true)
+                ->assertJsonMissingPath('products.0.cost');
+        }
+    }
+
+    public function test_pending_payload_keeps_saved_modes_fractional_quantity_and_kit_flag_without_costs_or_recipe(): void
+    {
+        $bulk = Product::factory()->bulk()->create(['stock' => 2.750, 'price' => 14.10, 'cost' => 7.50]);
+        $kit = Product::factory()->kit()->create(['price' => 30, 'kit_deduct_components' => true]);
+        $kit->kitItems()->sole()->update(['stock' => 6]);
+        $employee = User::factory()->create()->assignRole('empleado');
+        $employee->givePermissionTo(['pos.access', 'pos.sell']);
+        $this->actingAs($employee);
+        $saleId = $this->postJson(route('pos.sales.store'), [
+            'idempotency_key' => 'pending-modes-payload',
+            'status' => 'pending',
+            'items' => [
+                ['product_id' => $bulk->id, 'quantity' => 0.125],
+                ['product_id' => $kit->id, 'quantity' => 1],
+            ],
+        ])->assertOk()->json('sale.id');
+        $bulk->update(['sale_mode' => Product::MODE_UNIT]);
+        $kit->update(['kit_deduct_components' => false]);
+
+        $this->getJson(route('pos.sales.show', $saleId))
+            ->assertOk()
+            ->assertJsonPath('sale.items.0.sale_mode', Product::MODE_BULK)
+            ->assertJsonPath('sale.items.0.quantity', 0.125)
+            ->assertJsonPath('sale.items.0.track_inventory', false)
+            ->assertJsonPath('sale.items.1.sale_mode', Product::MODE_KIT)
+            ->assertJsonPath('sale.items.1.kit_deduct_components', true)
+            ->assertJsonMissingPath('sale.items.0.cost_price')
+            ->assertJsonMissingPath('sale.items.0.line_cost')
+            ->assertJsonMissingPath('sale.items.1.inventory_snapshot');
     }
 }

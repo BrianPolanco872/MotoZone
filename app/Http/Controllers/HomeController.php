@@ -70,7 +70,7 @@ class HomeController extends Controller
 
         if ($section === 'categories') {
             $cards->load(['linkedProducts' => function (BelongsToMany $query): void {
-                $query->active();
+                $query->active()->with('kitItems');
             }]);
         }
 

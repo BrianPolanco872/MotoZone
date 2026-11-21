@@ -220,7 +220,7 @@
                             <p class="text-[11px] text-mz-text-muted mt-0.5">Artículos agregados al ticket actual</p>
                         </div>
                     </div>
-                    <span id="pos-items-count" class="rounded-full bg-mz-accent-primary/10 border border-mz-accent-primary/25 px-3 py-1 text-xs font-bold text-mz-accent-primary tabular-nums">0 artículos</span>
+                    <span id="pos-items-count" class="rounded-full bg-mz-accent-primary/10 border border-mz-accent-primary/25 px-3 py-1 text-xs font-bold text-mz-accent-primary tabular-nums">0 renglones</span>
                 </div>
 
                 <div class="relative overflow-x-auto pos-scrollbar">
@@ -602,6 +602,87 @@
         </dialog>
     @endif
 
+    <!-- MODAL DE CAPTURA PREVIA: PRODUCTO A GRANEL -->
+    <dialog id="bulk-dialog" aria-labelledby="bulk-title" class="w-full max-w-md rounded-2xl border border-mz-border-light bg-mz-bg-surface p-0 shadow-2xl shadow-black/95 overflow-hidden backdrop:bg-black/75" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); box-sizing: border-box;">
+        <form id="bulk-form" onsubmit="return false;">
+            <!-- Encabezado del modal -->
+            <div class="flex items-center justify-between gap-3 border-b border-mz-border-light bg-mz-bg-surface-2/40 px-6 py-4.5">
+                <div class="flex items-center gap-3">
+                    <span class="flex size-9 items-center justify-center rounded-xl bg-mz-accent-primary/15 text-mz-accent-primary border border-mz-accent-primary/30">
+                        <x-icon name="tag" class="size-4.5" />
+                    </span>
+                    <div>
+                        <h2 id="bulk-title" class="text-base font-bold text-white tracking-tight">¿Cantidad del Producto?</h2>
+                        <p class="text-[11px] text-mz-text-muted">Modalidad: A granel</p>
+                    </div>
+                </div>
+                <button type="button" id="bulk-close-btn" class="rounded-xl p-1.5 text-mz-text-muted transition-colors hover:bg-mz-bg-surface-2 hover:text-white" aria-label="Cerrar (Esc)">
+                    <x-icon name="x" class="size-5" />
+                </button>
+            </div>
+
+            <!-- Contenido del Modal -->
+            <div class="space-y-4 p-6">
+                <!-- Tarjeta del Producto y Precio Unitario -->
+                <div class="rounded-xl border border-mz-border-light/70 bg-mz-bg-primary/70 p-3.5 space-y-1.5">
+                    <p id="bulk-name" class="font-bold text-sm text-white leading-snug break-words"></p>
+                    <div class="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-mz-border-light/40">
+                        <span class="text-xs font-semibold text-mz-accent-primary font-mono">
+                            Precio Unitario = <strong id="bulk-price" class="text-white font-bold font-mono">$0.00</strong>
+                        </span>
+                        <span id="bulk-stock-info" class="text-[11px] text-mz-text-muted">
+                            Existencia: <strong id="bulk-available-stock" class="text-slate-300 font-mono">0</strong>
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Campo 1 — Cantidad del Producto -->
+                <div>
+                    <label for="bulk-quantity" class="block text-xs font-bold uppercase tracking-wider text-mz-text-muted mb-1.5 flex items-center justify-between">
+                        <span>Cantidad del Producto</span>
+                        <span class="text-[10px] lowercase text-mz-text-muted font-normal">decimales permitidos</span>
+                    </label>
+                    <div class="relative">
+                        <input id="bulk-quantity" type="number" inputmode="decimal" step="0.001" min="0.001" max="9999" value="1.00"
+                               class="block w-full rounded-xl border border-mz-border-light bg-mz-bg-primary px-3.5 py-2.5 text-right text-xl font-bold tabular-nums font-mono text-white placeholder-mz-text-muted focus:border-mz-accent-primary focus:bg-mz-bg-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/25 transition-all shadow-inner"
+                               placeholder="1.00">
+                        <span class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold uppercase tracking-wider text-mz-text-muted">
+                            Cant.
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Campo 2 — Importe Actual -->
+                <div>
+                    <label for="bulk-amount" class="block text-xs font-bold uppercase tracking-wider text-mz-text-muted mb-1.5 flex items-center justify-between">
+                        <span>Importe Actual</span>
+                        <span class="text-[10px] text-mz-text-muted font-normal">o ingresa el monto en $</span>
+                    </label>
+                    <div class="relative">
+                        <span class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-lg font-bold text-mz-accent-primary">$</span>
+                        <input id="bulk-amount" type="number" inputmode="decimal" step="0.01" min="0.01" max="999999"
+                               class="block w-full rounded-xl border border-mz-border-light bg-mz-bg-primary pl-8 pr-3.5 py-2.5 text-right text-xl font-bold tabular-nums font-mono text-white placeholder-mz-text-muted focus:border-mz-accent-primary focus:bg-mz-bg-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/25 transition-all shadow-inner"
+                               placeholder="0.00">
+                    </div>
+                </div>
+
+                <!-- Alerta de validación / stock -->
+                <p id="bulk-error" role="alert" class="hidden rounded-xl border border-mz-error/30 bg-mz-error/15 p-3 text-xs font-bold text-mz-error text-center"></p>
+            </div>
+
+            <!-- Acciones / Botones -->
+            <div class="flex flex-col-reverse gap-2.5 border-t border-mz-border-light/70 bg-mz-bg-surface-2/30 px-6 py-4 sm:flex-row sm:justify-end">
+                <button type="button" id="bulk-cancel" class="inline-flex items-center justify-center rounded-xl border border-mz-border-light px-4 py-2.5 text-xs font-bold text-mz-text-secondary hover:bg-mz-bg-surface-2 hover:text-white transition-all active:scale-95">
+                    Cancelar (Esc)
+                </button>
+                <button type="button" id="bulk-accept" class="inline-flex items-center justify-center gap-2 rounded-xl bg-mz-accent-primary hover:bg-mz-accent-hover text-white px-5 py-2.5 text-xs font-bold shadow-md shadow-mz-accent-primary/20 transition-all active:scale-95">
+                    <x-icon name="check" class="size-4" />
+                    <span>Aceptar (Enter)</span>
+                </button>
+            </div>
+        </form>
+    </dialog>
+
     <!-- MODAL: ARTÍCULO LIBRE / PRODUCTO COMÚN -->
     <dialog id="custom-product-dialog" class="w-full max-w-md rounded-2xl border border-mz-border-light bg-mz-bg-surface shadow-2xl shadow-black/95 p-0 overflow-hidden" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); box-sizing: border-box;">
         <form id="custom-product-form" method="POST">
@@ -643,7 +724,7 @@
 
                     <div>
                         <label for="custom-product-quantity" class="block text-xs font-bold uppercase tracking-wider text-mz-text-muted">Cantidad</label>
-                        <input id="custom-product-quantity" name="quantity" type="number" step="1" min="1" value="1" required
+                        <input id="custom-product-quantity" name="quantity" type="number" step="1" min="1" max="9999" value="1" required
                                class="block w-full rounded-xl border border-mz-border-light bg-mz-bg-primary/90 px-3 py-2.5 text-center text-base font-bold tabular-nums text-white focus:border-mz-accent-primary focus:bg-mz-bg-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/25 transition-all mt-1.5">
                     </div>
                 </div>

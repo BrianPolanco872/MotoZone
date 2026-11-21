@@ -13,7 +13,7 @@
                 </div>
                 <div>
                     <h2 class="text-sm font-bold text-white">Gestión de devoluciones</h2>
-                    <p class="text-xs text-mz-text-muted mt-0.5">Al autorizarse, descuentan efectivo de caja y reintegran las piezas a las existencias.</p>
+                    <p class="text-xs text-mz-text-muted mt-0.5">Al autorizarse, descuentan efectivo de caja y reponen el inventario que se descontó en la venta.</p>
                 </div>
             </div>
 
@@ -82,7 +82,7 @@
                                 <span class="rounded-md bg-mz-bg-surface-2 px-2 py-1 border border-mz-border-light">{{ $return->sale?->folio }}</span>
                             </td>
                             <td class="px-5 py-3.5 text-sm text-mz-text-secondary">
-                                <span class="font-semibold">{{ $return->items->sum('quantity') }} pieza(s)</span>
+                                <span class="font-semibold">{{ \App\Support\Quantity::format($return->items->sum('quantity')) }} · cantidad devuelta (medidas mixtas)</span>
                                 <span class="block max-w-xs truncate text-xs text-mz-text-muted mt-0.5" title="{{ $return->reason }}">{{ $return->reason }}</span>
                             </td>
                             <td class="whitespace-nowrap px-5 py-3.5 text-sm text-mz-text-secondary font-medium">{{ $return->requester?->name }}</td>

@@ -4,11 +4,14 @@ namespace App\Services;
 
 use App\Models\CashMovement;
 use App\Models\DailyCut;
+use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\SaleReturn;
 use App\Models\StockMovement;
 use App\Models\User;
+use App\Support\Quantity;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -17,7 +20,7 @@ class ReturnService
     public function __construct(private readonly DailyCutService $cuts) {}
 
     /**
-     * @param  array{sale_id: int, reason: string, items: array<int, array{sale_item_id: int, quantity: int}>}  $data
+     * @param  array{sale_id: int, reason: string, items: array<int, array{sale_item_id: int, quantity: int|float|string}>}  $data
      */
     public function request(User $user, array $data): SaleReturn
     {
@@ -45,13 +48,15 @@ class ReturnService
                     throw ValidationException::withMessages(['items' => 'Uno de los productos no pertenece a esta venta.']);
                 }
 
+                $this->validateReturnQuantity($saleItem, $item['quantity']);
+
                 if ($item['quantity'] > $saleItem->availableReturnQuantity()) {
                     throw ValidationException::withMessages([
                         'items' => "No puedes devolver más de {$saleItem->availableReturnQuantity()} de «{$saleItem->product_name}».",
                     ]);
                 }
 
-                $lineTotal = round((float) $saleItem->unit_price * $item['quantity'], 2);
+                $lineTotal = $this->refundAmount($saleItem, $item['quantity']);
                 $total += $lineTotal;
 
                 $prepared[] = [
@@ -100,9 +105,29 @@ class ReturnService
             }
 
             $refundTotal = 0.0;
+            $saleItems = SaleItem::query()->whereIn('id', $return->items->pluck('sale_item_id'))
+                ->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+            $productIds = [];
+            foreach ($saleItems as $saleItem) {
+                if ($saleItem->inventory_snapshot === null) {
+                    $productIds[] = $saleItem->product_id;
+                } else {
+                    foreach ($saleItem->inventory_snapshot['effects'] ?? [] as $effect) {
+                        $productIds[] = $effect['product_id'];
+                    }
+                }
+            }
+            $products = Product::query()->whereIn('id', array_filter($productIds))
+                ->orderBy('id')->lockForUpdate()->get()->keyBy('id');
 
             foreach ($return->items as $returnItem) {
-                $saleItem = SaleItem::query()->whereKey($returnItem->sale_item_id)->lockForUpdate()->firstOrFail();
+                $saleItem = $saleItems->get($returnItem->sale_item_id);
+
+                if (! $saleItem) {
+                    throw ValidationException::withMessages(['items' => 'Uno de los renglones vendidos ya no existe.']);
+                }
+
+                $this->validateReturnQuantity($saleItem, $returnItem->quantity);
 
                 if ($returnItem->quantity > $saleItem->availableReturnQuantity()) {
                     throw ValidationException::withMessages([
@@ -110,27 +135,15 @@ class ReturnService
                     ]);
                 }
 
-                $saleItem->increment('returned_quantity', $returnItem->quantity);
+                $lineTotal = $this->refundAmount($saleItem, $returnItem->quantity);
+                $returnItem->update(['line_total' => $lineTotal]);
+                $saleItem->update(['returned_quantity' => Quantity::number(
+                    Quantity::milli($saleItem->returned_quantity) + Quantity::milli($returnItem->quantity),
+                )]);
                 $refundTotal += (float) $returnItem->line_total;
 
-                $product = $saleItem->product;
-
-                if ($returnItem->restock && $product && $product->track_inventory) {
-                    $stockBefore = $product->stock;
-                    $stockAfter = $stockBefore + $returnItem->quantity;
-
-                    $product->update(['stock' => $stockAfter]);
-
-                    StockMovement::create([
-                        'product_id' => $product->id,
-                        'user_id' => $user->id,
-                        'sale_id' => $return->sale_id,
-                        'type' => StockMovement::TYPE_RETURN,
-                        'quantity' => $returnItem->quantity,
-                        'stock_before' => $stockBefore,
-                        'stock_after' => $stockAfter,
-                        'note' => "Devolución venta {$return->sale->folio}",
-                    ]);
+                if ($returnItem->restock) {
+                    $this->restoreStock($saleItem, $returnItem->quantity, $products, $return, $user);
                 }
             }
 
@@ -175,20 +188,29 @@ class ReturnService
     }
 
     /**
-     * @param  array<int, array{sale_item_id: int, quantity: int}>  $items
-     * @return array<int, array{sale_item_id: int, quantity: int}>
+     * @param  array<int, array{sale_item_id: int, quantity: int|float|string}>  $items
+     * @return array<int, array{sale_item_id: int, quantity: int|float}>
      */
     private function normalizeItems(array $items): array
     {
         $normalized = [];
+        $seen = [];
 
         foreach ($items as $item) {
             $saleItemId = (int) ($item['sale_item_id'] ?? 0);
-            $quantity = (int) ($item['quantity'] ?? 0);
+            if (! Quantity::valid($item['quantity'] ?? null) || Quantity::milli($item['quantity']) > 9999000) {
+                throw ValidationException::withMessages(['items' => 'La cantidad a devolver no es válida o supera tres decimales.']);
+            }
+            $quantity = Quantity::number(Quantity::milli($item['quantity']));
 
             if ($saleItemId <= 0 || $quantity <= 0) {
                 continue;
             }
+
+            if (isset($seen[$saleItemId])) {
+                throw ValidationException::withMessages(['items' => 'Selecciona cada renglón una sola vez.']);
+            }
+            $seen[$saleItemId] = true;
 
             $normalized[] = [
                 'sale_item_id' => $saleItemId,
@@ -197,5 +219,77 @@ class ReturnService
         }
 
         return $normalized;
+    }
+
+    private function validateReturnQuantity(SaleItem $saleItem, int|float $quantity): void
+    {
+        if (! Quantity::valid($quantity, $saleItem->saleMode() === Product::MODE_BULK) || $quantity <= 0) {
+            throw ValidationException::withMessages(['items' => 'Solo los productos a granel permiten devoluciones fraccionarias.']);
+        }
+    }
+
+    private function refundAmount(SaleItem $saleItem, int|float $quantity): float
+    {
+        $lineCents = (int) round((float) $saleItem->line_total * 100);
+        $previousMilli = Quantity::milli($saleItem->returned_quantity);
+        $returnedMilli = $previousMilli + Quantity::milli($quantity);
+        $soldMilli = Quantity::milli($saleItem->quantity);
+
+        if ($saleItem->inventory_snapshot === null) {
+            $refunded = min($lineCents, (int) round((float) $saleItem->unit_price * $saleItem->returned_quantity * 100));
+
+            return min(max(0, $lineCents - $refunded), (int) round((float) $saleItem->unit_price * $quantity * 100)) / 100;
+        }
+
+        $refunded = (int) round($lineCents * ($previousMilli / $soldMilli), 0, PHP_ROUND_HALF_UP);
+        $cumulativeCents = $returnedMilli === $soldMilli
+            ? $lineCents
+            : (int) round($lineCents * ($returnedMilli / $soldMilli), 0, PHP_ROUND_HALF_UP);
+
+        return max(0, min($lineCents - $refunded, $cumulativeCents - $refunded)) / 100;
+    }
+
+    /**
+     * @param  Collection<int, Product>  $products
+     */
+    private function restoreStock(SaleItem $saleItem, int|float $quantity, Collection $products, SaleReturn $return, User $user): void
+    {
+        $snapshot = $saleItem->inventory_snapshot;
+        $effects = $snapshot['effects'] ?? [];
+        if ($snapshot === null && ! $saleItem->is_custom) {
+            $product = $products->get($saleItem->product_id);
+            if ($product && $product->track_inventory && ! $product->isKit()) {
+                $effects = [['product_id' => $product->id, 'quantity' => $saleItem->quantity]];
+            }
+        }
+
+        foreach ($effects as $effect) {
+            $product = $products->get($effect['product_id']);
+            if (! $product) {
+                continue;
+            }
+
+            $restoreMilli = $saleItem->saleMode() === Product::MODE_KIT
+                ? intdiv(Quantity::milli($effect['quantity']), intdiv(Quantity::milli($saleItem->quantity), 1000)) * intdiv(Quantity::milli($quantity), 1000)
+                : Quantity::milli($quantity);
+            $stockBefore = $product->stock;
+            $stockAfterMilli = Quantity::milli($stockBefore) + $restoreMilli;
+            if ($stockAfterMilli > Quantity::milli(Quantity::MAX)) {
+                throw ValidationException::withMessages(['items' => "La devolución supera el límite de existencias de «{$product->name}»."]);
+            }
+            $stockAfter = Quantity::number($stockAfterMilli);
+            $product->update(['stock' => $stockAfter]);
+
+            StockMovement::create([
+                'product_id' => $product->id,
+                'user_id' => $user->id,
+                'sale_id' => $return->sale_id,
+                'type' => StockMovement::TYPE_RETURN,
+                'quantity' => Quantity::number($restoreMilli),
+                'stock_before' => $stockBefore,
+                'stock_after' => $stockAfter,
+                'note' => "Devolución venta {$return->sale->folio}",
+            ]);
+        }
     }
 }

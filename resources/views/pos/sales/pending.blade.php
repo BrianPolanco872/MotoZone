@@ -61,7 +61,7 @@
                                 <td class="whitespace-nowrap px-5 py-3.5 text-sm font-medium text-mz-text-secondary">{{ $sale->user?->name }}</td>
                             @endif
                             <td class="px-5 py-3.5 text-sm text-mz-text-secondary">
-                                <span class="font-semibold">{{ $sale->items->sum('quantity') }} pza(s)</span>
+                                <span class="font-semibold">{{ \App\Support\Quantity::format($sale->items->sum('quantity')) }} · cantidad (medidas mixtas)</span>
                                 <span class="block text-xs text-mz-text-muted">({{ $sale->items->count() }} producto{{ $sale->items->count() === 1 ? '' : 's' }})</span>
                             </td>
                             <td class="whitespace-nowrap px-5 py-3.5 text-right font-display text-base font-extrabold tabular-nums text-mz-accent-primary">${{ number_format((float) $sale->total, 2) }}</td>

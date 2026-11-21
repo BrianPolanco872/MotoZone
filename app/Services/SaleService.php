@@ -9,6 +9,7 @@ use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\StockMovement;
 use App\Models\User;
+use App\Support\Quantity;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -24,7 +25,7 @@ class SaleService
     /**
      * Create a paid or pending sale from the POS cart.
      *
-     * @param  array{items: array<int, array{product_id: int, quantity: int, unit_price?: float|null, wholesale?: bool}>, status?: string, amount_paid?: float|null, idempotency_key: string, notes?: string|null}  $data
+     * @param  array{items: array<int, array{product_id?: int, quantity: int|float|string, unit_price?: float|null, wholesale?: bool, is_custom?: bool, custom_name?: string, custom_price?: float}>, status?: string, amount_paid?: float|null, idempotency_key: string, notes?: string|null, payment_method?: string}  $data
      */
     public function create(User $user, array $data): Sale
     {
@@ -56,7 +57,7 @@ class SaleService
             $preparedItems = $this->prepareItems($items, $products, $user);
 
             if ($status === Sale::STATUS_PAID) {
-                $this->assertStock($preparedItems, $products);
+                $preparedItems = $this->prepareStock($preparedItems, $products);
             }
 
             $totals = $this->totals($preparedItems);
@@ -95,7 +96,7 @@ class SaleService
             }
 
             return $sale->load('items');
-        });
+        }, 3);
     }
 
     /**
@@ -116,13 +117,16 @@ class SaleService
 
             $items = $sale->items->map(fn (SaleItem $item): array => [
                 'product_id' => $item->product_id,
+                'sale_item_id' => $item->id,
                 'is_custom' => $item->is_custom,
                 'product_name' => $item->product_name,
-                'quantity' => (int) $item->quantity,
+                'quantity' => $item->quantity,
+                'sale_mode' => $item->sale_mode,
+                'inventory_snapshot' => $item->inventory_snapshot,
             ])->all();
 
             $products = $this->lockProducts($items);
-            $this->assertStock($items, $products);
+            $items = $this->prepareStock($items, $products);
 
             $total = (float) $sale->total;
             $paid = round($amountPaid ?? $total, 2);
@@ -139,10 +143,16 @@ class SaleService
                 'payment_method' => $paymentMethod ?? $sale->payment_method,
             ]);
 
+            foreach ($items as $item) {
+                $sale->items->firstWhere('id', $item['sale_item_id'])->update([
+                    'inventory_snapshot' => $item['inventory_snapshot'],
+                ]);
+            }
+
             $this->applyStockAndCash($sale, $items, $products, $user);
 
             return $sale->fresh(['items']);
-        });
+        }, 3);
     }
 
     public function cancelPending(Sale $sale, User $user): Sale
@@ -164,28 +174,33 @@ class SaleService
     }
 
     /**
-     * @param  array<int, array{product_id: int, quantity: int, unit_price?: float|null, wholesale?: bool}>  $items
-     * @return array<int, array{product_id: int, quantity: int, unit_price?: float|null, wholesale?: bool}>
+     * @param  array<int, array<string, mixed>>  $items
+     * @return array<int, array<string, mixed>>
      */
     private function normalizeItems(array $items): array
     {
         $normalized = [];
 
-        foreach ($items as $item) {
-            $productId = isset($item['product_id']) ? (int) $item['product_id'] : null;
-            $quantity = (int) ($item['quantity'] ?? 0);
+        foreach ($items as $index => $item) {
+            if (! is_array($item) || ! Quantity::valid($item['quantity'] ?? null)
+                || Quantity::milli($item['quantity']) < 1 || Quantity::milli($item['quantity']) > 9999000) {
+                throw ValidationException::withMessages(["items.{$index}.quantity" => 'La cantidad debe ser positiva, no superar 9999 y tener como máximo tres decimales.']);
+            }
+
+            $productId = filter_var($item['product_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+            $quantity = Quantity::number(Quantity::milli($item['quantity']));
             $isCustom = (bool) ($item['is_custom'] ?? false);
             if ($isCustom) {
                 $productId = null;
             }
 
-            if ($quantity <= 0) {
-                continue;
+            if ($isCustom && ! Quantity::valid($quantity, false)) {
+                throw ValidationException::withMessages(["items.{$index}.quantity" => 'Los artículos libres se venden en cantidades enteras.']);
             }
 
             // Los artículos libres no requieren product_id; los del catálogo sí.
-            if (! $isCustom && (! $productId || $productId <= 0)) {
-                continue;
+            if (! $isCustom && (! $productId || is_bool($item['product_id'] ?? null))) {
+                throw ValidationException::withMessages(["items.{$index}.product_id" => 'Selecciona un producto válido.']);
             }
 
             $normalized[] = [
@@ -193,7 +208,7 @@ class SaleService
                 'is_custom' => $isCustom,
                 'custom_name' => $isCustom ? trim((string) ($item['custom_name'] ?? '')) : null,
                 'custom_price' => $isCustom ? (float) ($item['custom_price'] ?? 0) : null,
-                'quantity' => min($quantity, 9999),
+                'quantity' => $quantity,
                 'unit_price' => isset($item['unit_price']) && is_numeric($item['unit_price'])
                     ? (float) $item['unit_price']
                     : null,
@@ -205,7 +220,7 @@ class SaleService
     }
 
     /**
-     * @param  array<int, array{product_id: int, quantity: int}>  $items
+     * @param  array<int, array<string, mixed>>  $items
      * @return Collection<int, Product>
      */
     private function lockProducts(array $items): Collection
@@ -219,8 +234,19 @@ class SaleService
             return collect();
         }
 
+        $componentIds = [];
+        foreach ($items as $item) {
+            foreach ($item['inventory_snapshot']['components'] ?? [] as $component) {
+                $componentIds[] = $component['product_id'];
+            }
+        }
+
+        $liveIds = array_column(array_filter($items, fn (array $item): bool => ! isset($item['inventory_snapshot'])), 'product_id');
+        $componentIds = array_merge($componentIds, DB::table('product_kit_items')
+            ->whereIn('kit_product_id', $liveIds)->pluck('component_product_id')->all());
+
         return Product::query()
-            ->whereIn('id', $ids)
+            ->whereIn('id', array_unique([...$ids, ...$componentIds]))
             ->orderBy('id')
             ->lockForUpdate()
             ->get()
@@ -228,15 +254,19 @@ class SaleService
     }
 
     /**
-     * @param  array<int, array{product_id: int, quantity: int, unit_price?: float|null, wholesale?: bool}>  $items
+     * @param  array<int, array<string, mixed>>  $items
      * @param  Collection<int, Product>  $products
      * @return array<int, array<string, mixed>>
      */
     private function prepareItems(array $items, Collection $products, User $user): array
     {
         $prepared = [];
+        $recipes = DB::table('product_kit_items')
+            ->whereIn('kit_product_id', array_column($items, 'product_id'))
+            ->orderBy('kit_product_id')->orderBy('component_product_id')
+            ->lockForUpdate()->get()->groupBy('kit_product_id');
 
-        foreach ($items as $item) {
+        foreach ($items as $index => $item) {
             if (! empty($item['is_custom'])) {
                 $unitPrice = round((float) ($item['custom_price'] ?? $item['unit_price'] ?? 0), 2);
                 $amounts = $this->pricing->lineAmounts($unitPrice, $item['quantity'], 0.0);
@@ -245,6 +275,8 @@ class SaleService
                     'product_id' => null,
                     'category_id' => null,
                     'is_custom' => true,
+                    'sale_mode' => Product::MODE_UNIT,
+                    'inventory_snapshot' => null,
                     'custom_name' => $item['custom_name'],
                     'custom_price' => $unitPrice,
                     'product_name' => $item['custom_name'],
@@ -275,6 +307,32 @@ class SaleService
                 throw ValidationException::withMessages(['items' => "El producto «{$product->name}» no está disponible."]);
             }
 
+            if (! Quantity::valid($item['quantity'], $product->isBulk())) {
+                throw ValidationException::withMessages(["items.{$index}.quantity" => 'Este producto se vende en cantidades enteras.']);
+            }
+
+            $components = [];
+            if ($product->isKit()) {
+                foreach ($recipes->get($product->id, collect()) as $recipe) {
+                    $component = $products->get($recipe->component_product_id);
+                    if (! $component || ! $component->is_active || $component->isKit()
+                        || $component->id === $product->id
+                        || ! Quantity::valid($recipe->quantity, $component->isBulk())
+                        || Quantity::milli($recipe->quantity) <= 0) {
+                        throw ValidationException::withMessages(['items' => "Revisa el contenido de «{$product->name}»; un componente cambió o no está disponible. Vuelve a intentar la venta."]);
+                    }
+                    $components[] = [
+                        'product_id' => $component->id,
+                        'product_name' => $component->name,
+                        'quantity' => Quantity::number(Quantity::milli($recipe->quantity)),
+                        'sale_mode' => $component->saleMode(),
+                    ];
+                }
+                if ($components === []) {
+                    throw ValidationException::withMessages(['items' => "El paquete «{$product->name}» no tiene componentes."]);
+                }
+            }
+
             $pricing = $this->pricing->resolveUnitPrice(
                 $product,
                 $user,
@@ -290,6 +348,14 @@ class SaleService
 
             $prepared[] = [
                 'product_id' => $product->id,
+                'sale_mode' => $product->saleMode(),
+                'inventory_snapshot' => [
+                    'version' => 1,
+                    'mode' => $product->saleMode(),
+                    'kit_deduct_components' => $product->isKit() && $product->kit_deduct_components,
+                    'components' => $components,
+                    'effects' => null,
+                ],
                 'category_id' => $product->category_id,
                 'product_name' => $product->name,
                 'sku' => $product->sku,
@@ -327,35 +393,27 @@ class SaleService
      * @param  array<int, array<string, mixed>>  $preparedItems
      * @param  Collection<int, Product>  $products
      */
-    private function applyStockAndCash(Sale $sale, array $preparedItems, $products, User $user): void
+    private function applyStockAndCash(Sale $sale, array $preparedItems, Collection $products, User $user): void
     {
         foreach ($preparedItems as $item) {
-            // Los artículos libres no descuentan stock ni generan movimientos de inventario.
-            if (! empty($item['is_custom'])) {
-                continue;
+            foreach ($item['inventory_snapshot']['effects'] ?? [] as $effect) {
+                $product = $products->get($effect['product_id']);
+                $stockBefore = $product->stock;
+                $stockAfter = Quantity::number(Quantity::milli($stockBefore) - Quantity::milli($effect['quantity']));
+
+                $product->update(['stock' => $stockAfter]);
+
+                StockMovement::create([
+                    'product_id' => $product->id,
+                    'user_id' => $user->id,
+                    'sale_id' => $sale->id,
+                    'type' => StockMovement::TYPE_SALE,
+                    'quantity' => Quantity::number(-Quantity::milli($effect['quantity'])),
+                    'stock_before' => $stockBefore,
+                    'stock_after' => $stockAfter,
+                    'note' => "Venta {$sale->folio}",
+                ]);
             }
-
-            $product = $products->get($item['product_id']);
-
-            if (! $product || ! $product->track_inventory) {
-                continue;
-            }
-
-            $stockBefore = $product->stock;
-            $stockAfter = $stockBefore - (int) $item['quantity'];
-
-            $product->update(['stock' => $stockAfter]);
-
-            StockMovement::create([
-                'product_id' => $product->id,
-                'user_id' => $user->id,
-                'sale_id' => $sale->id,
-                'type' => StockMovement::TYPE_SALE,
-                'quantity' => -1 * (int) $item['quantity'],
-                'stock_before' => $stockBefore,
-                'stock_after' => $stockAfter,
-                'note' => "Venta {$sale->folio}",
-            ]);
         }
 
         CashMovement::create([
@@ -370,14 +428,15 @@ class SaleService
     }
 
     /**
-     * @param  array<int, array{product_id: ?int, quantity: int, product_name: string, is_custom?: bool}>  $items
+     * @param  array<int, array<string, mixed>>  $items
      * @param  Collection<int, Product>  $products
+     * @return array<int, array<string, mixed>>
      */
-    private function assertStock(array $items, Collection $products): void
+    private function prepareStock(array $items, Collection $products): array
     {
         $quantities = [];
 
-        foreach ($items as $item) {
+        foreach ($items as &$item) {
             if (! empty($item['is_custom'])) {
                 continue;
             }
@@ -388,14 +447,59 @@ class SaleService
                 throw ValidationException::withMessages(['items' => "El producto «{$item['product_name']}» ya no existe."]);
             }
 
-            $quantities[$product->id] = ($quantities[$product->id] ?? 0) + $item['quantity'];
-
-            if ($product->track_inventory && $product->stock < $quantities[$product->id]) {
-                throw ValidationException::withMessages([
-                    'items' => "No hay existencia suficiente de «{$product->name}». Disponible: {$product->stock}.",
-                ]);
+            if (! $product->is_active) {
+                throw ValidationException::withMessages(['items' => "El producto «{$item['product_name']}» no está disponible."]);
             }
+
+            $snapshot = $item['inventory_snapshot'] ?? [
+                'version' => 1, 'mode' => Product::MODE_UNIT,
+                'kit_deduct_components' => false, 'components' => [], 'effects' => null,
+            ];
+            if ($product->saleMode() !== $snapshot['mode'] || ! Quantity::valid($item['quantity'], $snapshot['mode'] === Product::MODE_BULK)) {
+                throw ValidationException::withMessages(['items' => "La modalidad de «{$product->name}» cambió. Revisa la venta pendiente."]);
+            }
+
+            $consumptions = [];
+            if ($snapshot['mode'] === Product::MODE_KIT) {
+                foreach ($snapshot['components'] as $component) {
+                    $componentProduct = $products->get($component['product_id']);
+                    if (! $componentProduct || ! $componentProduct->is_active || $componentProduct->isKit()
+                        || $componentProduct->saleMode() !== $component['sale_mode']) {
+                        throw ValidationException::withMessages(['items' => "Un componente de «{$product->name}» ya no existe o cambió de modalidad."]);
+                    }
+                    if ($snapshot['kit_deduct_components'] && $componentProduct->track_inventory) {
+                        $consumptions[] = [
+                            'product_id' => $componentProduct->id,
+                            'product_name' => $component['product_name'],
+                            'milli' => Quantity::milli($component['quantity']) * intdiv(Quantity::milli($item['quantity']), 1000),
+                        ];
+                    }
+                }
+            } elseif ($product->track_inventory) {
+                $consumptions[] = ['product_id' => $product->id, 'product_name' => $item['product_name'], 'milli' => Quantity::milli($item['quantity'])];
+            }
+
+            $snapshot['effects'] = [];
+            foreach ($consumptions as $consumption) {
+                $target = $products->get($consumption['product_id']);
+                $quantities[$target->id] = ($quantities[$target->id] ?? 0) + $consumption['milli'];
+                if (Quantity::milli($target->stock) < $quantities[$target->id]) {
+                    throw ValidationException::withMessages([
+                        'items' => "No hay existencia suficiente de «{$target->name}». Disponible: {$target->stock}.",
+                    ]);
+                }
+                $snapshot['effects'][] = [
+                    'product_id' => $target->id,
+                    'product_name' => $consumption['product_name'],
+                    'quantity' => Quantity::number($consumption['milli']),
+                ];
+            }
+            $item['inventory_snapshot'] = $snapshot;
         }
+
+        unset($item);
+
+        return $items;
     }
 
     /**

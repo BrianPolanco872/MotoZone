@@ -101,7 +101,7 @@
                             @endif
                             <td class="px-5 py-3.5 text-mz-text-secondary">
                                 <span class="inline-flex items-center gap-1.5 font-medium">
-                                    {{ $sale->items->sum('quantity') }} pza(s)
+                                    {{ \App\Support\Quantity::format($sale->items->sum('quantity')) }} · cantidad vendida (medidas mixtas)
                                 </span>
                             </td>
                             <td class="whitespace-nowrap px-5 py-3.5 text-right font-display text-base font-extrabold tabular-nums text-white">${{ number_format((float) $sale->total, 2) }}</td>

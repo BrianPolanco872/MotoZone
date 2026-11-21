@@ -90,13 +90,16 @@
                         </thead>
                         <tbody class="divide-y divide-mz-border-light">
                             @forelse ($lowStockProducts as $product)
+                                @php
+                                    $availableStock = $product->availableStock();
+                                @endphp
                                 <tr class="transition-colors hover:bg-mz-bg-surface-2">
                                     <td class="px-5 py-4">
                                         <a href="{{ route('admin.products.edit', $product) }}" class="font-medium text-mz-text-primary hover:text-mz-accent-primary">{{ $product->name }}</a>
                                         <p class="mt-1 font-mono text-xs text-mz-text-muted">{{ $product->sku }}</p>
                                     </td>
-                                    <td class="px-3 py-4 text-right font-semibold tabular-nums text-mz-text-primary">{{ $product->stock }}</td>
-                                    <td class="px-3 py-4 text-right tabular-nums text-mz-text-secondary">{{ $product->lowStockThreshold() }}</td>
+                                    <td class="px-3 py-4 text-right font-semibold tabular-nums text-mz-text-primary">{{ $availableStock === null ? 'Sin control' : \App\Support\Quantity::format($availableStock) }}</td>
+                                    <td class="px-3 py-4 text-right tabular-nums text-mz-text-secondary">{{ $product->isKit() ? '—' : \App\Support\Quantity::format($product->lowStockThreshold()) }}</td>
                                     <td class="whitespace-nowrap px-5 py-4"><x-stock-badge :product="$product" /></td>
                                 </tr>
                             @empty
@@ -118,7 +121,7 @@
                     <p class="text-xs font-medium uppercase tracking-widest text-mz-text-muted">Operación · Demanda</p>
                     <h2 id="bestsellers-title" class="mt-1 text-base font-semibold text-mz-text-primary">Más vendidos</h2>
                     <p class="mt-1 text-xs text-mz-text-secondary">Últimos 30 días · {{ $rankingStart->format('d/m') }} al {{ $generatedAt->format('d/m/Y') }}</p>
-                    <p class="mt-1 text-xs text-mz-text-muted">Refacciones activas · unidades brutas cobradas, sin descontar devoluciones.</p>
+                    <p class="mt-1 text-xs text-mz-text-muted">Productos activos · cantidad vendida (medidas mixtas), sin descontar devoluciones.</p>
                 </div>
                 <ol class="divide-y divide-mz-border-light">
                     @forelse ($topProducts as $product)
@@ -130,8 +133,8 @@
                                 <div class="mt-1.5"><x-stock-badge :product="$product" /></div>
                             </div>
                             <div class="shrink-0 text-right">
-                                <p class="font-display text-xl font-semibold tabular-nums text-mz-text-primary">{{ number_format((int) $product->units_sold) }}</p>
-                                <p class="text-xs text-mz-text-muted">unidades</p>
+                                <p class="font-display text-xl font-semibold tabular-nums text-mz-text-primary">{{ \App\Support\Quantity::format($product->units_sold) }}</p>
+                                <p class="text-xs text-mz-text-muted">cantidad vendida</p>
                             </div>
                         </li>
                     @empty

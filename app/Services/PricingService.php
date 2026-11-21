@@ -44,7 +44,7 @@ class PricingService
      *
      * @return array{line_total: float, line_subtotal: float, tax_amount: float}
      */
-    public function lineAmounts(float $unitPrice, int $quantity, float $taxRate): array
+    public function lineAmounts(float $unitPrice, int|float $quantity, float $taxRate): array
     {
         $lineTotal = round($unitPrice * $quantity, 2);
         $divisor = 1 + max(0, $taxRate);

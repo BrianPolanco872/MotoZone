@@ -7,6 +7,8 @@ use App\Models\Sale;
 use App\Models\User;
 use App\Services\TicketSettings;
 use Database\Seeders\RolePermissionSeeder;
+use DOMDocument;
+use DOMXPath;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -104,7 +106,9 @@ class TicketSettingsTest extends TestCase
 
         $response = $this->getJson(route('pos.sales.ticketData', $sale))->assertOk()
             ->assertJsonPath('settings.ticket.width_mm', 58)
-            ->assertJsonPath('settings.business.name', 'Taller Norte');
+            ->assertJsonPath('settings.business.name', 'Taller Norte')
+            ->assertJsonPath('sale.items.0.quantity', 1)
+            ->assertJsonPath('sale.items.0.returned_quantity', 0);
         $html = $response->json('ticket_html');
         $this->assertStringContainsString('Vuelve pronto.', $html);
         $this->assertStringContainsString('Método de pago: Tarjeta', $html);
@@ -128,6 +132,77 @@ class TicketSettingsTest extends TestCase
             ->assertSee('data:image/png;base64,', false)->assertSee('80mm');
         $this->put(route('pos.tickets.update'), $this->payload(['show_qr' => true]))->assertSessionHasNoErrors();
         $this->assertStringStartsWith('data:image/png;base64,', app(TicketSettings::class)->current()['ticket']['qr_image_url']);
+    }
+
+    public function test_bulk_ticket_payload_and_receipt_keep_fractional_sold_and_returned_quantities(): void
+    {
+        $admin = User::factory()->create()->assignRole('admin');
+        $sale = $this->sale($admin);
+        $sale->items()->firstOrFail()->update([
+            'sale_mode' => Product::MODE_BULK,
+            'quantity' => 0.625,
+            'returned_quantity' => 0.125,
+        ]);
+
+        $response = $this->getJson(route('pos.sales.ticketData', $sale));
+
+        $response->assertOk()
+            ->assertJsonPath('sale.items.0.quantity', 0.625)
+            ->assertJsonPath('sale.items.0.returned_quantity', 0.125)
+            ->assertJsonPath('sale.items.0.sale_mode', Product::MODE_BULK);
+        $this->assertStringContainsString('Cantidad devuelta a granel: 0.125', $response->json('ticket_html'));
+        $this->assertStringContainsString('>0.625</td>', $response->json('ticket_html'));
+        $this->assertStringNotContainsString('pieza(s)', $response->json('ticket_html'));
+        $this->get(route('pos.sales.ticket', $sale))->assertOk()
+            ->assertSee('Cantidad devuelta a granel: 0.125')->assertSee('por unidad');
+    }
+
+    public function test_return_form_displays_fractional_balance_and_uses_steps_for_each_sale_mode(): void
+    {
+        $admin = User::factory()->create()->assignRole('admin');
+        $sale = $this->sale($admin);
+        $sale->items()->firstOrFail()->update([
+            'sale_mode' => Product::MODE_BULK,
+            'quantity' => 0.625,
+            'returned_quantity' => 0.125,
+        ]);
+        $sale->items()->create([
+            'product_name' => 'Paquete entero',
+            'sale_mode' => Product::MODE_KIT,
+            'quantity' => 1,
+            'unit_price' => 10,
+        ]);
+
+        $response = $this->get(route('pos.returns.create', $sale));
+
+        $response->assertOk()->assertSee('A granel')->assertSee('Paquete (kit)')
+            ->assertSee('0.625')->assertSee('0.125')->assertSee('>0.5</span>', false)
+            ->assertSee('step="0.001"', false)->assertSee('step="1"', false)
+            ->assertSee('min="0"', false)->assertSee('max="0.5"', false);
+    }
+
+    public function test_return_form_disables_both_fields_of_fully_returned_lines_and_keeps_other_lines_available(): void
+    {
+        $admin = User::factory()->create()->assignRole('admin');
+        $sale = $this->sale($admin);
+        $sale->items()->firstOrFail()->update(['returned_quantity' => 1]);
+        $remaining = $sale->items()->create([
+            'product_name' => 'Granel restante', 'sale_mode' => Product::MODE_BULK,
+            'quantity' => 0.5, 'unit_price' => 14.10, 'line_total' => 7.05,
+        ]);
+
+        $response = $this->get(route('pos.returns.create', $sale))->assertOk();
+
+        $document = new DOMDocument;
+        $document->loadHTML('<?xml encoding="UTF-8">'.$response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+        $xpath = new DOMXPath($document);
+        $this->assertSame(2, $xpath->query('//input[starts-with(@name, "items[0]") and @disabled]')->length);
+        $this->assertSame(2, $xpath->query('//input[starts-with(@name, "items[1]") and not(@disabled)]')->length);
+        $this->postJson(route('pos.returns.store'), [
+            'sale_id' => $sale->id, 'reason' => 'Solo el producto restante',
+            'items' => [1 => ['sale_item_id' => $remaining->id, 'quantity' => 0.125]],
+        ])->assertRedirect(route('pos.returns.index'))->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('sale_return_items', ['sale_item_id' => $remaining->id, 'quantity' => 0.125]);
     }
 
     #[TestWith([58])]
