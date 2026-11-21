@@ -433,6 +433,8 @@ class ProductController extends Controller
 
         $data['brand'] = $request->validated('brand', $product?->brand ?? '') ?? '';
         $data['description'] = $request->validated('description', $product?->description ?? '') ?? '';
+        $data['cost'] = $request->validated('cost', $product?->cost ?? 0) ?? 0;
+        $data['min_stock'] = $request->validated('min_stock', $product?->min_stock ?? 0) ?? 0;
         $data['slug'] = $this->uniqueSlug($data['name'], $product);
         $data['tax_rate'] = round(((float) $request->validated('tax_rate')) / 100, 4);
 

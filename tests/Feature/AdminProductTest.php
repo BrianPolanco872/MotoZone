@@ -127,6 +127,84 @@ class AdminProductTest extends TestCase
         ]);
     }
 
+    /**
+     * @param  array{cost?: string|null, min_stock?: int|string|null}  $optionalFields
+     */
+    #[TestWith([[], '0.00', 0])]
+    #[TestWith([['cost' => '', 'min_stock' => ''], '0.00', 0])]
+    #[TestWith([['cost' => null, 'min_stock' => null], '0.00', 0])]
+    #[TestWith([['cost' => '7.50', 'min_stock' => 3], '7.50', 3])]
+    #[TestWith([['cost' => '0', 'min_stock' => '0'], '0.00', 0])]
+    public function test_admin_can_create_product_with_optional_cost_and_minimum_stock_without_changing_sale_price(array $optionalFields, string $expectedCost, int $expectedMinimumStock): void
+    {
+        $this->actingAs($this->admin())->post(route('admin.products.store'), [
+            'name' => 'Producto con precio directo',
+            'barcode' => '00012345',
+            'barcode2' => 'ALT(02)+#',
+            'price' => '10.00',
+            'wholesale_price' => '',
+            'tax_rate' => 16,
+            'stock' => 2,
+            ...$optionalFields,
+        ])
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHasNoErrors();
+
+        $product = Product::query()->sole();
+
+        $this->assertSame($expectedCost, $product->cost);
+        $this->assertSame($expectedMinimumStock, $product->min_stock);
+        $this->assertSame('10.00', $product->price);
+        $this->assertSame('0.1600', $product->tax_rate);
+        $this->assertSame('00012345', $product->barcode);
+        $this->assertSame('ALT(02)+#', $product->barcode2);
+        $this->assertNull($product->wholesale_price);
+    }
+
+    /**
+     * @param  array{cost?: string|null, min_stock?: int|string|null}  $optionalFields
+     */
+    #[TestWith([[], '7.50', 3])]
+    #[TestWith([['cost' => '', 'min_stock' => ''], '0.00', 0])]
+    #[TestWith([['cost' => null, 'min_stock' => null], '0.00', 0])]
+    #[TestWith([['cost' => '12.25', 'min_stock' => 5], '12.25', 5])]
+    #[TestWith([['cost' => '0', 'min_stock' => '0'], '0.00', 0])]
+    #[TestWith([['cost' => ''], '0.00', 3])]
+    #[TestWith([['min_stock' => ''], '7.50', 0])]
+    public function test_admin_can_preserve_clear_or_fill_cost_and_minimum_stock_without_changing_sale_price(array $optionalFields, string $expectedCost, int $expectedMinimumStock): void
+    {
+        $product = Product::factory()->create([
+            'sku' => 'PROD-01',
+            'barcode' => '00012345',
+            'barcode2' => 'ALT(02)+#',
+            'cost' => '7.50',
+            'min_stock' => 3,
+            'wholesale_price' => '9.00',
+        ]);
+
+        $this->actingAs($this->admin())->put(route('admin.products.update', $product), [
+            'name' => 'Producto con precio directo',
+            'price' => '10.00',
+            'wholesale_price' => '',
+            'tax_rate' => 16,
+            'stock' => 2,
+            ...$optionalFields,
+        ])
+            ->assertRedirect(route('admin.products.index'))
+            ->assertSessionHasNoErrors();
+
+        $product->refresh();
+
+        $this->assertSame($expectedCost, $product->cost);
+        $this->assertSame($expectedMinimumStock, $product->min_stock);
+        $this->assertSame('10.00', $product->price);
+        $this->assertSame('0.1600', $product->tax_rate);
+        $this->assertSame('PROD-01', $product->sku);
+        $this->assertSame('00012345', $product->barcode);
+        $this->assertSame('ALT(02)+#', $product->barcode2);
+        $this->assertNull($product->wholesale_price);
+    }
+
     public function test_product_slug_gets_a_suffix_when_name_is_repeated(): void
     {
         $category = Category::factory()->create();

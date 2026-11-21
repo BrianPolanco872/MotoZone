@@ -200,3 +200,4 @@ bug-tickets-ancho-impresion-01 -> corregido_en_fuente_por -> fix-tickets-ancho-i
 plan-productos-limpiar-con-historial-01 -> implementado_por -> fix-productos-limpiar-con-historial-01
 fix-productos-limpiar-con-historial-01 -> implementa_feature -> feature-productos-limpiar-con-historial-01
 plan-productos-limpiar-con-historial-01 -> sustituye_contrato_en_fuente_de -> plan-productos-limpiar-tabla-01
+plan-productos-costo-vacio-01 -> implementado_por -> fix-productos-costo-vacio-01

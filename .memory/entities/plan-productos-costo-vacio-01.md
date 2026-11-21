@@ -17,3 +17,11 @@ type: plan
 - Herramientas: memoria MCP no disponible en la sesión, fallback .memory/; lectura/edición y PowerShell disponibles. Skills ya cargadas aplicables: ponytail, laravel-best-practices y testing-best-practices.
 - Fecha: 2026-11-17.
 - Investigación posterior: defecto de repoblación del input cost confirmado en Blade; pendiente confirmar si hubo redirección previa. Conservar 7.50 tiene prioridad sobre el fallback a cero. Cualquier plan revisado deberá incluir la causa confirmada de pérdida y prueba con 7.50; no tratar la aclaración como aprobación.
+- Reactivación aprobada explícitamente en esta conversación: tras presentar el alcance (costo vacío a 0, conservar precio de venta y costos válidos incluido 7.50, normalizar min_stock y añadir pruebas sin ejecutarlas), el usuario confirmó «aplicalo entonces».
+- Alcance de la reactivación: caso actual de costo dejado vacío deliberadamente. No se declara resuelto ni diagnosticado el reporte anterior de pérdida de un costo introducido.
+- Estado: APROBADO PARA IMPLEMENTACIÓN. Fecha: 2026-11-20.
+- Estado: IMPLEMENTADO.
+- Cambios aplicados: dos normalizaciones en productData para cost/min_stock usando valores validados; alta con omitidos y campos vacíos/null guarda 0, edición con omitidos conserva datos y campos vacíos/null guarda 0; sin recalcular precio ni alterar valores válidos. Añadidos dos métodos de prueba con 12 escenarios en AdminProductTest.php.
+- Verificación: Pint --dirty --format agent, sintaxis PHP de ambos archivos y git diff --check aprobados; diff cotejado con los pasos y archivos del plan. Pruebas sin ejecutar: Testing requiere solicitud explícita.
+- Desviaciones del plan original: ninguna en el alcance de código aprobado. Reactivación explícita para el nuevo caso de costo deliberadamente vacío; no se atribuye a esta reparación la resolución del incidente anterior de costo 7.50 perdido.
+- Implementación local registrada en fix-productos-costo-vacio-01 el 2026-11-20; sin publicación, migraciones ni cambios de historial Git.
