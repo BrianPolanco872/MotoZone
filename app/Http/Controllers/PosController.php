@@ -48,18 +48,6 @@ class PosController extends Controller
             ],
             'initial_cash_registered' => $hasInitialCash,
             'frequentProducts' => $this->frequentProducts(),
-            'today' => [
-                'sales' => Sale::query()
-                    ->paid()
-                    ->where('user_id', $user?->id)
-                    ->whereBetween('paid_at', [today()->startOfDay(), today()->endOfDay()])
-                    ->sum('total'),
-                'tickets' => Sale::query()
-                    ->paid()
-                    ->where('user_id', $user?->id)
-                    ->whereBetween('paid_at', [today()->startOfDay(), today()->endOfDay()])
-                    ->count(),
-            ],
         ]);
     }
 
@@ -72,7 +60,7 @@ class PosController extends Controller
         }
 
         $products = Product::query()
-            ->with('kitItems')
+            ->with(['kitItems', 'category'])
             ->active()
             ->where(function ($query) use ($term): void {
                 $query->where('barcode', $term)
@@ -106,7 +94,7 @@ class PosController extends Controller
         abort_unless($sale->user_id === $user->id || $canSeeAny, 403);
         abort_unless($sale->isPending(), 422, 'La venta ya no está pendiente.');
 
-        $sale->load('items');
+        $sale->load('items.product.category');
 
         return response()->json([
             'sale' => [
@@ -122,6 +110,10 @@ class PosController extends Controller
                     'name' => $item->product_name,
                     'sku' => $item->sku,
                     'barcode' => $item->barcode,
+                    'category_name' => $item->product?->category?->name,
+                    'image_url' => $item->product?->image_path ? asset('storage/'.$item->product->image_path) : null,
+                    'warehouse_stock' => $item->product?->warehouse_stock,
+                    'store_2_stock' => $item->product?->store_2_stock,
                     'unit_price' => (float) $item->unit_price,
                     'sale_mode' => $item->sale_mode ?? Product::MODE_UNIT,
                     'kit_deduct_components' => (bool) ($item->inventory_snapshot['kit_deduct_components'] ?? false),
@@ -150,7 +142,7 @@ class PosController extends Controller
             ->pluck('product_id');
 
         $products = Product::query()
-            ->with('kitItems')
+            ->with(['kitItems', 'category'])
             ->active()
             ->whereIn('id', $ids)
             ->get()
@@ -159,7 +151,7 @@ class PosController extends Controller
         $ordered = $ids->map(fn ($id) => $products->get($id))->filter()->values();
 
         if ($ordered->isEmpty()) {
-            $ordered = Product::query()->with('kitItems')->active()->featured()->orderBy('name')->limit(8)->get();
+            $ordered = Product::query()->with(['kitItems', 'category'])->active()->featured()->orderBy('name')->limit(8)->get();
         }
 
         return $ordered->map(fn (Product $product): array => $this->productPayload($product))->all();
@@ -189,6 +181,10 @@ class PosController extends Controller
             'track_inventory' => $availableStock !== null,
             'brand' => $product->brand,
             'image_path' => $product->image_path,
+            'category_name' => $product->category?->name,
+            'image_url' => $product->image_path ? asset('storage/'.$product->image_path) : null,
+            'warehouse_stock' => $product->warehouse_stock,
+            'store_2_stock' => $product->store_2_stock,
             'in_stock' => $product->isInStock(),
             'low_stock' => $product->isLowStock(),
             'stock_label' => $product->stockLabel(),

@@ -1868,6 +1868,160 @@ class AdminProductTest extends TestCase
         $this->assertSame('unit', Product::query()->where('sku', 'NEW-CSV')->sole()->saleMode());
     }
 
+    /** @param array<string, string|null> $fields */
+    #[TestWith([[], null, null])]
+    #[TestWith([['warehouse_stock' => '', 'store_2_stock' => ''], null, null])]
+    #[TestWith([['warehouse_stock' => null, 'store_2_stock' => null], null, null])]
+    #[TestWith([['warehouse_stock' => '0', 'store_2_stock' => '0'], '0.000', '0.000'])]
+    #[TestWith([['warehouse_stock' => '2.750', 'store_2_stock' => '0.125'], '2.750', '0.125'])]
+    public function test_optional_location_stocks_can_be_created_without_affecting_sellable_stock(array $fields, ?string $warehouse, ?string $store2): void
+    {
+        $this->actingAs($this->admin())->post(route('admin.products.store'), $this->productInput([
+            'sale_mode' => 'bulk', 'stock' => '1.500', ...$fields,
+        ]))->assertRedirect(route('admin.products.index'))->assertSessionHasNoErrors();
+
+        $product = Product::query()->sole();
+        $this->assertSame($warehouse, $product->warehouse_stock);
+        $this->assertSame($store2, $product->store_2_stock);
+        $this->assertSame(1.5, $product->availableStock());
+        $this->assertDatabaseCount('stock_movements', 0);
+    }
+
+    /** @param array<string, string|null> $fields */
+    #[TestWith([[], '2.750', '4.125'])]
+    #[TestWith([['warehouse_stock' => '', 'store_2_stock' => ''], null, null])]
+    #[TestWith([['warehouse_stock' => null, 'store_2_stock' => null], null, null])]
+    #[TestWith([['warehouse_stock' => '0', 'store_2_stock' => '0'], '0.000', '0.000'])]
+    #[TestWith([['warehouse_stock' => '3.125', 'store_2_stock' => '9.500'], '3.125', '9.500'])]
+    #[TestWith([['warehouse_stock' => ''], null, '4.125'])]
+    #[TestWith([['store_2_stock' => ''], '2.750', null])]
+    public function test_optional_location_stocks_distinguish_omitted_empty_and_zero_on_update(array $fields, ?string $warehouse, ?string $store2): void
+    {
+        $product = Product::factory()->bulk()->create(['stock' => 2, 'warehouse_stock' => '2.750', 'store_2_stock' => '4.125']);
+
+        $this->actingAs($this->admin())->put(route('admin.products.update', $product), $this->productInput([
+            'stock' => 2, ...$fields,
+        ]))->assertRedirect(route('admin.products.index'))->assertSessionHasNoErrors();
+
+        $product->refresh();
+        $this->assertSame($warehouse, $product->warehouse_stock);
+        $this->assertSame($store2, $product->store_2_stock);
+        $this->assertSame(2, $product->availableStock());
+        $this->assertDatabaseCount('stock_movements', 0);
+    }
+
+    #[TestWith(['unit', 'warehouse_stock', '0.125'])]
+    #[TestWith(['unit', 'store_2_stock', '0.125'])]
+    #[TestWith(['kit', 'warehouse_stock', '0.125'])]
+    #[TestWith(['kit', 'store_2_stock', '0.125'])]
+    #[TestWith(['bulk', 'warehouse_stock', '-1'])]
+    #[TestWith(['bulk', 'store_2_stock', '-1'])]
+    #[TestWith(['bulk', 'warehouse_stock', '0.0001'])]
+    #[TestWith(['bulk', 'store_2_stock', '0.0001'])]
+    #[TestWith(['bulk', 'warehouse_stock', '4294967295.001'])]
+    #[TestWith(['bulk', 'store_2_stock', '4294967295.001'])]
+    #[TestWith(['bulk', 'warehouse_stock', '1e2'])]
+    #[TestWith(['bulk', 'store_2_stock', '1e2'])]
+    public function test_invalid_optional_location_quantity_preserves_product_and_recipe(string $mode, string $field, string $value): void
+    {
+        $product = Product::factory()->kit()->create(['sale_mode' => $mode, 'warehouse_stock' => 2, 'store_2_stock' => 3]);
+        $before = $product->fresh()->getAttributes();
+        $recipe = $product->kitItems()->pluck('product_kit_items.quantity', 'products.id')->all();
+        $message = 'La cantidad debe ser no negativa, dentro del rango permitido y '.($mode === 'bulk' ? 'con hasta 3 decimales.' : 'entera.');
+
+        $this->actingAs($this->admin())->put(route('admin.products.update', $product), $this->productInput([
+            $field => $value,
+        ]))->assertSessionHasErrors([$field => $message]);
+
+        $this->assertSame($before, $product->fresh()->getAttributes());
+        $this->assertSame($recipe, $product->kitItems()->pluck('product_kit_items.quantity', 'products.id')->all());
+        $this->assertDatabaseCount('stock_movements', 0);
+    }
+
+    #[TestWith(['unit'])]
+    #[TestWith(['kit'])]
+    public function test_whole_optional_locations_can_be_created_for_units_and_kits(string $mode): void
+    {
+        $component = Product::factory()->create(['stock' => 4]);
+
+        $this->actingAs($this->admin())->post(route('admin.products.store'), $this->productInput([
+            'sale_mode' => $mode, 'warehouse_stock' => '4294967295', 'store_2_stock' => '0',
+            'kit_items' => [['product_id' => $component->id, 'quantity' => 2]],
+        ]))->assertRedirect(route('admin.products.index'))->assertSessionHasNoErrors();
+
+        $product = Product::query()->whereKeyNot($component->id)->sole();
+        $this->assertSame('4294967295.000', $product->warehouse_stock);
+        $this->assertSame('0.000', $product->store_2_stock);
+        $this->assertSame(0, $product->stock);
+        $this->assertSame(4, $component->fresh()->stock);
+        $this->assertDatabaseCount('stock_movements', 0);
+    }
+
+    public function test_kit_optional_locations_are_saved_without_changing_recipe_or_derived_availability(): void
+    {
+        $product = Product::factory()->kit()->create(['kit_deduct_components' => true]);
+        $component = $product->kitItems->sole();
+        $component->update(['stock' => 4]);
+
+        $this->actingAs($this->admin())->put(route('admin.products.update', $product), $this->productInput([
+            'warehouse_stock' => '20', 'store_2_stock' => '0',
+        ]))->assertRedirect(route('admin.products.index'))->assertSessionHasNoErrors();
+
+        $product->refresh();
+        $this->assertSame('20.000', $product->warehouse_stock);
+        $this->assertSame('0.000', $product->store_2_stock);
+        $this->assertSame(0, $product->stock);
+        $this->assertSame(4, $product->availableStock());
+        $this->assertSame([$component->id], $product->kitItems()->pluck('products.id')->all());
+        $this->assertFalse($product->track_inventory);
+        $this->assertDatabaseCount('stock_movements', 0);
+    }
+
+    #[TestWith(['unit'])]
+    #[TestWith(['bulk'])]
+    #[TestWith(['kit'])]
+    public function test_optional_location_form_restores_values_outside_disabled_kit_inventory(string $mode): void
+    {
+        $product = Product::factory()->kit()->create(['sale_mode' => $mode, 'warehouse_stock' => null, 'store_2_stock' => 0]);
+        $this->actingAs($this->admin());
+        $response = $this->get(route('admin.products.edit', $product))->assertOk()->assertSee('Existencia en tienda');
+        $document = new DOMDocument;
+        $document->loadHTML('<?xml encoding="UTF-8">'.$response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+        $xpath = new DOMXPath($document);
+
+        foreach (['warehouse_stock' => '', 'store_2_stock' => '0.000'] as $field => $value) {
+            $input = $xpath->query('//input[@name="'.$field.'"]')->item(0);
+            $this->assertSame($value, $input->getAttribute('value'));
+            $this->assertSame($mode === 'bulk' ? '0.001' : '1', $input->getAttribute('step'));
+            $this->assertFalse($input->hasAttribute('required'));
+            $this->assertFalse($input->hasAttribute('disabled'));
+            $this->assertSame(0, $xpath->query('ancestor::fieldset[@disabled]', $input)->length);
+        }
+
+        $this->from(route('admin.products.edit', $product))->put(route('admin.products.update', $product), $this->productInput([
+            'name' => '', 'warehouse_stock' => '7', 'store_2_stock' => '0',
+        ]))->assertSessionHasErrors('name');
+        $response = $this->get(route('admin.products.edit', $product))->assertOk();
+        $document->loadHTML('<?xml encoding="UTF-8">'.$response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+        $xpath = new DOMXPath($document);
+        $this->assertSame('7', $xpath->query('//input[@name="warehouse_stock"]')->item(0)->getAttribute('value'));
+        $this->assertSame('0', $xpath->query('//input[@name="store_2_stock"]')->item(0)->getAttribute('value'));
+        $this->assertNull($product->fresh()->warehouse_stock);
+    }
+
+    public function test_employee_cannot_write_optional_location_stocks(): void
+    {
+        $product = Product::factory()->create(['warehouse_stock' => null, 'store_2_stock' => 0]);
+        $before = $product->fresh()->getAttributes();
+        $employee = User::factory()->create()->assignRole('empleado');
+
+        $this->actingAs($employee)->put(route('admin.products.update', $product), $this->productInput([
+            'warehouse_stock' => '10', 'store_2_stock' => '20',
+        ]))->assertForbidden();
+
+        $this->assertSame($before, $product->fresh()->getAttributes());
+    }
+
     /**
      * @param  array<string, mixed>  $overrides
      * @return array<string, mixed>

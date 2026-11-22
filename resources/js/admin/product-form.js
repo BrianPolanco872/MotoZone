@@ -20,7 +20,7 @@ if (form) {
         inventoryFields.disabled = isKit;
         kitFields.hidden = !isKit;
         kitFields.disabled = !isKit;
-        for (const field of ['#stock', '#min_stock']) {
+        for (const field of ['#stock', '#min_stock', '#warehouse_stock', '#store_2_stock']) {
             form.querySelector(field).step = mode === 'bulk' ? '0.001' : '1';
         }
         searchVersion++;

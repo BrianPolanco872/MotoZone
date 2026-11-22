@@ -214,3 +214,14 @@ feature-pos-modal-granel-bidireccional -> implemented_by_plan -> plan-pos-modal-
 plan-pos-modal-granel-bidireccional -> implementa_feature -> feature-pos-modal-granel-bidireccional
 plan-pos-modal-granel-bidireccional -> amplia -> plan-productos-modalidades-venta-01
 plan-pos-modal-granel-bidireccional -> se_apoya_en -> fix-productos-modalidades-venta-01
+feature-pos-vista-amplia-existencias-01 -> implemented_by_plan -> plan-pos-vista-amplia-existencias-01
+plan-pos-vista-amplia-existencias-01 -> implementa_feature -> feature-pos-vista-amplia-existencias-01
+plan-pos-vista-amplia-existencias-01 -> se_apoya_en -> plan-productos-modalidades-venta-01
+plan-pos-vista-amplia-existencias-01 -> considera_plan_pendiente -> plan-pos-modal-granel-bidireccional
+plan-pos-vista-amplia-existencias-01 -> considera_antecedente -> plan-quitar-categorias-01
+plan-pos-vista-amplia-existencias-01 -> considera_bug_activo -> bug-productos-costo-vacio-01
+plan-pos-vista-amplia-existencias-01 -> implementado_por -> fix-pos-vista-amplia-existencias-01
+fix-pos-vista-amplia-existencias-01 -> implementa_feature -> feature-pos-vista-amplia-existencias-01
+plan-pos-vista-amplia-existencias-01 -> implementado_por -> fix-pos-vista-amplia-existencias-02
+fix-pos-vista-amplia-existencias-02 -> implementa_feature -> feature-pos-vista-amplia-existencias-01
+fix-pos-vista-amplia-existencias-02 -> corrige -> fix-pos-vista-amplia-existencias-01

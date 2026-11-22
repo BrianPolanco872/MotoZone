@@ -12,9 +12,12 @@ if (configElement) {
     const cartBody = document.getElementById('pos-cart-body');
     const emptyState = document.getElementById('pos-empty');
     const itemsCount = document.getElementById('pos-items-count');
-    const subtotalEl = document.getElementById('pos-subtotal');
-    const taxEl = document.getElementById('pos-tax');
     const totalEl = document.getElementById('pos-total');
+    const imageDialog = document.getElementById('product-image-dialog');
+    const imagePreview = document.getElementById('product-image-preview');
+    const imageTitle = document.getElementById('product-image-title');
+    const imageError = document.getElementById('product-image-error');
+    let imageTrigger = null;
     const wholesaleToggle = document.getElementById('pos-wholesale');
     const errorBox = document.getElementById('pos-error');
     const reopenDayBtn = document.getElementById('pos-reopen-day');
@@ -234,8 +237,6 @@ if (configElement) {
 
     const renderTotals = () => {
         const result = totals();
-        subtotalEl.textContent = formatMoney(result.subtotal);
-        taxEl.textContent = formatMoney(result.tax);
         totalEl.textContent = formatMoney(result.total);
         itemsCount.textContent = `${items.length} ${items.length === 1 ? 'renglón' : 'renglones'}`;
         emptyState.classList.toggle('hidden', items.length > 0);
@@ -262,9 +263,14 @@ if (configElement) {
 
             row.innerHTML = `
                 <td class="px-4 py-3">
+                    <div class="flex items-center gap-3">
+                    ${item.image_url ? `<button type="button" data-view-image="${index}" class="flex size-12 shrink-0 items-center justify-center rounded-lg border border-mz-border-light bg-mz-bg-primary focus-visible:outline-2 focus-visible:outline-mz-accent-primary" aria-label="Ampliar foto de ${escapeHtml(item.name)}"><img data-product-thumbnail src="${escapeHtml(item.image_url)}" alt="${escapeHtml(item.name)}" class="size-11 rounded-lg object-contain"><span hidden class="text-[10px] text-mz-text-muted">Sin foto</span></button>` : '<span class="flex size-12 shrink-0 items-center justify-center rounded-lg bg-mz-bg-primary text-[10px] text-mz-text-muted">Sin foto</span>'}
+                    <div class="min-w-0">
                     <p class="font-semibold text-sm text-mz-text-primary group-hover:text-mz-accent-primary transition-colors">${escapeHtml(item.name)}</p>
                     <div class="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-mz-text-muted">
                         <span class="font-mono text-[11px] text-mz-text-muted/80">${escapeHtml(item.barcode || item.barcode2 || item.sku || 'S/C')}</span>
+                    </div>
+                    </div>
                     </div>
                 </td>
                 <td class="whitespace-nowrap px-4 py-3 text-right">${priceControl}${item.sale_mode === 'bulk' ? '<span class="block text-[11px] text-mz-text-muted">por unidad</span>' : ''}</td>
@@ -307,7 +313,7 @@ if (configElement) {
         }
 
         if (isBulkProduct(product) && !confirmedBulk) {
-            return openBulkModal(product);
+            return openBulkModal(product, quantity);
         }
 
         const stock = stockFor(product);
@@ -341,6 +347,10 @@ if (configElement) {
                 sku: product.sku,
                 barcode: product.barcode,
                 barcode2: product.barcode2,
+                image_url: product.image_url ?? null,
+                category_name: product.category_name ?? null,
+                warehouse_stock: product.warehouse_stock ?? null,
+                store_2_stock: product.store_2_stock ?? null,
                 price: round(product.price),
                 wholesale_price: product.wholesale_price === null ? null : round(product.wholesale_price),
                 unit_price: priceFor(product),
@@ -361,7 +371,7 @@ if (configElement) {
         return true;
     };
 
-    const openBulkModal = (product) => {
+    const openBulkModal = (product, quantity = 1) => {
         if (!bulkDialog) {
             return false;
         }
@@ -396,9 +406,9 @@ if (configElement) {
 
         isUpdatingBulk = true;
         if (bulkQuantity) {
-            bulkQuantity.value = '1.00';
+            bulkQuantity.value = Number(quantity) === 1 ? '1.00' : String(quantity);
         }
-        const initialAmount = Math.round(1 * unitPrice * 100) / 100;
+        const initialAmount = lineTotal({ unit_price: unitPrice, quantity });
         if (bulkAmount) {
             bulkAmount.value = initialAmount.toFixed(2);
         }
@@ -662,6 +672,10 @@ if (configElement) {
 
         renderCart();
 
+        if (!resultsBox.classList.contains('hidden')) {
+            renderResults([...productCache.values()]);
+        }
+
         if (bulkDialog?.open && bulkProduct) {
             const unitPrice = priceFor(bulkProduct);
             if (bulkPrice) {
@@ -687,20 +701,30 @@ if (configElement) {
             return;
         }
 
-        resultsBox.innerHTML = products.map((product) => `
-            <button type="button" data-product-id="${product.id}" class="group flex w-full items-center justify-between gap-4 border-b border-mz-border-light/40 px-4 py-3 text-left transition-colors duration-150 last:border-b-0 hover:bg-mz-bg-surface-2/80">
-                <span class="min-w-0 flex-1">
-                    <span class="block truncate text-sm font-semibold text-mz-text-primary group-hover:text-mz-accent-primary transition-colors">${escapeHtml(product.name)}</span>
-                    <span class="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-mz-text-muted">
-                        <span class="font-mono text-[11px] text-mz-text-muted/80">${escapeHtml(product.barcode || product.barcode2 || 'S/C')}</span>
-                    </span>
-                </span>
-                <span class="shrink-0 text-right">
-                    <span class="block text-base font-bold tabular-nums text-mz-text-primary font-display">${formatMoney(product.price)}</span>
-                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${product.in_stock ? 'bg-mz-success/15 text-mz-success border border-mz-success/30' : 'bg-mz-error/15 text-mz-error border border-mz-error/30'}">${escapeHtml(product.stock_label)}</span>
-                </span>
-            </button>
-        `).join('');
+        const hasStockValue = (value) => value != null && value !== '';
+        const showStore2 = products.some((product) => hasStockValue(product.store_2_stock));
+        resultsBox.innerHTML = `
+            <p class="border-b border-mz-border px-4 py-3 text-xs font-bold uppercase text-mz-accent-primary">Resultados de búsqueda · ${products.length} coincidencias</p>
+            <table class="w-full min-w-[64rem] text-left text-xs">
+                <thead class="sticky top-0 bg-mz-bg-surface-2 text-[10px] uppercase text-mz-text-muted">
+                    <tr><th scope="col" class="p-3">Foto</th><th scope="col" class="p-3">Código</th><th scope="col" class="p-3">Producto</th><th scope="col" class="p-3">Categoría</th><th scope="col" class="p-3 text-right">Precio unitario</th><th scope="col" class="p-3 text-right">Existencia en tienda</th><th scope="col" class="p-3 text-right">Existencia en bodega</th>${showStore2 ? '<th scope="col" class="p-3 text-right">Existencia Tienda 2</th>' : ''}</tr>
+                </thead>
+                <tbody class="divide-y divide-mz-border-light/40">${products.map((product) => {
+                    const id = Number(product.id);
+                    const price = priceFor(product);
+                    const stock = stockFor(product);
+                    return `<tr data-product-id="${id}" tabindex="0" aria-label="Agregar ${escapeHtml(product.name)} al ticket" class="cursor-pointer hover:bg-mz-accent-primary/5 focus-visible:outline-2 focus-visible:outline-mz-accent-primary">
+                        <td class="p-3"><div class="flex size-11 items-center justify-center rounded bg-mz-bg-primary">${product.image_url ? `<img data-product-thumbnail src="${escapeHtml(product.image_url)}" alt="${escapeHtml(product.name)}" class="size-10 object-contain"><span hidden class="text-[10px] text-mz-text-muted">Sin foto</span>` : '<span class="text-[10px] text-mz-text-muted">Sin foto</span>'}</div></td>
+                        <td class="p-3 font-mono text-mz-accent-primary">${escapeHtml(product.barcode || product.barcode2 || product.sku || 'S/C')}</td>
+                        <td class="min-w-48 p-3 font-semibold text-mz-text-primary">${escapeHtml(product.name)}</td>
+                        <td class="p-3 text-mz-text-secondary">${escapeHtml(product.category_name)}</td>
+                        <td class="whitespace-nowrap p-3 text-right font-semibold">${formatMoney(price)}</td>
+                        <td class="p-3 text-right ${stock === null ? 'text-mz-text-muted' : stock > 0 ? 'text-mz-success' : 'text-mz-error'}">${stock === null ? 'Sin control' : formatQuantity(stock)}</td>
+                        <td class="p-3 text-right text-mz-text-secondary">${hasStockValue(product.warehouse_stock) ? formatQuantity(product.warehouse_stock) : '-'}</td>
+                        ${showStore2 ? `<td class="p-3 text-right text-mz-text-secondary">${hasStockValue(product.store_2_stock) ? formatQuantity(product.store_2_stock) : ''}</td>` : ''}
+                    </tr>`;
+                }).join('')}</tbody>
+            </table>`;
 
         resultsBox.classList.remove('hidden');
     };
@@ -921,6 +945,10 @@ if (configElement) {
                 custom_name: item.custom_name ?? null,
                 custom_price: item.is_custom ? Number(item.custom_price ?? item.unit_price) : null,
                 name: item.is_custom ? (item.custom_name ?? item.name) : item.name,
+                image_url: item.image_url ?? null,
+                category_name: item.category_name ?? null,
+                warehouse_stock: item.warehouse_stock ?? null,
+                store_2_stock: item.store_2_stock ?? null,
                 sku: item.sku,
                 barcode: item.barcode,
                 price: Number(item.unit_price),
@@ -972,18 +1000,61 @@ if (configElement) {
     });
 
     resultsBox?.addEventListener('click', (event) => {
-        const button = event.target.closest('[data-product-id]');
+        const row = event.target.closest('[data-product-id]');
 
-        if (!button) {
+        if (!row) {
             return;
         }
 
-        const product = productCache.get(Number(button.dataset.productId));
+        const product = productCache.get(Number(row.dataset.productId));
 
         if (product) {
             addProduct(product);
         }
     });
+
+    resultsBox?.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        const row = event.target.closest('[data-product-id]');
+        if (!row) return;
+        event.preventDefault();
+        const product = productCache.get(Number(row.dataset.productId));
+        if (product) addProduct(product);
+    });
+
+    cartBody?.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-view-image]');
+        if (!button || button.disabled) return;
+        const item = items[Number(button.dataset.viewImage)];
+        if (!item?.image_url || !imageDialog) return;
+        imageTrigger = button;
+        imageTitle.textContent = item.name;
+        imagePreview.alt = item.name;
+        imagePreview.hidden = false;
+        imageError.hidden = true;
+        imagePreview.src = item.image_url;
+        imageDialog.showModal();
+    });
+
+    imagePreview?.addEventListener('error', () => {
+        imagePreview.hidden = true;
+        imageError.hidden = false;
+    });
+    imageDialog?.addEventListener('close', () => {
+        imageTrigger?.focus();
+        imageTrigger = null;
+    });
+    [cartBody, resultsBox].forEach((container) => container?.addEventListener('error', (event) => {
+        const image = event.target;
+        if (!image.matches('[data-product-thumbnail]')) return;
+        image.hidden = true;
+        image.nextElementSibling.hidden = false;
+        const button = image.closest('[data-view-image]');
+        if (button) {
+            button.disabled = true;
+            button.setAttribute('aria-label', 'Foto no disponible');
+        }
+    }, true));
 
     document.addEventListener('click', (event) => {
         if (!resultsBox || resultsBox.classList.contains('hidden')) {

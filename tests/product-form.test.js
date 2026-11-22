@@ -44,7 +44,7 @@ function productForm({ mode = 'unit', existing = [], products = [], fetcher = nu
     };
     const fields = new Map();
     for (const selector of ['[data-product-inventory]', '[data-kit-fields]', '[data-kit-rows]', '#component-search',
-        '[data-component-results]', '[data-component-status]', '#stock', '#min_stock', '#cost', '#margin', '#price', '#tax_rate']) {
+        '[data-component-results]', '[data-component-status]', '#stock', '#min_stock', '#warehouse_stock', '#store_2_stock', '#cost', '#margin', '#price', '#tax_rate']) {
         fields.set(selector, element());
     }
     const get = (selector) => fields.get(selector);
@@ -124,6 +124,24 @@ test('sale modes change precision and disable hidden fields without truncating i
     assert.equal(ui.get('#stock').value, '2.750');
     assert.equal(ui.get('#min_stock').value, '0.500');
     assert.equal(ui.get('[data-product-inventory]').disabled, false);
+});
+
+test('optional location precision follows mode without truncating values or disabling kit metadata', async () => {
+    const ui = productForm({ mode: 'bulk', initial: { warehouse_stock: '2.750', store_2_stock: '0' } });
+
+    for (const mode of ['bulk', 'kit', 'unit', 'bulk']) {
+        await ui.mode(mode);
+        for (const [field, value] of [['#warehouse_stock', '2.750'], ['#store_2_stock', '0']]) {
+            assert.equal(ui.get(field).step, mode === 'bulk' ? '0.001' : '1');
+            assert.equal(ui.get(field).value, value);
+            assert.equal(ui.get(field).disabled, false);
+            assert.equal(ui.get(field).hidden, false);
+        }
+    }
+    ui.get('#warehouse_stock').value = '';
+    await ui.mode('kit');
+    assert.equal(ui.get('#warehouse_stock').value, '');
+    assert.equal(ui.get('#store_2_stock').value, '0');
 });
 
 test('restored kit rows survive mode changes and remain removable with keyboard buttons', async () => {

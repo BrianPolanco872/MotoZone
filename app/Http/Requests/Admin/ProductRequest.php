@@ -83,6 +83,8 @@ class ProductRequest extends FormRequest
             'kit_items.*.product_id' => ['required', 'integer', 'min:1', 'distinct'],
             'kit_items.*.quantity' => ['required'],
             'stock' => ['exclude_if:sale_mode,kit', 'required', $quantity],
+            'warehouse_stock' => ['sometimes', 'nullable', $quantity],
+            'store_2_stock' => ['sometimes', 'nullable', $quantity],
             'original_stock' => ['sometimes', function (string $attribute, mixed $value, Closure $fail): void {
                 if (! Quantity::valid($value)) {
                     $fail('La referencia de existencias no es válida. Recarga el producto.');

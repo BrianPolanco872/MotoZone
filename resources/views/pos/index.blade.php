@@ -83,16 +83,15 @@
                     </a>
                 @endif
 
-                {{-- Accesos que en escritorio viven en el panel derecho; en móvil no existe. --}}
                 <a href="{{ route('pos.sales.pending') }}"
-                   class="inline-flex items-center gap-1.5 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/70 px-3.5 py-2 text-xs font-semibold text-mz-text-secondary transition-all hover:border-mz-warning/50 hover:bg-mz-warning/10 hover:text-mz-warning shadow-xs active:scale-95 xl:hidden">
+                   class="inline-flex items-center gap-1.5 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/70 px-3.5 py-2 text-xs font-semibold text-mz-text-secondary transition-all hover:border-mz-warning/50 hover:bg-mz-warning/10 hover:text-mz-warning shadow-xs active:scale-95">
                     <x-icon name="pause" class="size-3.5 text-mz-warning" />
                     <span>Pendientes</span>
                 </a>
 
                 @if ($permissions['returns_request'])
                     <a href="{{ route('pos.returns.index') }}"
-                       class="inline-flex items-center gap-1.5 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/70 px-3.5 py-2 text-xs font-semibold text-mz-text-secondary transition-all hover:border-mz-accent-primary/40 hover:bg-mz-bg-surface-2 hover:text-white shadow-xs active:scale-95 xl:hidden">
+                       class="inline-flex items-center gap-1.5 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/70 px-3.5 py-2 text-xs font-semibold text-mz-text-secondary transition-all hover:border-mz-accent-primary/40 hover:bg-mz-bg-surface-2 hover:text-white shadow-xs active:scale-95">
                         <x-icon name="arrow-uturn-left" class="size-3.5 text-mz-accent-primary" />
                         <span>Devoluciones</span>
                     </a>
@@ -140,12 +139,11 @@
         Reabrir mi corte del día
     </button>
 
-    {{-- CUERPO PRINCIPAL DEL POS: Layout de 2 columnas --}}
-    <div class="mt-4 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_26rem]">
-        <!-- PANEL IZQUIERDO: Búsqueda, Detalle del Carrito y Liquidación -->
+    {{-- Búsqueda, detalle del carrito y liquidación a ancho completo --}}
+    <div class="mt-4">
         <div class="min-w-0 space-y-4">
             <!-- Barra de Búsqueda y Escáner -->
-            <section class="rounded-2xl border border-mz-border bg-mz-bg-surface p-4 sm:p-5 shadow-xl shadow-black/20">
+            <section class="relative z-30 rounded-2xl border border-mz-border bg-mz-bg-surface p-4 sm:p-5 shadow-xl shadow-black/20">
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
                     <div class="flex-1 min-w-0">
                         <div class="flex items-center justify-between mb-1.5">
@@ -186,7 +184,7 @@
                 </div>
 
                 {{-- Resultados desplegables de búsqueda --}}
-                <div id="pos-results" class="pos-scrollbar mt-3 hidden max-h-80 overflow-y-auto rounded-xl border border-mz-border-light bg-mz-bg-surface shadow-2xl shadow-black/80 divide-y divide-mz-border-light/40"></div>
+                <div id="pos-results" class="pos-scrollbar absolute inset-x-0 top-full mt-2 hidden max-h-[50dvh] overflow-auto rounded-xl border border-mz-border-light bg-mz-bg-surface shadow-2xl shadow-black/80"></div>
             </section>
 
             {{-- Banner venta pendiente --}}
@@ -223,58 +221,49 @@
                     <span id="pos-items-count" class="rounded-full bg-mz-accent-primary/10 border border-mz-accent-primary/25 px-3 py-1 text-xs font-bold text-mz-accent-primary tabular-nums">0 renglones</span>
                 </div>
 
-                <div class="relative overflow-x-auto pos-scrollbar">
+                <div class="overflow-auto pos-scrollbar" style="height: 388px; min-height: 388px; max-height: 388px; overflow: auto;">
                     <table class="min-w-full divide-y divide-mz-border text-sm">
-                        <thead class="bg-mz-bg-surface-2/40">
+                        <thead class="sticky top-0 z-10 bg-mz-bg-surface-2" style="height: 48px; white-space: nowrap;">
                             <tr class="text-left text-xs uppercase tracking-wider text-mz-text-muted">
                                 <th scope="col" class="px-5 py-3 font-semibold">Producto</th>
                                 <th scope="col" class="px-4 py-3 text-right font-semibold">Precio unitario</th>
                                 <th scope="col" class="px-4 py-3 text-center font-semibold">Cantidad</th>
                                 <th scope="col" class="px-4 py-3 text-right font-semibold">Importe</th>
-                                <th scope="col" class="px-4 py-3 text-right font-semibold">Existencia</th>
+                                <th scope="col" class="px-4 py-3 text-right font-semibold">Existencia en tienda</th>
                                 <th scope="col" class="px-4 py-3 text-center"><span class="sr-only">Quitar</span></th>
                             </tr>
                         </thead>
                         <tbody id="pos-cart-body" class="divide-y divide-mz-border-light/40"></tbody>
-                    </table>
-                </div>
 
-                <!-- Estado vacío del carrito -->
-                <div id="pos-empty" class="px-5 py-16 text-center">
-                    <div class="mx-auto flex size-16 items-center justify-center rounded-2xl bg-mz-bg-surface-2/80 border border-mz-border-light text-mz-accent-primary shadow-inner">
-                        <x-icon name="cart" class="size-8 text-mz-accent-primary/80" />
-                    </div>
-                    <p class="mt-4 text-base font-bold text-mz-text-primary">El ticket está vacío</p>
-                    <p class="mt-1 text-xs text-mz-text-muted max-w-sm mx-auto">Escanea el código de barras con la lectora o busca un producto en la barra superior para comenzar a cobrar.</p>
-                    <div class="mt-4 flex flex-wrap items-center justify-center gap-2 text-[11px] text-mz-text-muted">
-                        <span class="inline-flex items-center gap-1 rounded-md bg-mz-bg-surface-2 px-2 py-0.5 border border-mz-border-light font-mono"><kbd>Enter</kbd> Buscar</span>
-                        <span class="inline-flex items-center gap-1 rounded-md bg-mz-bg-surface-2 px-2 py-0.5 border border-mz-border-light font-mono"><kbd>F12</kbd> Cobrar</span>
-                        <span class="inline-flex items-center gap-1 rounded-md bg-mz-bg-surface-2 px-2 py-0.5 border border-mz-border-light font-mono"><kbd>Esc</kbd> Cerrar diálogo</span>
-                    </div>
+                        <!-- Estado vacío del carrito -->
+                        <tbody id="pos-empty">
+                            <tr>
+                                <td colspan="6" class="px-5 py-6 text-center" style="height: 340px; vertical-align: middle; box-sizing: border-box;">
+                                    <div class="mx-auto flex size-16 items-center justify-center rounded-2xl bg-mz-bg-surface-2/80 border border-mz-border-light text-mz-accent-primary shadow-inner">
+                                        <x-icon name="cart" class="size-8 text-mz-accent-primary/80" />
+                                    </div>
+                                    <p class="mt-4 text-base font-bold text-mz-text-primary">El ticket está vacío</p>
+                                    <p class="mt-1 text-xs text-mz-text-muted max-w-sm mx-auto">Escanea el código de barras con la lectora o busca un producto en la barra superior para comenzar a cobrar.</p>
+                                    <div class="mt-4 flex flex-wrap items-center justify-center gap-2 text-[11px] text-mz-text-muted">
+                                        <span class="inline-flex items-center gap-1 rounded-md bg-mz-bg-surface-2 px-2 py-0.5 border border-mz-border-light font-mono"><kbd>Enter</kbd> Buscar</span>
+                                        <span class="inline-flex items-center gap-1 rounded-md bg-mz-bg-surface-2 px-2 py-0.5 border border-mz-border-light font-mono"><kbd>F12</kbd> Cobrar</span>
+                                        <span class="inline-flex items-center gap-1 rounded-md bg-mz-bg-surface-2 px-2 py-0.5 border border-mz-border-light font-mono"><kbd>Esc</kbd> Cerrar diálogo</span>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </section>
 
             <!-- Totales Financieros y Liquidación -->
             <section class="rounded-2xl border border-mz-border bg-mz-bg-surface p-4 sm:p-5 shadow-xl shadow-black/20">
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    <div class="rounded-xl border border-mz-border-light/60 bg-mz-bg-surface-2/50 p-4 flex flex-col justify-between shadow-xs">
-                        <span class="text-xs font-bold uppercase tracking-wider text-mz-text-muted">Subtotal</span>
-                        <p id="pos-subtotal" class="mt-2 font-display text-2xl font-bold tabular-nums text-mz-text-secondary">$0.00</p>
+                <div class="relative overflow-hidden rounded-xl border-2 border-mz-accent-primary/40 bg-gradient-to-br from-mz-accent-primary/20 via-mz-accent-primary/10 to-mz-bg-surface p-4 shadow-lg shadow-mz-accent-primary/10 flex flex-col justify-between">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-black uppercase tracking-widest text-mz-accent-primary">TOTAL A COBRAR</span>
+                        <span class="rounded-full bg-mz-accent-primary/20 border border-mz-accent-primary/30 px-2 py-0.5 font-mono text-[10px] font-bold text-mz-accent-primary">{{ $currency }}</span>
                     </div>
-                    <div class="rounded-xl border border-mz-border-light/60 bg-mz-bg-surface-2/50 p-4 flex flex-col justify-between shadow-xs">
-                        <div class="flex items-center justify-between">
-                            <span class="text-xs font-bold uppercase tracking-wider text-mz-text-muted">IVA incluido</span>
-                            <span class="rounded bg-mz-bg-surface px-1.5 py-0.5 text-[10px] font-mono text-mz-text-muted border border-mz-border-light/50">16%</span>
-                        </div>
-                        <p id="pos-tax" class="mt-2 font-display text-2xl font-bold tabular-nums text-mz-text-secondary">$0.00</p>
-                    </div>
-                    <div class="relative overflow-hidden rounded-xl border-2 border-mz-accent-primary/40 bg-gradient-to-br from-mz-accent-primary/20 via-mz-accent-primary/10 to-mz-bg-surface p-4 shadow-lg shadow-mz-accent-primary/10 flex flex-col justify-between">
-                        <div class="flex items-center justify-between">
-                            <span class="text-xs font-black uppercase tracking-widest text-mz-accent-primary">TOTAL A COBRAR</span>
-                            <span class="rounded-full bg-mz-accent-primary/20 border border-mz-accent-primary/30 px-2 py-0.5 font-mono text-[10px] font-bold text-mz-accent-primary">{{ $currency }}</span>
-                        </div>
-                        <p id="pos-total" class="mt-2 font-display text-3xl sm:text-4xl font-black tabular-nums text-white tracking-tight leading-none">$0.00</p>
-                    </div>
+                    <p id="pos-total" class="mt-2 font-display text-3xl sm:text-4xl font-black tabular-nums text-white tracking-tight leading-none">$0.00</p>
                 </div>
 
                 <!-- Indicador de última venta realizada -->
@@ -311,94 +300,20 @@
                 </div>
             </section>
         </div>
-
-        <!-- PANEL DERECHO: Resumen del turno, accesos directos y atajos -->
-        <aside class="hidden xl:block space-y-4">
-            <!-- Resumen del día -->
-            <section class="rounded-2xl border border-mz-border bg-mz-bg-surface p-5 shadow-xl shadow-black/20">
-                <div class="flex items-center justify-between pb-3 border-b border-mz-border">
-                    <div class="flex items-center gap-2">
-                        <x-icon name="chart" class="size-4 text-mz-accent-primary" />
-                        <h2 class="text-xs font-bold uppercase tracking-wider text-mz-text-primary">Mi turno de hoy</h2>
-                    </div>
-                    <span class="size-2 rounded-full bg-mz-success animate-pulse" title="Sesión activa"></span>
-                </div>
-
-                <div class="mt-4 grid grid-cols-2 gap-3">
-                    <div class="rounded-xl border border-mz-border-light/50 bg-mz-bg-surface-2/40 p-3">
-                        <p class="text-[11px] font-medium text-mz-text-muted uppercase">Tickets</p>
-                        <p class="mt-1 font-display text-2xl font-extrabold tabular-nums text-white">{{ $today['tickets'] }}</p>
-                    </div>
-                    <div class="rounded-xl border border-mz-border-light/50 bg-mz-bg-surface-2/40 p-3">
-                        <p class="text-[11px] font-medium text-mz-text-muted uppercase">Vendido</p>
-                        <p class="mt-1 font-display text-xl font-extrabold tabular-nums text-mz-accent-primary">${{ number_format((float) $today['sales'], 2) }}</p>
-                    </div>
-                </div>
-
-                <!-- Accesos directos secundarios -->
-                <div class="mt-4 grid grid-cols-2 gap-2">
-                    <a href="{{ route('pos.sales.pending') }}" class="group flex flex-col items-center justify-center p-3 rounded-xl border border-mz-border-light/60 bg-mz-bg-surface-2/40 hover:bg-mz-bg-surface-2 hover:border-mz-accent-primary/40 transition-all text-center">
-                        <x-icon name="pause" class="size-4 text-mz-warning group-hover:scale-110 transition-transform" />
-                        <span class="mt-1 text-xs font-semibold text-mz-text-secondary group-hover:text-white">Pendientes</span>
-                    </a>
-                    @if ($permissions['returns_request'])
-                        <a href="{{ route('pos.returns.index') }}" class="group flex flex-col items-center justify-center p-3 rounded-xl border border-mz-border-light/60 bg-mz-bg-surface-2/40 hover:bg-mz-bg-surface-2 hover:border-mz-accent-primary/40 transition-all text-center">
-                            <x-icon name="arrow-uturn-left" class="size-4 text-mz-accent-primary group-hover:scale-110 transition-transform" />
-                            <span class="mt-1 text-xs font-semibold text-mz-text-secondary group-hover:text-white">Devoluciones</span>
-                        </a>
-                    @endif
-                    @if ($permissions['cash_view'])
-                        <a href="{{ route('pos.cash.index') }}" class="group flex flex-col items-center justify-center p-3 rounded-xl border border-mz-border-light/60 bg-mz-bg-surface-2/40 hover:bg-mz-bg-surface-2 hover:border-mz-accent-primary/40 transition-all text-center">
-                            <x-icon name="banknotes" class="size-4 text-mz-success group-hover:scale-110 transition-transform" />
-                            <span class="mt-1 text-xs font-semibold text-mz-text-secondary group-hover:text-white">Caja</span>
-                        </a>
-                    @endif
-                    @if ($permissions['cut_own'])
-                        <a href="{{ route('pos.cuts.mine') }}" class="group flex flex-col items-center justify-center p-3 rounded-xl border border-mz-border-light/60 bg-mz-bg-surface-2/40 hover:bg-mz-bg-surface-2 hover:border-mz-accent-primary/40 transition-all text-center">
-                            <x-icon name="report" class="size-4 text-mz-accent-primary group-hover:scale-110 transition-transform" />
-                            <span class="mt-1 text-xs font-semibold text-mz-text-secondary group-hover:text-white">Mi corte</span>
-                        </a>
-                    @endif
-                </div>
-            </section>
-
-            <!-- Atajos de teclado -->
-            <section class="rounded-2xl border border-mz-border bg-mz-bg-surface p-5 shadow-xl shadow-black/20">
-                <div class="flex items-center gap-2 pb-3 border-b border-mz-border">
-                    <svg class="size-4 text-mz-accent-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h12A2.25 2.25 0 0120.25 6v12A2.25 2.25 0 0118 20.25H6A2.25 2.25 0 013.75 18V6zM6.75 7.5h.008v.008H6.75V7.5zm3.75 0h.008v.008H10.5V7.5zm3.75 0h.008v.008H14.25V7.5zm3.75 0h.008v.008H18V7.5zM6.75 10.5h.008v.008H6.75V10.5zm3.75 0h.008v.008H10.5V10.5zm3.75 0h.008v.008H14.25V10.5zm3.75 0h.008v.008H18V10.5zM8.25 14.25h7.5" />
-                    </svg>
-                    <h2 class="text-xs font-bold uppercase tracking-wider text-mz-text-primary">Atajos de teclado</h2>
-                </div>
-                <ul class="mt-3.5 space-y-2.5 text-xs">
-                    <li class="flex items-center justify-between text-mz-text-secondary">
-                        <span>Buscar o escanear</span>
-                        <kbd class="rounded-md border border-mz-border-light bg-mz-bg-surface-2 px-2 py-0.5 font-mono text-[11px] font-semibold text-white shadow-xs">Enter</kbd>
-                    </li>
-                    <li class="flex items-center justify-between text-mz-text-secondary">
-                        <span class="font-bold text-mz-accent-primary">Cobrar ticket</span>
-                        <kbd class="rounded-md border border-mz-accent-primary/40 bg-mz-accent-primary/20 px-2 py-0.5 font-mono text-[11px] font-bold text-mz-accent-primary shadow-xs">F12</kbd>
-                    </li>
-                    <li class="flex items-center justify-between text-mz-text-secondary">
-                        <span>Cerrar diálogo</span>
-                        <kbd class="rounded-md border border-mz-border-light bg-mz-bg-surface-2 px-2 py-0.5 font-mono text-[11px] font-semibold text-white shadow-xs">Esc</kbd>
-                    </li>
-                    <li class="flex items-center justify-between text-mz-text-secondary">
-                        <span>Dejar pendiente</span>
-                        <kbd class="rounded-md border border-mz-border-light bg-mz-bg-surface-2 px-2 py-0.5 font-mono text-[11px] font-semibold text-white shadow-xs">F6</kbd>
-                    </li>
-                    <li class="flex items-center justify-between text-mz-text-secondary">
-                        <span>Entrada de caja</span>
-                        <kbd class="rounded-md border border-mz-border-light bg-mz-bg-surface-2 px-2 py-0.5 font-mono text-[11px] font-semibold text-white shadow-xs">F7</kbd>
-                    </li>
-                    <li class="flex items-center justify-between text-mz-text-secondary">
-                        <span>Salida de caja</span>
-                        <kbd class="rounded-md border border-mz-border-light bg-mz-bg-surface-2 px-2 py-0.5 font-mono text-[11px] font-semibold text-white shadow-xs">F8</kbd>
-                    </li>
-                </ul>
-            </section>
-        </aside>
     </div>
+
+    <dialog id="product-image-dialog" aria-labelledby="product-image-title" class="w-[calc(100%-2rem)] max-w-5xl max-h-[95dvh] overflow-auto rounded-2xl border border-mz-border-light bg-mz-bg-surface p-0 shadow-2xl shadow-black/95 backdrop:bg-black/75" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); box-sizing: border-box;">
+        <div class="flex items-center justify-between gap-3 border-b border-mz-border-light bg-mz-bg-surface-2/40 px-5 py-4">
+            <h2 id="product-image-title" class="min-w-0 break-words text-base font-bold text-white">Imagen del producto</h2>
+            <button type="button" data-close-dialog="product-image-dialog" class="shrink-0 rounded-xl border border-mz-border-light px-3 py-2 text-xs font-bold text-mz-text-secondary transition-colors hover:bg-mz-bg-surface-2 hover:text-white">
+                Cerrar
+            </button>
+        </div>
+        <div class="p-4">
+            <img id="product-image-preview" alt="" class="mx-auto max-h-[75dvh] w-full object-contain">
+            <p id="product-image-error" hidden class="px-5 py-12 text-center text-sm text-mz-text-muted" role="status">La imagen no está disponible.</p>
+        </div>
+    </dialog>
 
     <!-- MODAL DE COBRO (Payment Dialog) -->
     <dialog id="payment-dialog" class="w-full max-w-lg rounded-2xl border border-mz-border-light bg-mz-bg-surface shadow-2xl shadow-black/95 p-0 overflow-hidden" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); box-sizing: border-box;">

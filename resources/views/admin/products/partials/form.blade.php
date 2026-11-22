@@ -190,7 +190,7 @@
 
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div>
-                            <label for="stock" class="{{ $labelClass }}">Cantidad actual</label>
+                            <label for="stock" class="{{ $labelClass }}">Existencia en tienda</label>
                             <input id="stock" name="stock" type="number" step="{{ $stockStep }}" min="0" max="4294967295" value="{{ old('stock', $product->stock ?? 0) }}" required class="mz-input mt-1.5 h-11 w-full" placeholder="0">
                             @error('stock') <p class="{{ $errorClass }}">{{ $message }}</p> @enderror
                         </div>
@@ -203,6 +203,19 @@
                         </div>
                     </div>
                 </fieldset>
+                <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <p id="location-stocks-help" class="text-xs text-mz-text-secondary sm:col-span-2">Cantidades opcionales de consulta manual. No se suman a la existencia vendible ni se descuentan al vender, incluso en paquetes. Deja vacío si no hay dato.</p>
+                    <div>
+                        <label for="warehouse_stock" class="{{ $labelClass }}">Bodega (opcional)</label>
+                        <input id="warehouse_stock" name="warehouse_stock" type="number" step="{{ $stockStep }}" min="0" max="4294967295" value="{{ old('warehouse_stock', $product->warehouse_stock) }}" aria-describedby="location-stocks-help warehouse-stock-error" aria-invalid="{{ $errors->has('warehouse_stock') ? 'true' : 'false' }}" class="mz-input mt-1.5 h-11 w-full">
+                        <p id="warehouse-stock-error" class="{{ $errorClass }}">{{ $errors->first('warehouse_stock') }}</p>
+                    </div>
+                    <div>
+                        <label for="store_2_stock" class="{{ $labelClass }}">Tienda 2 (opcional)</label>
+                        <input id="store_2_stock" name="store_2_stock" type="number" step="{{ $stockStep }}" min="0" max="4294967295" value="{{ old('store_2_stock', $product->store_2_stock) }}" aria-describedby="location-stocks-help store-2-stock-error" aria-invalid="{{ $errors->has('store_2_stock') ? 'true' : 'false' }}" class="mz-input mt-1.5 h-11 w-full">
+                        <p id="store-2-stock-error" class="{{ $errorClass }}">{{ $errors->first('store_2_stock') }}</p>
+                    </div>
+                </div>
             </x-card>
         </div>
 

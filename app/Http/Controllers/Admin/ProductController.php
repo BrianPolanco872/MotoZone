@@ -546,6 +546,8 @@ class ProductController extends Controller
             'cost',
             'wholesale_price',
             'stock',
+            'warehouse_stock',
+            'store_2_stock',
             'min_stock',
             'track_inventory',
             'featured',

@@ -1,5 +1,6 @@
 @php
     $user = auth()->user();
+    $isPos = request()->routeIs('pos.index');
     $isAdmin = $user?->hasRole('admin') ?? false;
     $initials = $user
         ? strtoupper(str($user->name)->explode(' ')->filter()->take(2)->map(fn ($part) => mb_substr($part, 0, 1))->implode(''))
@@ -66,6 +67,7 @@
 </head>
 <body class="h-full font-sans text-mz-text-primary antialiased">
     <div class="min-h-full">
+        @if (! $isPos)
         <aside class="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col bg-mz-bg-surface lg:flex">
             <a href="{{ $panelHome }}" class="flex h-16 items-center gap-3 px-6">
                 <span class="flex size-9 items-center justify-center rounded-md bg-mz-accent-primary text-white">
@@ -134,8 +136,9 @@
                 </form>
             </div>
         </aside>
+        @endif
 
-        <div class="lg:pl-64">
+        <div @class(['lg:pl-64' => ! $isPos])>
             <header class="sticky top-0 z-20 border-b border-mz-border-light bg-mz-bg-surface/90 backdrop-blur">
                 <div class="flex h-16 items-center gap-4 px-4 sm:px-6 lg:px-8">
                     <a href="{{ route('home') }}" class="flex size-9 items-center justify-center rounded-md bg-mz-accent-primary text-white lg:hidden" aria-label="Ir a la tienda">
@@ -165,7 +168,7 @@
                             </button>
                         </form>
 
-                        <details class="relative lg:hidden" data-dismissable>
+                        <details @class(['relative', 'lg:hidden' => ! $isPos]) data-dismissable>
                             <summary class="flex size-9 cursor-pointer list-none items-center justify-center rounded-md border border-mz-border-light text-mz-text-secondary transition-colors hover:bg-mz-bg-surface-2 [&::-webkit-details-marker]:hidden" aria-label="Abrir menú del panel">
                                 <x-icon name="menu" class="size-5" />
                             </summary>

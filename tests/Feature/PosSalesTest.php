@@ -506,10 +506,81 @@ class PosSalesTest extends TestCase
         $this->assertEquals(3, $product->stock); // Solo se descontó una vez
     }
 
+    #[TestWith([null, '0.000'])]
+    #[TestWith(['8.000', '4.000'])]
+    public function test_paid_sale_deducts_only_store_stock_and_preserves_optional_locations(?string $warehouseStock, string $store2Stock): void
+    {
+        $product = $this->createProduct([
+            'stock' => 5,
+            'warehouse_stock' => $warehouseStock,
+            'store_2_stock' => $store2Stock,
+        ]);
+
+        $this->actingAs($this->employee())->postJson(route('pos.sales.store'), [
+            'idempotency_key' => 'store-only-stock',
+            'items' => [['product_id' => $product->id, 'quantity' => 2]],
+        ])->assertOk();
+
+        $product->refresh();
+        $this->assertSame(3, $product->stock);
+        $this->assertSame($warehouseStock, $product->warehouse_stock);
+        $this->assertSame($store2Stock, $product->store_2_stock);
+        $this->assertDatabaseCount('stock_movements', 1);
+        $this->assertDatabaseHas('stock_movements', ['product_id' => $product->id, 'quantity' => -2]);
+    }
+
+    #[TestWith([null])]
+    #[TestWith(['products/actual.jpg'])]
+    public function test_pending_metadata_uses_catalog_without_replacing_saved_sale_values(?string $imagePath): void
+    {
+        $product = $this->createProduct(['stock' => 5]);
+        $this->actingAs($this->employee());
+        $saleId = $this->postJson(route('pos.sales.store'), [
+            'idempotency_key' => 'pending-current-metadata',
+            'status' => 'pending',
+            'items' => [['product_id' => $product->id, 'quantity' => 2]],
+        ])->assertOk()->json('sale.id');
+        $sale = Sale::query()->findOrFail($saleId);
+        $itemBefore = $sale->items()->sole()->getAttributes();
+        $product->update([
+            'name' => 'Nombre actual',
+            'sku' => 'ACTUAL',
+            'barcode' => '999999',
+            'price' => 999,
+            'tax_rate' => 0,
+            'category_id' => $imagePath === null ? null : $product->category_id,
+            'image_path' => $imagePath,
+            'warehouse_stock' => 0,
+            'store_2_stock' => 7,
+        ]);
+
+        $this->getJson(route('pos.sales.show', $sale))->assertOk()
+            ->assertJsonPath('sale.total', 200)
+            ->assertJsonPath('sale.items.0.name', 'Kit de prueba')
+            ->assertJsonPath('sale.items.0.sku', 'KIT-001')
+            ->assertJsonPath('sale.items.0.barcode', '7501234567890')
+            ->assertJsonPath('sale.items.0.unit_price', 100)
+            ->assertJsonPath('sale.items.0.quantity', 2)
+            ->assertJsonPath('sale.items.0.tax_rate', 0.16)
+            ->assertJsonPath('sale.items.0.category_name', $product->category?->name)
+            ->assertJsonPath('sale.items.0.image_url', $imagePath === null ? null : asset('storage/products/actual.jpg'))
+            ->assertJsonPath('sale.items.0.warehouse_stock', '0.000')
+            ->assertJsonPath('sale.items.0.store_2_stock', '7.000')
+            ->assertJsonPath('sale.items.0.stock', null)
+            ->assertJsonPath('sale.items.0.track_inventory', false)
+            ->assertJsonPath('sale.items.0.wholesale_price', null);
+
+        $this->assertSame($itemBefore, $sale->items()->sole()->getAttributes());
+        $this->assertSame('200.00', $sale->fresh()->total);
+        $this->assertSame(5, $product->fresh()->stock);
+        $this->assertDatabaseCount('stock_movements', 0);
+        $this->assertDatabaseCount('cash_movements', 0);
+    }
+
     public function test_sale_cannot_exceed_available_stock(): void
     {
         $employee = $this->employee();
-        $product = $this->createProduct(['stock' => 1]);
+        $product = $this->createProduct(['stock' => 1, 'warehouse_stock' => 100, 'store_2_stock' => 100]);
 
         $response = $this->actingAs($employee)->postJson(route('pos.sales.store'), [
             'idempotency_key' => 'stock-001',
@@ -527,6 +598,8 @@ class PosSalesTest extends TestCase
         $this->assertCount(0, Sale::where('idempotency_key', 'stock-001')->get());
         $product->refresh();
         $this->assertEquals(1, $product->stock);
+        $this->assertSame('100.000', $product->warehouse_stock);
+        $this->assertSame('100.000', $product->store_2_stock);
     }
 
     public function test_pending_sale_can_be_charged_and_updates_stock(): void
@@ -601,6 +674,10 @@ class PosSalesTest extends TestCase
             ->assertJsonPath('sale.items.0.sku', 'KIT-001')
             ->assertJsonPath('sale.items.0.barcode', '00012345')
             ->assertJsonPath('sale.items.0.unit_price', 100)
+            ->assertJsonPath('sale.items.0.image_url', null)
+            ->assertJsonPath('sale.items.0.category_name', null)
+            ->assertJsonPath('sale.items.0.warehouse_stock', null)
+            ->assertJsonPath('sale.items.0.store_2_stock', null)
             ->assertJsonPath('sale.items.0.quantity', 2);
         $this->assertSame([...$itemBefore, 'product_id' => null], $saleItem->fresh()->getAttributes());
 
@@ -660,6 +737,10 @@ class PosSalesTest extends TestCase
             ->assertJsonPath('sale.items.1.is_custom', true)
             ->assertJsonPath('sale.items.1.custom_name', 'Instalación')
             ->assertJsonPath('sale.items.1.custom_price', 30)
+            ->assertJsonPath('sale.items.1.image_url', null)
+            ->assertJsonPath('sale.items.1.category_name', null)
+            ->assertJsonPath('sale.items.1.warehouse_stock', null)
+            ->assertJsonPath('sale.items.1.store_2_stock', null)
             ->assertJsonPath('sale.items.2.custom_name', 'Revisión');
 
         $this->postJson(route('pos.sales.charge', $sale), ['amount_paid' => 150])->assertOk();

@@ -47,11 +47,14 @@ async function pos({ pending = null, ticket = null, products = [{ id: 7, name: '
             closest(selector) {
                 if (selector === '[data-action]' && this.dataset.action) return this;
                 if (selector === '[data-product-id]' && this.dataset.productId) return this;
+                if (selector === '[data-view-image]' && this.dataset.viewImage !== undefined) return this;
                 if (selector === 'input, textarea, select' && ['INPUT', 'TEXTAREA', 'SELECT'].includes(this.tagName)) return this;
                 return null;
             },
             querySelector() { return null; },
             querySelectorAll() { return []; },
+            matches(selector) { return selector === '[data-product-thumbnail]' && this.dataset.productThumbnail !== undefined; },
+            setAttribute(name, value) { this[name] = value; },
             focus() { document.activeElement = this; },
             select() {}, reset() {}, scrollIntoView() {},
             showModal() { this.open = true; },
@@ -62,7 +65,8 @@ async function pos({ pending = null, ticket = null, products = [{ id: 7, name: '
             },
         };
     };
-    for (const id of ('pos-config pos-search pos-results pos-cart-body pos-empty pos-items-count pos-subtotal pos-tax pos-total '
+    for (const id of ('pos-config pos-search pos-results pos-cart-body pos-empty pos-items-count pos-total '
+        + 'product-image-dialog product-image-preview product-image-title product-image-error product-image-close '
         + 'pos-wholesale pos-error pending-banner payment-dialog payment-amount payment-total payment-change payment-error '
         + 'payment-confirm payment-method payment-amount-group cash-dialog cash-type cash-title cash-error start-day-dialog '
         + 'custom-product-dialog custom-product-form custom-product-name custom-product-price custom-product-quantity '
@@ -79,6 +83,8 @@ async function pos({ pending = null, ticket = null, products = [{ id: 7, name: '
     get('bulk-cancel').tagName = 'BUTTON';
     get('bulk-close-btn').tagName = 'BUTTON';
     get('bulk-cancel').dataset.closeDialog = 'bulk-dialog';
+    get('product-image-close').dataset.closeDialog = 'product-image-dialog';
+    get('product-image-error').hidden = true;
     get('payment-method').tagName = 'SELECT';
     get('payment-method').value = 'cash';
     get('ticket-print-container').classList.add('hidden');
@@ -102,7 +108,7 @@ async function pos({ pending = null, ticket = null, products = [{ id: 7, name: '
         querySelectorAll(selector) {
             if (selector === '[data-cash-open]') return [cashIn, cashOut];
             if (selector === '[data-add-product]') return frequentButtons;
-            if (selector === '[data-close-dialog]') return [get('bulk-cancel')];
+            if (selector === '[data-close-dialog]') return [get('bulk-cancel'), get('product-image-close')];
             return [];
         },
     });
@@ -141,13 +147,16 @@ async function pos({ pending = null, ticket = null, products = [{ id: 7, name: '
             get('pos-search').value = '750123';
             await get('pos-search').emit('keydown', { key: 'Enter' });
         },
-        async search(index = 0) {
+        async results() {
             get('pos-search').value = 'aceite';
             await get('pos-search').emit('input');
             for (const callback of timers) {
                 timers.delete(callback);
                 await callback();
             }
+        },
+        async search(index = 0) {
+            await this.results();
             const button = element('BUTTON');
             button.dataset.productId = String(products[index].id);
             await get('pos-results').emit('click', { target: button });
@@ -384,8 +393,6 @@ for (const entry of ['scan', 'search', 'frequent']) {
         assert.equal(ui.get('bulk-dialog').open, false);
         assert.equal(ui.document.activeElement, ui.get('pos-search'));
         assert.equal(ui.get('pos-total').textContent, '$7.05');
-        assert.equal(ui.get('pos-subtotal').textContent, '$6.08');
-        assert.equal(ui.get('pos-tax').textContent, '$0.97');
         assert.equal(ui.get('pos-items-count').textContent, '1 renglón');
         assert.match(ui.get('pos-cart-body').children[0].innerHTML, /step="0\.001" min="0\.001" max="9999" value="0\.5"/);
         await ui.get('pos-charge').click();
@@ -554,14 +561,14 @@ test('unit and custom quantities reject fractions instead of silently flooring',
     assert.deepEqual(ui.requests[0].payload.items.map((item) => item.quantity), [1, 1]);
 });
 
-test('tax is rounded per line and mixed quantities count rows, not pieces', async () => {
+test('mixed quantities keep the total and row count without subtotal or tax cards', async () => {
     const ui = await pos({ products: [bulkProduct, { ...bulkProduct, id: 10, name: 'Otro aceite' }] });
     await ui.frequentButtons[0].click();
     await ui.bulk(0.001);
     await ui.frequentButtons[1].click();
     await ui.bulk(0.001);
-    assert.equal(ui.get('pos-subtotal').textContent, '$0.02');
-    assert.equal(ui.get('pos-tax').textContent, '$0.00');
+    assert.equal(ui.get('pos-subtotal'), undefined);
+    assert.equal(ui.get('pos-tax'), undefined);
     assert.equal(ui.get('pos-total').textContent, '$0.02');
     assert.equal(ui.get('pos-items-count').textContent, '2 renglones');
 });
@@ -627,4 +634,131 @@ test('bulk modal validates stock and displays warning when exceeded', async () =
     await ui.get('bulk-cancel').click();
     assert.equal(ui.get('bulk-dialog').open, false);
     assert.equal(ui.document.activeElement, ui.get('pos-search'));
+});
+
+test('search renders product metadata without an action column and hides empty store 2', async () => {
+    const product = { id: 12, name: 'Aceite <4T>', barcode: 'MOT-001', price: 380, wholesale_price: 350, sale_mode: 'unit', category_name: 'Motor & fluidos', image_url: '/storage/motul.jpg', stock: 14, track_inventory: true, warehouse_stock: '0.000', store_2_stock: null };
+    const ui = await pos({ products: [product] });
+    await ui.results();
+    const html = ui.get('pos-results').innerHTML;
+    const headings = (markup) => [...markup.matchAll(/<th\b[^>]*>([^<]*)<\/th>/g)].map((match) => match[1]);
+    const columns = ['Foto', 'Código', 'Producto', 'Categoría', 'Precio unitario', 'Existencia en tienda', 'Existencia en bodega'];
+    assert.deepEqual(headings(html), columns);
+    assert.match(html, /Aceite &lt;4T&gt;/);
+    assert.match(html, /Motor &amp; fluidos/);
+    assert.match(html, /src="\/storage\/motul\.jpg"/);
+    assert.match(html, />14<\/td>/);
+    assert.match(html, />0<\/td>/);
+    assert.doesNotMatch(html, /Acción|Cantidad|Importe|Tienda 2|<input/);
+    assert.equal(ui.get('pos-cart-body').children.length, 0);
+    product.store_2_stock = '0.000';
+    await ui.results();
+    assert.deepEqual(headings(ui.get('pos-results').innerHTML), [...columns, 'Existencia Tienda 2']);
+    product.store_2_stock = null;
+    product.warehouse_stock = null;
+    await ui.results();
+    assert.doesNotMatch(ui.get('pos-results').innerHTML, /Existencia Tienda 2|>0<\/td>/);
+    assert.match(ui.get('pos-results').innerHTML, />-<\/td>/);
+    product.store_2_stock = '';
+    product.warehouse_stock = '';
+    await ui.results();
+    assert.deepEqual(headings(ui.get('pos-results').innerHTML), columns);
+    assert.match(ui.get('pos-results').innerHTML, />-<\/td>/);
+});
+
+test('clicking any result cell adds one product at its effective wholesale price', async () => {
+    const ui = await pos();
+    await ui.results();
+    await ui.key('F11');
+    assert.match(ui.get('pos-results').innerHTML, /\$80\.00/);
+    assert.equal(ui.get('pos-cart-body').children.length, 0);
+    const row = ui.element('TR');
+    row.dataset.productId = '7';
+    const cell = ui.element('TD');
+    cell.closest = (selector) => selector === '[data-product-id]' ? row : null;
+    await ui.get('pos-results').emit('click', { target: cell });
+    assert.equal(ui.get('pos-cart-body').children.length, 1);
+    assert.equal(ui.get('pos-total').textContent, '$80.00');
+    await ui.get('pos-pending').click();
+    assert.equal(ui.requests[0].payload.items[0].quantity, 1);
+});
+
+for (const key of ['Enter', ' ']) {
+    test(`result rows can be selected with ${JSON.stringify(key)} without affecting global shortcuts`, async () => {
+        const ui = await pos();
+        await ui.results();
+        const row = ui.element('TR');
+        row.dataset.productId = '7';
+        const event = await ui.get('pos-results').emit('keydown', { key, target: row });
+        await ui.document.emit('keydown', event);
+        assert.equal(event.defaultPrevented, true);
+        assert.equal(ui.get('pos-cart-body').children.length, 1);
+        assert.equal(ui.get('pos-total').textContent, '$100.00');
+        assert.equal(ui.get('payment-dialog').open, false);
+        assert.equal(ui.requests.length, 0);
+    });
+}
+
+test('selecting a bulk result keeps quantity capture in the existing modal', async () => {
+    const ui = await pos({ products: [bulkProduct] });
+    await ui.results();
+    const row = ui.element('TR');
+    row.dataset.productId = String(bulkProduct.id);
+    await ui.get('pos-results').emit('click', { target: row });
+    assert.equal(ui.get('bulk-dialog').open, true);
+    assert.equal(ui.get('bulk-quantity').value, '1.00');
+    assert.equal(ui.get('bulk-amount').value, '14.10');
+    assert.equal(ui.get('pos-cart-body').children.length, 0);
+    await ui.bulk(0.125);
+    assert.equal(ui.get('pos-total').textContent, '$1.76');
+});
+
+for (const close of ['button', 'Escape']) {
+    test(`product photo opens and closes by ${close} without changing the sale`, async () => {
+        const ui = await pos({ products: [{ id: 7, name: 'Foto <aceite>', price: 100, wholesale_price: null, image_url: '/storage/aceite.jpg', track_inventory: false }] });
+        await ui.scan();
+        const before = ui.get('pos-cart-body').children[0].innerHTML;
+        assert.match(before, /data-view-image="0"/);
+        const trigger = ui.element('BUTTON');
+        trigger.dataset.viewImage = '0';
+        await ui.get('pos-cart-body').emit('click', { target: trigger });
+        assert.equal(ui.get('product-image-dialog').open, true);
+        assert.equal(ui.get('product-image-preview').src, '/storage/aceite.jpg');
+        assert.equal(ui.get('product-image-title').textContent, 'Foto <aceite>');
+        await ui.key('F12');
+        await ui.key('Delete');
+        assert.equal(ui.get('payment-dialog').open, false);
+        if (close === 'button') {
+            await ui.get('product-image-close').click();
+        } else {
+            await ui.get('product-image-dialog').cancel();
+        }
+        assert.equal(ui.get('product-image-dialog').open, false);
+        assert.equal(ui.document.activeElement, trigger);
+        assert.equal(ui.get('pos-cart-body').children[0].innerHTML, before);
+        assert.equal(ui.get('pos-total').textContent, '$100.00');
+        assert.equal(ui.requests.length, 0);
+    });
+}
+
+test('missing or broken photos show a fallback and cannot trigger an empty image dialog', async () => {
+    const ui = await pos();
+    await ui.scan();
+    assert.match(ui.get('pos-cart-body').children[0].innerHTML, /Sin foto/);
+    assert.doesNotMatch(ui.get('pos-cart-body').children[0].innerHTML, /data-view-image/);
+    const trigger = ui.element('BUTTON');
+    trigger.dataset.viewImage = '0';
+    const image = ui.element('IMG');
+    image.dataset.productThumbnail = '';
+    image.nextElementSibling = { hidden: true };
+    image.closest = () => trigger;
+    await ui.get('pos-cart-body').emit('error', { target: image });
+    assert.equal(image.hidden, true);
+    assert.equal(image.nextElementSibling.hidden, false);
+    assert.equal(trigger.disabled, true);
+    await ui.get('pos-cart-body').emit('click', { target: trigger });
+    assert.equal(ui.get('product-image-dialog').open, false);
+    await ui.get('product-image-preview').emit('error');
+    assert.equal(ui.get('product-image-error').hidden, false);
+    assert.equal(ui.get('product-image-preview').hidden, true);
 });

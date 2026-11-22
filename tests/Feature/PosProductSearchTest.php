@@ -150,6 +150,60 @@ class PosProductSearchTest extends TestCase
             ->assertJsonMissingPath('products.0.kit_items');
     }
 
+    #[TestWith([null, null, null, false])]
+    #[TestWith(['0.000', '0.000', null, false])]
+    #[TestWith(['12.375', '3.125', 'products/aceite.jpg', true])]
+    public function test_search_and_featured_fallback_preserve_optional_metadata(?string $warehouseStock, ?string $store2Stock, ?string $imagePath, bool $hasCategory): void
+    {
+        $product = Product::factory()->bulk()->create([
+            'warehouse_stock' => $warehouseStock,
+            'store_2_stock' => $store2Stock,
+            'image_path' => $imagePath,
+            'featured' => true,
+        ]);
+        $categoryName = $hasCategory ? $product->category->name : null;
+        if (! $hasCategory) {
+            $product->update(['category_id' => null]);
+        }
+        $employee = User::factory()->create()->assignRole('empleado');
+        $employee->givePermissionTo('pos.access');
+        $this->actingAs($employee);
+
+        foreach ([route('pos.products.search', ['q' => $product->barcode]), route('pos.products.frequent')] as $url) {
+            $this->getJson($url)->assertOk()
+                ->assertJsonPath('products.0.id', $product->id)
+                ->assertJsonPath('products.0.category_name', $categoryName)
+                ->assertJsonPath('products.0.image_url', $imagePath === null ? null : asset('storage/products/aceite.jpg'))
+                ->assertJsonPath('products.0.warehouse_stock', $warehouseStock)
+                ->assertJsonPath('products.0.store_2_stock', $store2Stock);
+        }
+    }
+
+    public function test_frequent_sold_products_include_current_catalog_metadata(): void
+    {
+        $this->freezeTime();
+        $product = Product::factory()->create([
+            'featured' => false,
+            'image_path' => 'products/balata.jpg',
+            'warehouse_stock' => 0,
+            'store_2_stock' => null,
+            'stock' => 5,
+        ]);
+        $employee = User::factory()->create()->assignRole('empleado');
+        $employee->givePermissionTo(['pos.access', 'pos.sell']);
+        $this->actingAs($employee)->postJson(route('pos.sales.store'), [
+            'idempotency_key' => 'frequent-catalog-metadata',
+            'items' => [['product_id' => $product->id, 'quantity' => 1]],
+        ])->assertOk();
+
+        $this->getJson(route('pos.products.frequent'))->assertOk()
+            ->assertJsonPath('products.0.id', $product->id)
+            ->assertJsonPath('products.0.category_name', $product->category->name)
+            ->assertJsonPath('products.0.image_url', asset('storage/products/balata.jpg'))
+            ->assertJsonPath('products.0.warehouse_stock', '0.000')
+            ->assertJsonPath('products.0.store_2_stock', null);
+    }
+
     #[TestWith([true, true, 3])]
     #[TestWith([true, false, null])]
     #[TestWith([false, true, null])]
