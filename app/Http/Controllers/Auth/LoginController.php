@@ -83,10 +83,6 @@ class LoginController extends Controller
 
     private function routeForUser(?User $user): string
     {
-        if ($user?->hasRole('admin')) {
-            return 'admin.dashboard';
-        }
-
         if ($user?->can('pos.access')) {
             return 'pos.index';
         }

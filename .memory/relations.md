@@ -225,3 +225,13 @@ fix-pos-vista-amplia-existencias-01 -> implementa_feature -> feature-pos-vista-a
 plan-pos-vista-amplia-existencias-01 -> implementado_por -> fix-pos-vista-amplia-existencias-02
 fix-pos-vista-amplia-existencias-02 -> implementa_feature -> feature-pos-vista-amplia-existencias-01
 fix-pos-vista-amplia-existencias-02 -> corrige -> fix-pos-vista-amplia-existencias-01
+plan-pos-vista-amplia-existencias-01 -> implementado_por -> fix-pos-vista-amplia-existencias-03
+fix-pos-vista-amplia-existencias-03 -> implementa_feature -> feature-pos-vista-amplia-existencias-01
+plan-pos-vista-amplia-existencias-01 -> implementado_por -> fix-pos-vista-amplia-existencias-04
+fix-pos-vista-amplia-existencias-04 -> implementa_feature -> feature-pos-vista-amplia-existencias-01
+plan-pos-vista-amplia-existencias-01 -> implementado_por -> fix-pos-vista-amplia-existencias-05
+fix-pos-vista-amplia-existencias-05 -> implementa_feature -> feature-pos-vista-amplia-existencias-01
+plan-pos-vista-amplia-existencias-01 -> implementado_por -> fix-pos-vista-amplia-existencias-06
+fix-pos-vista-amplia-existencias-06 -> implementa_feature -> feature-pos-vista-amplia-existencias-01
+plan-pos-vista-amplia-existencias-01 -> implementado_por -> fix-pos-vista-amplia-existencias-07
+fix-pos-vista-amplia-existencias-07 -> implementa_feature -> feature-pos-vista-amplia-existencias-01

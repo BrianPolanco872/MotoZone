@@ -10,7 +10,10 @@ if (configElement) {
     const searchInput = document.getElementById('pos-search');
     const resultsBox = document.getElementById('pos-results');
     const cartBody = document.getElementById('pos-cart-body');
+    const cartTable = document.getElementById('pos-cart-table');
     const emptyState = document.getElementById('pos-empty');
+    const emptyCell = document.getElementById('pos-empty-cell');
+    const cartStore2Heading = document.getElementById('pos-cart-store2-heading');
     const itemsCount = document.getElementById('pos-items-count');
     const totalEl = document.getElementById('pos-total');
     const imageDialog = document.getElementById('product-image-dialog');
@@ -244,6 +247,10 @@ if (configElement) {
 
     const renderCart = () => {
         cartBody.innerHTML = '';
+        cartTable.classList.toggle('h-full', items.length === 0);
+        const showStore2 = items.some((item) => item.store_2_stock != null && item.store_2_stock !== '');
+        cartStore2Heading.hidden = !showStore2;
+        emptyCell.colSpan = showStore2 ? 11 : 10;
 
         items.forEach((item, index) => {
             const row = document.createElement('tr');
@@ -258,28 +265,25 @@ if (configElement) {
                 : `<span class="tabular-nums font-bold text-mz-text-secondary">${formatQuantity(item.quantity)}</span>`;
 
             const stockLabel = item.track_inventory
-                ? `${formatQuantity(item.stock ?? 0)} disp.`
+                ? formatQuantity(item.stock ?? 0)
                 : 'Sin control';
 
             row.innerHTML = `
-                <td class="px-4 py-3">
-                    <div class="flex items-center gap-3">
-                    ${item.image_url ? `<button type="button" data-view-image="${index}" class="flex size-12 shrink-0 items-center justify-center rounded-lg border border-mz-border-light bg-mz-bg-primary focus-visible:outline-2 focus-visible:outline-mz-accent-primary" aria-label="Ampliar foto de ${escapeHtml(item.name)}"><img data-product-thumbnail src="${escapeHtml(item.image_url)}" alt="${escapeHtml(item.name)}" class="size-11 rounded-lg object-contain"><span hidden class="text-[10px] text-mz-text-muted">Sin foto</span></button>` : '<span class="flex size-12 shrink-0 items-center justify-center rounded-lg bg-mz-bg-primary text-[10px] text-mz-text-muted">Sin foto</span>'}
-                    <div class="min-w-0">
-                    <p class="font-semibold text-sm text-mz-text-primary group-hover:text-mz-accent-primary transition-colors">${escapeHtml(item.name)}</p>
-                    <div class="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-mz-text-muted">
-                        <span class="font-mono text-[11px] text-mz-text-muted/80">${escapeHtml(item.barcode || item.barcode2 || item.sku || 'S/C')}</span>
-                    </div>
-                    </div>
-                    </div>
+                <td class="w-32 px-4 py-3 align-middle">
+                    ${item.image_url ? `<button type="button" data-view-image="${index}" class="flex size-24 shrink-0 items-center justify-center rounded-lg border border-mz-border-light bg-mz-bg-primary focus-visible:outline-2 focus-visible:outline-mz-accent-primary" aria-label="Ampliar foto de ${escapeHtml(item.name)}"><img data-product-thumbnail src="${escapeHtml(item.image_url)}" alt="${escapeHtml(item.name)}" class="size-24 rounded-lg object-contain"><span hidden class="text-xs text-mz-text-muted">Sin foto</span></button>` : '<span class="flex size-24 shrink-0 items-center justify-center rounded-lg border border-mz-border-light bg-mz-bg-primary text-xs text-mz-text-muted">Sin foto</span>'}
                 </td>
-                <td class="whitespace-nowrap px-4 py-3 text-right">${priceControl}${item.sale_mode === 'bulk' ? '<span class="block text-[11px] text-mz-text-muted">por unidad</span>' : ''}</td>
-                <td class="whitespace-nowrap px-4 py-3 text-center">${quantityControl}</td>
-                <td class="whitespace-nowrap px-4 py-3 text-right font-bold tabular-nums text-mz-text-primary font-display text-base">${formatMoney(lineTotal(item))}</td>
-                <td class="whitespace-nowrap px-4 py-3 text-right text-xs">
-                    <span class="inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium ${item.track_inventory && item.stock <= (item.min_stock ?? 0) ? 'bg-mz-warning/15 text-mz-warning border border-mz-warning/30' : 'bg-mz-bg-surface-2 text-mz-text-muted'}">${stockLabel}</span>
+                <td class="min-w-36 max-w-48 break-all px-4 py-3 align-middle font-mono text-xs text-mz-text-muted">${escapeHtml(item.barcode || item.barcode2 || item.sku || 'S/C')}</td>
+                <td class="min-w-72 max-w-sm whitespace-normal break-words px-4 py-3 align-middle font-semibold leading-relaxed text-mz-text-primary">${escapeHtml(item.name)}</td>
+                <td class="min-w-40 max-w-56 whitespace-normal break-words px-4 py-3 align-middle text-mz-text-secondary">${escapeHtml(item.category_name || '-')}</td>
+                <td class="min-w-32 whitespace-nowrap px-4 py-3 align-middle text-right">${priceControl}${item.sale_mode === 'bulk' ? '<span class="block text-[11px] text-mz-text-muted">por unidad</span>' : ''}</td>
+                <td class="whitespace-nowrap px-4 py-3 align-middle text-center">${quantityControl}</td>
+                <td data-line-total class="min-w-32 whitespace-nowrap px-4 py-3 align-middle text-right font-bold tabular-nums text-mz-text-primary font-display text-base">${formatMoney(lineTotal(item))}</td>
+                <td class="min-w-32 whitespace-nowrap px-4 py-3 align-middle text-right text-sm">
+                    <span class="tabular-nums ${item.track_inventory && item.stock <= (item.min_stock ?? 0) ? 'text-mz-warning' : 'text-mz-text-secondary'}">${stockLabel}</span>
                 </td>
-                <td class="px-4 py-3 text-right">
+                <td class="min-w-32 whitespace-nowrap px-4 py-3 align-middle text-right tabular-nums text-mz-text-secondary">${item.warehouse_stock == null || item.warehouse_stock === '' ? '-' : formatQuantity(item.warehouse_stock)}</td>
+                ${showStore2 ? `<td class="min-w-32 whitespace-nowrap px-4 py-3 align-middle text-right tabular-nums text-mz-text-secondary">${item.store_2_stock == null || item.store_2_stock === '' ? '' : formatQuantity(item.store_2_stock)}</td>` : ''}
+                <td class="px-4 py-3 align-middle text-right">
                     ${locked ? '' : `<button type="button" data-action="remove" data-index="${index}" class="inline-flex size-8 items-center justify-center rounded-lg border border-mz-border-light text-mz-text-muted transition-all duration-150 hover:border-mz-error/50 hover:bg-mz-error/15 hover:text-mz-error active:scale-95" title="Quitar artículo" aria-label="Quitar ${escapeHtml(item.name)}"><svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>`}
                 </td>
             `;
@@ -318,21 +322,11 @@ if (configElement) {
 
         const stock = stockFor(product);
 
-        if (stock !== null && stock <= 0) {
-            showError(`«${product.name}» está agotado.`);
-            return false;
-        }
-
         const existing = items.find((item) => item.product_id === product.id);
         const nextQuantity = (Math.round((existing?.quantity ?? 0) * 1000) + Math.round(quantity * 1000)) / 1000;
 
         if (!validQuantity(quantity, product.sale_mode) || !validQuantity(nextQuantity, product.sale_mode)) {
             showError('La cantidad debe ser positiva, hasta 9999; solo granel permite hasta 3 decimales.');
-            return false;
-        }
-
-        if (stock !== null && nextQuantity > stock) {
-            showError(`No hay existencia suficiente de «${product.name}». Disponible: ${formatQuantity(stock)}.`);
             return false;
         }
 
@@ -433,25 +427,11 @@ if (configElement) {
         return false;
     };
 
-    const validateBulkStock = (qty) => {
-        if (!bulkProduct || !bulkError) {
-            return true;
+    const validateBulkStock = () => {
+        bulkError?.classList.add('hidden');
+        if (bulkError) {
+            bulkError.textContent = '';
         }
-
-        const stock = stockFor(bulkProduct);
-        if (stock !== null) {
-            const existing = items.find((item) => item.product_id === bulkProduct.id);
-            const currentInCart = existing ? Number(existing.quantity) : 0;
-            const totalNeeded = (Math.round(currentInCart * 1000) + Math.round(qty * 1000)) / 1000;
-            if (totalNeeded > stock) {
-                bulkError.textContent = `No hay existencia suficiente de «${bulkProduct.name}». Disponible: ${formatQuantity(stock)}${currentInCart > 0 ? ` (${formatQuantity(currentInCart)} en ticket)` : ''}.`;
-                bulkError.classList.remove('hidden');
-                return false;
-            }
-        }
-
-        bulkError.classList.add('hidden');
-        bulkError.textContent = '';
         return true;
     };
 
@@ -705,23 +685,23 @@ if (configElement) {
         const showStore2 = products.some((product) => hasStockValue(product.store_2_stock));
         resultsBox.innerHTML = `
             <p class="border-b border-mz-border px-4 py-3 text-xs font-bold uppercase text-mz-accent-primary">Resultados de búsqueda · ${products.length} coincidencias</p>
-            <table class="w-full min-w-[64rem] text-left text-xs">
-                <thead class="sticky top-0 bg-mz-bg-surface-2 text-[10px] uppercase text-mz-text-muted">
-                    <tr><th scope="col" class="p-3">Foto</th><th scope="col" class="p-3">Código</th><th scope="col" class="p-3">Producto</th><th scope="col" class="p-3">Categoría</th><th scope="col" class="p-3 text-right">Precio unitario</th><th scope="col" class="p-3 text-right">Existencia en tienda</th><th scope="col" class="p-3 text-right">Existencia en bodega</th>${showStore2 ? '<th scope="col" class="p-3 text-right">Existencia Tienda 2</th>' : ''}</tr>
+            <table class="w-full min-w-[76rem] text-left text-sm leading-relaxed">
+                <thead class="sticky top-0 bg-mz-bg-surface-2 text-[11px] uppercase text-mz-text-muted">
+                    <tr><th scope="col" class="p-4">Foto</th><th scope="col" class="p-4">Código</th><th scope="col" class="p-4">Producto</th><th scope="col" class="p-4">Categoría</th><th scope="col" class="p-4 text-right">Precio unitario</th><th scope="col" class="p-4 text-right">Existencia en tienda</th><th scope="col" class="p-4 text-right">Existencia en bodega</th>${showStore2 ? '<th scope="col" class="p-4 text-right">Existencia Tienda 2</th>' : ''}</tr>
                 </thead>
                 <tbody class="divide-y divide-mz-border-light/40">${products.map((product) => {
                     const id = Number(product.id);
                     const price = priceFor(product);
                     const stock = stockFor(product);
                     return `<tr data-product-id="${id}" tabindex="0" aria-label="Agregar ${escapeHtml(product.name)} al ticket" class="cursor-pointer hover:bg-mz-accent-primary/5 focus-visible:outline-2 focus-visible:outline-mz-accent-primary">
-                        <td class="p-3"><div class="flex size-11 items-center justify-center rounded bg-mz-bg-primary">${product.image_url ? `<img data-product-thumbnail src="${escapeHtml(product.image_url)}" alt="${escapeHtml(product.name)}" class="size-10 object-contain"><span hidden class="text-[10px] text-mz-text-muted">Sin foto</span>` : '<span class="text-[10px] text-mz-text-muted">Sin foto</span>'}</div></td>
-                        <td class="p-3 font-mono text-mz-accent-primary">${escapeHtml(product.barcode || product.barcode2 || product.sku || 'S/C')}</td>
-                        <td class="min-w-48 p-3 font-semibold text-mz-text-primary">${escapeHtml(product.name)}</td>
-                        <td class="p-3 text-mz-text-secondary">${escapeHtml(product.category_name)}</td>
-                        <td class="whitespace-nowrap p-3 text-right font-semibold">${formatMoney(price)}</td>
-                        <td class="p-3 text-right ${stock === null ? 'text-mz-text-muted' : stock > 0 ? 'text-mz-success' : 'text-mz-error'}">${stock === null ? 'Sin control' : formatQuantity(stock)}</td>
-                        <td class="p-3 text-right text-mz-text-secondary">${hasStockValue(product.warehouse_stock) ? formatQuantity(product.warehouse_stock) : '-'}</td>
-                        ${showStore2 ? `<td class="p-3 text-right text-mz-text-secondary">${hasStockValue(product.store_2_stock) ? formatQuantity(product.store_2_stock) : ''}</td>` : ''}
+                        <td class="w-28 p-4 align-middle"><div class="flex size-20 shrink-0 items-center justify-center rounded-lg border border-mz-border-light bg-mz-bg-primary">${product.image_url ? `<img data-product-thumbnail src="${escapeHtml(product.image_url)}" alt="${escapeHtml(product.name)}" class="size-20 rounded-lg object-contain"><span hidden class="text-xs text-mz-text-muted">Sin foto</span>` : '<span class="text-xs text-mz-text-muted">Sin foto</span>'}</div></td>
+                        <td class="min-w-40 max-w-52 break-all p-4 align-middle font-mono text-mz-accent-primary">${escapeHtml(product.barcode || product.barcode2 || product.sku || 'S/C')}</td>
+                        <td class="min-w-72 max-w-sm whitespace-normal break-words p-4 align-middle font-semibold text-mz-text-primary">${escapeHtml(product.name)}</td>
+                        <td class="min-w-44 max-w-56 whitespace-normal break-words p-4 align-middle text-mz-text-secondary">${escapeHtml(product.category_name)}</td>
+                        <td class="min-w-32 whitespace-nowrap p-4 align-middle text-right font-semibold">${formatMoney(price)}</td>
+                        <td class="min-w-32 whitespace-nowrap p-4 align-middle text-right ${stock === null ? 'text-mz-text-muted' : stock > 0 ? 'text-mz-success' : 'text-mz-error'}">${stock === null ? 'Sin control' : formatQuantity(stock)}</td>
+                        <td class="min-w-32 whitespace-nowrap p-4 align-middle text-right text-mz-text-secondary">${hasStockValue(product.warehouse_stock) ? formatQuantity(product.warehouse_stock) : '-'}</td>
+                        ${showStore2 ? `<td class="min-w-32 whitespace-nowrap p-4 align-middle text-right text-mz-text-secondary">${hasStockValue(product.store_2_stock) ? formatQuantity(product.store_2_stock) : ''}</td>` : ''}
                     </tr>`;
                 }).join('')}</tbody>
             </table>`;
@@ -1103,12 +1083,6 @@ if (configElement) {
 
             const quantity = Number(input.value);
 
-            if (item.track_inventory && quantity > Number(item.stock)) {
-                showError(`Solo hay ${formatQuantity(item.stock)} disponibles de «${item.name}».`);
-                input.value = formatQuantity(item.quantity);
-                return;
-            }
-
             item.quantity = quantity;
             input.value = String(quantity);
         }
@@ -1123,8 +1097,7 @@ if (configElement) {
         const row = input.closest('tr');
 
         if (row) {
-            const cells = row.querySelectorAll('td');
-            cells[3].textContent = formatMoney(lineTotal(item));
+            row.querySelector('[data-line-total]').textContent = formatMoney(lineTotal(item));
         }
     };
     cartBody?.addEventListener('input', editCart);

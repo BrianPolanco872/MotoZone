@@ -21,7 +21,9 @@ use App\Http\Controllers\PosController;
 use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', HomeController::class)->name('home');
+Route::get('/', [LoginController::class, 'create'])->name('login');
+
+Route::get('/home', HomeController::class)->name('home');
 
 Route::get('/producto/{product:slug}', [CatalogController::class, 'show'])->name('catalog.show');
 

@@ -19,3 +19,11 @@ type: feature
 - Ajuste posterior solicitado: buscador sin Cantidad/Importe/Acción, selección por fila y detalle fijo con estado vacío centrado; sustituye el criterio anterior de cantidades en buscador.
 - Estado: IMPLEMENTADO.
 - Implementada en: fix-pos-vista-amplia-existencias-02 (ajuste visual; misma limitación de build pendiente).
+- Estado: IMPLEMENTADO.
+- Implementada en: fix-pos-vista-amplia-existencias-03 (total compacto, fotos de filtro 80px e información más espaciosa; build pendiente por versiones desalineadas).
+- Estado: IMPLEMENTADO.
+- Implementada en: fix-pos-vista-amplia-existencias-04 (sincronización de versión 1.0.1 y build local completado; bloqueo previo resuelto). Sin Testing, navegador ni despliegue.
+- Estado: IMPLEMENTADO.
+- Implementada en: fix-pos-vista-amplia-existencias-05 (campos completos del producto en Detalle de la venta, foto96px, columna Tienda 2 condicional; build local completado). Sin Testing ni navegador.
+- Estado: IMPLEMENTADO.
+- Implementada en: fix-pos-vista-amplia-existencias-06 (detalle ocupa espacio libre y cobro al borde inferior con margen8px; build completado). Sin Testing ni navegador.

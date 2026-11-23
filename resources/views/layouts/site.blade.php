@@ -124,7 +124,7 @@
                                 <x-icon name="cog" class="size-5" />
                             </a>
                         @elseif (auth()->user()->can('pos.access'))
-                            <a href="{{ route('pos.index') }}" class="flex size-10 items-center justify-center rounded-xl border border-slate-200 text-slate-600 transition hover:border-orange-500 hover:text-orange-600" aria-label="Punto de venta" title="Punto de venta">
+                            <a href="{{ route('pos.index') }}" class="flex size-10 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-slate-700 shadow-sm transition hover:border-orange-500 hover:text-orange-600" aria-label="Punto de venta" title="Punto de venta">
                                 <x-icon name="cart" class="size-5" />
                             </a>
                         @elseif (auth()->user()->can('admin.products.manage'))

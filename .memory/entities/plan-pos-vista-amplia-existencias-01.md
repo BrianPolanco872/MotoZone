@@ -143,3 +143,58 @@ type: plan
 - Cambios aplicados del ajuste: buscador reducido a columnas solicitadas y selección por fila/teclado, bodega vacía «-»/Tienda 2 condicional, viewport fijo 388px con encabezado48/cuerpo vacío340 centrado sin superposición y modal conservado. Implementado en fix-pos-vista-amplia-existencias-02.
 - Desviaciones del plan original: ajuste funcional expresamente solicitado por el usuario reemplaza Cantidad/Importe del buscador; altura local explícita en lugar de utilidades dependientes de build. Compilación sigue detenida por tag desalineado. Sin cambios en lógica ni JSON existente.
 - Verificación del ajuste: sintaxis PHP/JS, Pint y diff correctos; Testing/navegador NO ejecutados. El buscador y modal nuevos no llegarán al bundle cargado hasta resolver el bloqueo de ./build.sh.
+
+## Ajuste de tamaños solicitado posteriormente
+
+- Aprobación explícita del usuario: «deja mas pequeño el panel de total de cobro, y los productos que busco en el filtro mas grande su foto y la informacion que no se aplaste que este bien acomodado todo».
+- Alcance: solo presentación de resources/views/pos/index.blade.php (total y botonera compactos) y resources/js/pos/pos.js (miniaturas 80x80, texto/columnas más amplios, nombres completos y scroll horizontal sin comprimir información). Conservar selección, cantidades, inventario, modal y cálculos.
+- Rollback: restaurar únicamente este ajuste de clases en esos dos archivos; sin cambios de datos/esquema ni lógica.
+- Verificación inicial: git status limpio tras acciones externas a esta sesión; HEAD ahora tiene tag v1.0.1, pero package.json y composer.json siguen declarando 1.0.0. Nueva discrepancia impide ejecutar ./build.sh. No modificar versiones ni tags automáticamente.
+- Estado: IMPLEMENTADO.
+- Cambios aplicados: total/botonera compactos, miniaturas de 80px, texto de resultados mayor, columnas con mínimos/espaciado/alineación y salto de línea de nombres/categorías; selección/lógica intactas. Implementado en fix-pos-vista-amplia-existencias-03.
+- Desviaciones del plan original: solo ajuste visual explícitamente solicitado. Build pendiente por discrepancia actual de versiones; sin Testing/navegador.
+
+## Sincronización de versión y build autorizados
+
+- Usuario autoriza explícitamente actualizar de 1.0.0 a 1.0.1 los archivos de configuración para coincidir con tag v1.0.1 y ejecutar ./build.sh.
+- Alcance: composer.json, package.json y versión raíz de package-lock.json; sincronizar content-hash de composer.lock solo si la herramienta detecta que el cambio de versión lo requiere, sin cambiar dependencias. Ejecutar el build.sh existente sin argumentos mediante Git Bash disponible.
+- Precondiciones verificadas: rama produccion; HEAD y v1.0.1^{commit} coinciden en 3cee29d2ac119c3f51d827757b6bc9143ef23a93; public/hot ausente; no existe .ai/rules. Se conservan cambios visuales locales aprobados.
+- Rollback: restaurar únicamente metadata de versión de esta operación y los assets generados de su respaldo/versionado previo, sin tocar cambios visuales ni historial Git. Sin migraciones/Testing/despliegue.
+- Estado: IMPLEMENTADO.
+- Cambios aplicados: composer.json/package.json/package-lock.json a 1.0.1 y content-hash de composer.lock sincronizado con Composer instalado, sin cambiar dependencias; ./build.sh completado mediante Git Bash. Implementado en fix-pos-vista-amplia-existencias-04.
+- Desviaciones del plan original: bloqueo de versión resuelto por autorización expresa; no se modificó tag ni historial. Build del frontend ahora completo, anteriores observaciones de bloqueo quedan superadas.
+- Verificación: HEAD/tag coinciden, versiones raíz 1.0.1, composer validate correcto con advertencias no bloqueantes, controles internos build.sh y diff correctos. Assets nuevos incluyen tabla/modal/fotos grandes/CSS. Sin Testing ni verificación navegador/despliegue.
+
+## Campos y foto en Detalle de la venta
+
+- Solicitud explícita del usuario mediante captura: «aqui no le cambiaste los campos ... tienen que ser los de mi producto, y mas grande la foto».
+- Alcance aprobado del ajuste: mostrar en Detalle de la venta Foto, Código, Producto, Categoría, Precio unitario, Cantidad, Importe, Existencia en tienda, Existencia en bodega y Existencia Tienda 2 condicional; conservar Quitar existente. Foto/placeholder independiente de 96x96px, ampliable mediante el modal actual cuando hay imagen.
+- Reutilizar metadata real ya cargada en cada item (image_url, category_name, warehouse_stock, store_2_stock); no crear datos/imágenes de ejemplo ni nuevos campos/endpoint. Bodega sin dato «-», Tienda 2 se oculta si no hay datos y cero es válido. Productos sin categoría/foto muestran ausencia, no datos inventados.
+- Archivos en alcance: resources/views/pos/index.blade.php, resources/js/pos/pos.js, tests/pos.test.js y tests/Feature/PosAccessTest.php, más memoria y build mediante ./build.sh tras verificar versiones/tag.
+- Mantener altura fija, cálculos, controles de cantidad/precio, granel/kits/pendientes, inventario y modal. Actualizar encabezados/celdas/colspan de estado vacío conjuntamente para conservar alineación.
+- Rollback: restaurar solo los cambios de esta ampliación visual y recompilar mediante ./build.sh; sin datos/esquema/historial Git.
+- Estado: IMPLEMENTADO.
+- Cambios aplicados: detalle con columnas de producto completas, Tienda 2 condicional, foto96px y colspan10/11; se conservan modal y altura fija. editCart usa data-line-total en lugar del índice fijo3 para conservar actualización del importe con el nuevo orden. Implementado en fix-pos-vista-amplia-existencias-05.
+- Verificación: sintaxis PHP/JS, Pint dirty y diff correctos; ./build.sh completado tras verificar versiones/tag/public/hot. Pruebas adaptadas, NO ejecutadas; sin navegador.
+- Desviaciones del plan original: ampliación de campos al carrito solicitada explícitamente; ajuste del selector de importe imprescindible para no escribir sobre Categoría. Sin cambios de lógica comercial/datos.
+
+## Tabla expandida y cobro al borde inferior
+
+- Solicitud explícita mediante capturas: «baja esto hasta el borde y mas grande el panel de la tabla». Se refiere a la barra de total/cobro y al espacio de tabla que queda corto respecto a la pantalla.
+- Alcance aprobado: layout de altura mínima de viewport solo en pos.index; zona POS y detalle flexibles para aprovechar el espacio libre y llevar cobro al borde inferior con margen8px. No fijar cobro sobre las filas ni ocultar controles en ventanas pequeñas; si no cabe el mínimo, permitir scroll de página.
+- Mantener el cuerpo de tabla con mínimo388px, sin tope388px, flex-grow y altura base0 para que el número de filas no agrande el panel; scroll interno. Tabla vacía ocupa toda su zona para centrar el mensaje en la altura expandida. Mantener campos/fotos/modal/precios/inventario intactos.
+- Archivos: resources/views/layouts/admin.blade.php, resources/views/pos/index.blade.php, resources/js/pos/pos.js (solo altura vacía), tests/Feature/PosAccessTest.php y tests/pos.test.js, memoria y build con ./build.sh tras comprobar versión/tag.
+- Rollback: restaurar únicamente estos ajustes de layout/estado vacío y recompilar; sin datos/esquema ni historial Git. Testing no autorizado.
+- Estado: IMPLEMENTADO.
+- Cambios aplicados: main POS de altura mínima de viewport, zona POS y detalle flex-grow, cobro con margen inferior8px y mínimos para ventanas pequeñas; viewport interno sin tope388px y tabla vacía con h-full condicional. Implementado en fix-pos-vista-amplia-existencias-06.
+- Desviaciones del plan original: altura fija388px sustituida expresamente por altura adaptable a espacio libre con mínimo388px, según última petición. No se añadieron funciones comerciales.
+- Verificación: sintaxis PHP/JS, Pint y diff correctos; ./build.sh completado. Pruebas adaptadas pero NO ejecutadas, sin navegador.
+
+## Reparación de encabezados del carrito y total compacto
+
+- Solicitud del usuario: «la tabla debe respetar los campos de mis productos, foto, codigo, producto, categoria, precio unitario, existencia en tienda y existencia en bodega» y reducir el panel Total a cobrar; también quitó el atajo F12 de Cobrar venta.
+- Causa confirmada: la vista conservaba 6 encabezados y le faltaban pos-cart-table, pos-empty-cell y pos-cart-store2-heading, mientras pos.js ya renderizaba 10/11 columnas; renderCart fallaba por los nodos ausentes.
+- Alcance aplicado: solo resources/views/pos/index.blade.php; encabezados/celdas y colSpan alineados con pos.js, Tienda 2 condicional, total en una fila compacta y sin F12. Sin cambios en lógica de stock ni cálculos.
+- Estado: IMPLEMENTADO en fix-pos-vista-amplia-existencias-07; ./build.sh ejecutado y verificado tras confirmar versión 1.0.1, tag v1.0.1 y public/hot ausente. Sin Testing ni navegador.
+- Decisión posterior del usuario sobre existencias: eligió «Permitir agregar, validar al cobrar». Se retiraron los bloqueos/avisos de stock en el navegador (addProduct, validateBulkStock y editCart) y se adaptaron las pruebas JS; SaleService y el inventario siguen intactos y rechazan la venta al cobrar si no hay existencia. Desviación explícita y autorizada del bloqueo previo descrito en CA6; no cambia el cálculo de bodega/Tienda 2 ni permite sobreventa real. Estado: IMPLEMENTADO en fix-pos-vista-amplia-existencias-07, con build verificado; Testing no ejecutado.
+- Ajuste final de altura: usuario pidió «baja mas el ultimo panel al borde y agrandes la tabla de detalle de venta». El archivo real no conservaba el min-h del plan, así que se reaplicó en layouts/admin.blade.php y se hizo crecer el carrito con flex-1/min-h-0 en pos/index.blade.php, manteniendo 388px mínimo y scroll interno; panel de cobro shrink-0 y pb-2 en main. Sin cambios de lógica. Build verificado; Testing no ejecutado.

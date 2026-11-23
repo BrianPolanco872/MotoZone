@@ -10,5 +10,6 @@ type: fix
 - Cambios: paneles solicitados retirados, layout POS sin sidebar, detalle y búsqueda estables, tabla sin Acción y selección por nombre/código, cantidad editable/importe efectivo incluido mayoreo, granel conserva modal y cantidad propuesta; foto de carrito mediante dialog con Cerrar/Escape/foco y fallback; dos campos manuales nullable, cero visible, Tienda 2 condicional, tienda usa stock vigente; eager loading/metadata de pendientes sin alterar precios ni snapshots.
 - Verificación: Pint dirty, sintaxis PHP/JS y git diff --check correctos; diff comparado con alcance. Pruebas agregadas/adaptadas pero NO ejecutadas.
 - Limitaciones: sin migración de BD, build ni navegador; tag de versión no apunta a HEAD y bloquea ./build.sh. No se modificaron versiones, dependencias ni historial Git.
-- Estado: IMPLEMENTADO EN FUENTE.
+- Estado: IMPLEMENTADO.
 - Fecha: 2026-11-22.
+- Actualización: migración 2026_11_22_113802 aplicada a la BD motozone tras el error 42S22 del usuario al editar un producto; esquema previo de products respaldado en C:/Users/Administrador/AppData/Local/Temp/opencode/products_columns_before_location_stocks.json. Ambas columnas verificadas. No se aplicó la migración ajena 2026_11_20_114507, que sigue pendiente.

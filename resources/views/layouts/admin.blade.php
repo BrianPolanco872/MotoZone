@@ -139,7 +139,7 @@
         @endif
 
         <div @class(['lg:pl-64' => ! $isPos])>
-            <header class="sticky top-0 z-20 border-b border-mz-border-light bg-mz-bg-surface/90 backdrop-blur">
+            <header class="sticky top-0 z-40 border-b border-mz-border-light bg-mz-bg-surface/90 backdrop-blur">
                 <div class="flex h-16 items-center gap-4 px-4 sm:px-6 lg:px-8">
                     <a href="{{ route('home') }}" class="flex size-9 items-center justify-center rounded-md bg-mz-accent-primary text-white lg:hidden" aria-label="Ir a la tienda">
                         <x-icon name="moto" class="size-5" />
@@ -169,10 +169,16 @@
                         </form>
 
                         <details @class(['relative', 'lg:hidden' => ! $isPos]) data-dismissable>
-                            <summary class="flex size-9 cursor-pointer list-none items-center justify-center rounded-md border border-mz-border-light text-mz-text-secondary transition-colors hover:bg-mz-bg-surface-2 [&::-webkit-details-marker]:hidden" aria-label="Abrir menú del panel">
+                            <summary @class([
+                                'flex size-9 cursor-pointer list-none items-center justify-center gap-2 rounded-md border border-mz-border-light bg-mz-bg-surface-2 text-mz-text-secondary shadow-xs transition-colors hover:border-mz-accent-primary/50 hover:text-mz-accent-primary [&::-webkit-details-marker]:hidden',
+                                'lg:size-auto lg:px-3 lg:text-xs lg:font-semibold' => $isPos,
+                            ]) aria-label="Abrir menú del panel">
                                 <x-icon name="menu" class="size-5" />
+                                @if ($isPos)
+                                    <span class="hidden lg:inline">Módulos</span>
+                                @endif
                             </summary>
-                            <div class="absolute right-0 mt-2 max-h-[calc(100dvh-6rem)] w-64 overflow-y-auto rounded-lg border border-mz-border-light bg-mz-bg-surface p-2 shadow-xl shadow-black/40">
+                            <div class="absolute right-0 top-full z-50 mt-2 max-h-[calc(100dvh-6rem)] w-64 overflow-y-auto rounded-lg border border-mz-border-light bg-mz-bg-surface p-2 shadow-xl shadow-black/60">
                                 @foreach ($adminNavigation as $item)
                                     @if (isset($item['section']))
                                         <p class="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-widest text-mz-text-muted">{{ $item['label'] }}</p>
@@ -206,7 +212,10 @@
                 </div>
             </header>
 
-            <main class="px-4 py-6 sm:px-6 lg:px-8">
+            <main @class([
+                'px-4 py-6 sm:px-6 lg:px-8' => ! $isPos,
+                'flex min-h-[calc(100dvh-4rem-1px)] flex-col px-4 pb-2 pt-4 sm:px-6 lg:px-8' => $isPos,
+            ])>
                 @if (session('status'))
                     <x-alert variant="success">
                         {{ session('status') }}

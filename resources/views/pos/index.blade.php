@@ -13,93 +13,6 @@
             && ! ($permissions['day_closed'] ?? false);
     @endphp
 
-    {{-- BARRA SUPERIOR: Cockpit del Cajero y Terminal POS --}}
-    <div class="rounded-2xl border border-mz-border bg-gradient-to-r from-mz-bg-surface via-mz-bg-surface/95 to-mz-bg-surface p-4 sm:p-5 shadow-xl shadow-black/25">
-        <div class="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div class="flex-1 min-w-0">
-                <div class="flex flex-wrap items-center gap-2.5">
-                    <span class="inline-flex items-center gap-2 rounded-full border border-mz-success/30 bg-mz-success/10 px-3 py-1 text-xs font-semibold text-mz-success shadow-xs">
-                        <span class="relative flex size-2">
-                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-mz-success opacity-75"></span>
-                            <span class="relative inline-flex rounded-full size-2 bg-mz-success"></span>
-                        </span>
-                        Terminal POS Activa
-                    </span>
-                    @if ($settings['enabled'] === false)
-                        <span class="inline-flex items-center gap-1.5 rounded-full border border-mz-error/30 bg-mz-error/10 px-3 py-1 text-xs font-semibold text-mz-error">
-                            <x-icon name="alert" class="size-3.5" />
-                            Cobro desactivado por admin
-                        </span>
-                    @endif
-                </div>
-
-                <div class="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-mz-text-muted">
-                    <span class="inline-flex items-center gap-1.5 text-mz-text-secondary font-medium">
-                        <x-icon name="store" class="size-3.5 text-mz-accent-primary" />
-                        {{ $settings['business']['name'] }}
-                    </span>
-                    <span class="inline-flex items-center gap-1.5 text-mz-text-secondary">
-                        <x-icon name="users" class="size-3.5 text-mz-text-muted" />
-                        Cajero: <strong class="text-white">{{ $user?->name }}</strong>
-                    </span>
-                    <span class="inline-flex items-center gap-1.5 text-mz-text-muted">
-                        <x-icon name="clock" class="size-3.5 text-mz-text-muted" />
-                        {{ now()->format('d/m/Y H:i') }}
-                    </span>
-                    <span class="inline-flex items-center rounded-md bg-mz-bg-surface-2 px-2 py-0.5 font-mono text-[11px] font-semibold text-mz-accent-primary border border-mz-border-light">
-                        {{ $currency }}
-                    </span>
-                </div>
-            </div>
-
-            {{-- Botones de acción rápida en cabecera --}}
-            <div class="flex flex-wrap items-center gap-2">
-                @if ($permissions['cash'])
-                    <button type="button" data-cash-open="in"
-                            class="inline-flex items-center gap-1.5 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/70 px-3 py-2 text-xs font-semibold text-mz-text-secondary transition-all hover:border-mz-success/50 hover:bg-mz-success/10 hover:text-mz-success shadow-xs active:scale-95">
-                        <x-icon name="arrow-down" class="size-3.5 text-mz-success" />
-                        <span>Entrada</span>
-                        <kbd class="hidden md:inline rounded bg-black/40 px-1.5 py-0.2 text-[10px] font-mono text-mz-text-muted">F7</kbd>
-                    </button>
-                    <button type="button" data-cash-open="out"
-                            class="inline-flex items-center gap-1.5 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/70 px-3 py-2 text-xs font-semibold text-mz-text-secondary transition-all hover:border-mz-error/50 hover:bg-mz-error/10 hover:text-mz-error shadow-xs active:scale-95">
-                        <x-icon name="arrow-up" class="size-3.5 text-mz-error" />
-                        <span>Salida</span>
-                        <kbd class="hidden md:inline rounded bg-black/40 px-1.5 py-0.2 text-[10px] font-mono text-mz-text-muted">F8</kbd>
-                    </button>
-                @endif
-
-                <a href="{{ route('pos.sales.day') }}"
-                   class="inline-flex items-center gap-1.5 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/70 px-3.5 py-2 text-xs font-semibold text-mz-text-secondary transition-all hover:border-mz-accent-primary/40 hover:bg-mz-bg-surface-2 hover:text-white shadow-xs active:scale-95">
-                    <x-icon name="chart" class="size-3.5 text-mz-accent-primary" />
-                    <span>Ventas del día</span>
-                </a>
-
-                @if ($permissions['cut'])
-                    <a href="{{ route('pos.cuts.index') }}"
-                       class="inline-flex items-center gap-1.5 rounded-xl bg-mz-accent-primary hover:bg-mz-accent-hover text-white px-4 py-2 text-xs font-bold transition-all shadow-md shadow-mz-accent-primary/20 active:scale-95">
-                        <x-icon name="report" class="size-3.5" />
-                        <span>Corte del día</span>
-                    </a>
-                @endif
-
-                <a href="{{ route('pos.sales.pending') }}"
-                   class="inline-flex items-center gap-1.5 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/70 px-3.5 py-2 text-xs font-semibold text-mz-text-secondary transition-all hover:border-mz-warning/50 hover:bg-mz-warning/10 hover:text-mz-warning shadow-xs active:scale-95">
-                    <x-icon name="pause" class="size-3.5 text-mz-warning" />
-                    <span>Pendientes</span>
-                </a>
-
-                @if ($permissions['returns_request'])
-                    <a href="{{ route('pos.returns.index') }}"
-                       class="inline-flex items-center gap-1.5 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/70 px-3.5 py-2 text-xs font-semibold text-mz-text-secondary transition-all hover:border-mz-accent-primary/40 hover:bg-mz-bg-surface-2 hover:text-white shadow-xs active:scale-95">
-                        <x-icon name="arrow-uturn-left" class="size-3.5 text-mz-accent-primary" />
-                        <span>Devoluciones</span>
-                    </a>
-                @endif
-            </div>
-        </div>
-    </div>
-
     {{-- Banner de Iniciar Día si falta registrar fondo de caja --}}
     @if ($showStartDay)
         <div class="mt-4 rounded-2xl border border-mz-accent-primary/40 bg-gradient-to-r from-mz-accent-primary/15 via-mz-bg-surface to-mz-bg-surface p-4 sm:p-5 shadow-xl shadow-black/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -140,8 +53,8 @@
     </button>
 
     {{-- Búsqueda, detalle del carrito y liquidación a ancho completo --}}
-    <div class="mt-4">
-        <div class="min-w-0 space-y-4">
+    <div class="mt-4 flex min-h-0 flex-1 flex-col">
+        <div class="min-w-0 flex min-h-0 flex-1 flex-col gap-4">
             <!-- Barra de Búsqueda y Escáner -->
             <section class="relative z-30 rounded-2xl border border-mz-border bg-mz-bg-surface p-4 sm:p-5 shadow-xl shadow-black/20">
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -207,7 +120,7 @@
             </div>
 
             <!-- Tabla de Detalle del Carrito -->
-            <section class="rounded-2xl border border-mz-border bg-mz-bg-surface shadow-xl shadow-black/20 overflow-hidden">
+            <section class="rounded-2xl border border-mz-border bg-mz-bg-surface shadow-xl shadow-black/20 overflow-hidden flex min-h-0 flex-1 flex-col">
                 <div class="flex items-center justify-between border-b border-mz-border px-5 py-3.5 bg-mz-bg-surface-2/20">
                     <div class="flex items-center gap-2.5">
                         <div class="flex size-7 items-center justify-center rounded-lg bg-mz-accent-primary/10 text-mz-accent-primary border border-mz-accent-primary/20">
@@ -218,18 +131,39 @@
                             <p class="text-[11px] text-mz-text-muted mt-0.5">Artículos agregados al ticket actual</p>
                         </div>
                     </div>
-                    <span id="pos-items-count" class="rounded-full bg-mz-accent-primary/10 border border-mz-accent-primary/25 px-3 py-1 text-xs font-bold text-mz-accent-primary tabular-nums">0 renglones</span>
+                    <div class="flex items-center gap-2">
+                        @if ($permissions['cash'])
+                            <button type="button" data-cash-open="in"
+                                    class="inline-flex items-center gap-1.5 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/70 px-3 py-2 text-xs font-semibold text-mz-text-secondary transition-all hover:border-mz-success/50 hover:bg-mz-success/10 hover:text-mz-success shadow-xs active:scale-95">
+                                <x-icon name="arrow-down" class="size-3.5 text-mz-success" />
+                                <span>Entrada</span>
+                                <kbd class="hidden md:inline rounded bg-black/40 px-1.5 py-0.2 text-[10px] font-mono text-mz-text-muted">F7</kbd>
+                            </button>
+                            <button type="button" data-cash-open="out"
+                                    class="inline-flex items-center gap-1.5 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/70 px-3 py-2 text-xs font-semibold text-mz-text-secondary transition-all hover:border-mz-error/50 hover:bg-mz-error/10 hover:text-mz-error shadow-xs active:scale-95">
+                                <x-icon name="arrow-up" class="size-3.5 text-mz-error" />
+                                <span>Salida</span>
+                                <kbd class="hidden md:inline rounded bg-black/40 px-1.5 py-0.2 text-[10px] font-mono text-mz-text-muted">F8</kbd>
+                            </button>
+                        @endif
+                        <span id="pos-items-count" class="rounded-full bg-mz-accent-primary/10 border border-mz-accent-primary/25 px-3 py-1 text-xs font-bold text-mz-accent-primary tabular-nums">0 renglones</span>
+                    </div>
                 </div>
 
-                <div class="overflow-auto pos-scrollbar" style="height: 388px; min-height: 388px; max-height: 388px; overflow: auto;">
-                    <table class="min-w-full divide-y divide-mz-border text-sm">
+                <div class="pos-scrollbar min-h-0 flex-1" style="height: 0; min-height: 388px; overflow: auto;">
+                    <table id="pos-cart-table" class="min-w-full divide-y divide-mz-border text-sm">
                         <thead class="sticky top-0 z-10 bg-mz-bg-surface-2" style="height: 48px; white-space: nowrap;">
                             <tr class="text-left text-xs uppercase tracking-wider text-mz-text-muted">
-                                <th scope="col" class="px-5 py-3 font-semibold">Producto</th>
+                                <th scope="col" class="px-4 py-3 font-semibold">Foto</th>
+                                <th scope="col" class="px-4 py-3 font-semibold">Código</th>
+                                <th scope="col" class="px-4 py-3 font-semibold">Producto</th>
+                                <th scope="col" class="px-4 py-3 font-semibold">Categoría</th>
                                 <th scope="col" class="px-4 py-3 text-right font-semibold">Precio unitario</th>
                                 <th scope="col" class="px-4 py-3 text-center font-semibold">Cantidad</th>
                                 <th scope="col" class="px-4 py-3 text-right font-semibold">Importe</th>
                                 <th scope="col" class="px-4 py-3 text-right font-semibold">Existencia en tienda</th>
+                                <th scope="col" class="px-4 py-3 text-right font-semibold">Existencia en bodega</th>
+                                <th id="pos-cart-store2-heading" scope="col" class="px-4 py-3 text-right font-semibold" hidden>Existencia Tienda 2</th>
                                 <th scope="col" class="px-4 py-3 text-center"><span class="sr-only">Quitar</span></th>
                             </tr>
                         </thead>
@@ -238,7 +172,7 @@
                         <!-- Estado vacío del carrito -->
                         <tbody id="pos-empty">
                             <tr>
-                                <td colspan="6" class="px-5 py-6 text-center" style="height: 340px; vertical-align: middle; box-sizing: border-box;">
+                                <td id="pos-empty-cell" colspan="10" class="px-5 py-6 text-center h-full" style="vertical-align: middle; box-sizing: border-box;">
                                     <div class="mx-auto flex size-16 items-center justify-center rounded-2xl bg-mz-bg-surface-2/80 border border-mz-border-light text-mz-accent-primary shadow-inner">
                                         <x-icon name="cart" class="size-8 text-mz-accent-primary/80" />
                                     </div>
@@ -257,17 +191,9 @@
             </section>
 
             <!-- Totales Financieros y Liquidación -->
-            <section class="rounded-2xl border border-mz-border bg-mz-bg-surface p-4 sm:p-5 shadow-xl shadow-black/20">
-                <div class="relative overflow-hidden rounded-xl border-2 border-mz-accent-primary/40 bg-gradient-to-br from-mz-accent-primary/20 via-mz-accent-primary/10 to-mz-bg-surface p-4 shadow-lg shadow-mz-accent-primary/10 flex flex-col justify-between">
-                    <div class="flex items-center justify-between">
-                        <span class="text-xs font-black uppercase tracking-widest text-mz-accent-primary">TOTAL A COBRAR</span>
-                        <span class="rounded-full bg-mz-accent-primary/20 border border-mz-accent-primary/30 px-2 py-0.5 font-mono text-[10px] font-bold text-mz-accent-primary">{{ $currency }}</span>
-                    </div>
-                    <p id="pos-total" class="mt-2 font-display text-3xl sm:text-4xl font-black tabular-nums text-white tracking-tight leading-none">$0.00</p>
-                </div>
-
+            <section class="rounded-2xl border border-mz-border bg-mz-bg-surface p-2 shadow-xl shadow-black/20 shrink-0">
                 <!-- Indicador de última venta realizada -->
-                <div id="last-sale-indicator" class="hidden items-center justify-between mt-4 rounded-xl border border-mz-success/30 bg-mz-success/10 px-4 py-3 text-sm text-mz-success shadow-sm">
+                <div id="last-sale-indicator" class="hidden items-center justify-between mb-2 rounded-xl border border-mz-success/30 bg-mz-success/10 px-3 py-2 text-xs text-mz-success shadow-sm">
                     <div class="flex items-center gap-2.5">
                         <div class="flex size-6 items-center justify-center rounded-full bg-mz-success text-white">
                             <x-icon name="check" class="size-4" />
@@ -277,26 +203,36 @@
                     <span class="text-xs text-mz-text-muted hidden sm:inline">Listo para imprimir ticket</span>
                 </div>
 
-                <!-- Botonera de Cobro y Acciones -->
-                <div class="mt-5 flex flex-col-reverse gap-2.5 sm:flex-row sm:items-center sm:justify-end">
-                    <button type="button" id="pos-clear" class="inline-flex items-center justify-center gap-2 rounded-xl border border-transparent px-3.5 py-2.5 text-xs font-semibold text-mz-text-muted hover:border-mz-error/40 hover:bg-mz-error/10 hover:text-mz-error transition-all active:scale-95">
-                        <x-icon name="trash" class="size-4" />
-                        Eliminar venta
-                    </button>
-                    <button type="button" id="pos-pending" @disabled(! $permissions['sell']) class="inline-flex items-center justify-center gap-2 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 hover:bg-mz-bg-surface-2 px-4 py-2.5 text-xs font-bold text-mz-text-secondary hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed active:scale-95">
-                        <x-icon name="pause" class="size-4 text-mz-warning" />
-                        <span>Dejar pendiente</span>
-                        <kbd class="hidden md:inline rounded bg-black/40 px-1.5 py-0.2 text-[10px] font-mono text-mz-text-muted">F6</kbd>
-                    </button>
-                    <button type="button" id="pos-print-ticket" disabled class="inline-flex items-center justify-center gap-2 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 hover:bg-mz-bg-surface-2 px-4 py-2.5 text-xs font-bold text-mz-text-secondary hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed active:scale-95">
-                        <x-icon name="printer" class="size-4 text-mz-accent-primary" />
-                        Imprimir ticket
-                    </button>
-                    <button type="button" id="pos-charge" @disabled(! $permissions['sell']) class="inline-flex items-center justify-center gap-2.5 rounded-xl bg-gradient-to-r from-mz-accent-primary to-mz-accent-hover hover:brightness-110 px-7 py-3 text-sm font-extrabold text-white shadow-xl shadow-mz-accent-primary/25 transition-all transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
-                        <x-icon name="banknotes" class="size-5" />
-                        <span>Cobrar venta</span>
-                        <kbd class="rounded bg-black/30 px-1.5 py-0.5 text-xs font-mono font-bold text-white/90">F12</kbd>
-                    </button>
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <!-- Total compacto -->
+                    <div class="relative overflow-hidden rounded-xl border border-mz-accent-primary/40 bg-gradient-to-br from-mz-accent-primary/20 via-mz-accent-primary/10 to-mz-bg-surface px-3 py-1.5 shadow-lg shadow-mz-accent-primary/10 flex items-center justify-between gap-3 min-w-64">
+                        <div class="flex items-center gap-2">
+                            <span class="text-[10px] font-black uppercase tracking-widest text-mz-accent-primary">TOTAL A COBRAR</span>
+                            <span class="rounded-full bg-mz-accent-primary/20 border border-mz-accent-primary/30 px-2 py-0.5 font-mono text-[10px] font-bold text-mz-accent-primary">{{ $currency }}</span>
+                        </div>
+                        <p id="pos-total" class="font-display text-lg sm:text-xl font-black tabular-nums text-white tracking-tight leading-none">$0.00</p>
+                    </div>
+
+                    <!-- Botonera de Cobro y Acciones -->
+                    <div class="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+                        <button type="button" id="pos-clear" class="inline-flex items-center justify-center gap-2 rounded-xl border border-transparent px-3 py-2 text-xs font-semibold text-mz-text-muted hover:border-mz-error/40 hover:bg-mz-error/10 hover:text-mz-error transition-all active:scale-95">
+                            <x-icon name="trash" class="size-4" />
+                            Eliminar venta
+                        </button>
+                        <button type="button" id="pos-pending" @disabled(! $permissions['sell']) class="inline-flex items-center justify-center gap-2 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 hover:bg-mz-bg-surface-2 px-4 py-2 text-xs font-bold text-mz-text-secondary hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed active:scale-95">
+                            <x-icon name="pause" class="size-4 text-mz-warning" />
+                            <span>Dejar pendiente</span>
+                            <kbd class="hidden md:inline rounded bg-black/40 px-1.5 py-0.2 text-[10px] font-mono text-mz-text-muted">F6</kbd>
+                        </button>
+                        <button type="button" id="pos-print-ticket" disabled class="inline-flex items-center justify-center gap-2 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 hover:bg-mz-bg-surface-2 px-4 py-2 text-xs font-bold text-mz-text-secondary hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed active:scale-95">
+                            <x-icon name="printer" class="size-4 text-mz-accent-primary" />
+                            Imprimir ticket
+                        </button>
+                        <button type="button" id="pos-charge" @disabled(! $permissions['sell']) class="inline-flex items-center justify-center gap-2.5 rounded-xl bg-gradient-to-r from-mz-accent-primary to-mz-accent-hover hover:brightness-110 px-6 py-2.5 text-sm font-extrabold text-white shadow-xl shadow-mz-accent-primary/25 transition-all transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+                            <x-icon name="banknotes" class="size-5" />
+                            <span>Cobrar venta</span>
+                        </button>
+                    </div>
                 </div>
             </section>
         </div>
@@ -305,8 +241,8 @@
     <dialog id="product-image-dialog" aria-labelledby="product-image-title" class="w-[calc(100%-2rem)] max-w-5xl max-h-[95dvh] overflow-auto rounded-2xl border border-mz-border-light bg-mz-bg-surface p-0 shadow-2xl shadow-black/95 backdrop:bg-black/75" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); box-sizing: border-box;">
         <div class="flex items-center justify-between gap-3 border-b border-mz-border-light bg-mz-bg-surface-2/40 px-5 py-4">
             <h2 id="product-image-title" class="min-w-0 break-words text-base font-bold text-white">Imagen del producto</h2>
-            <button type="button" data-close-dialog="product-image-dialog" class="shrink-0 rounded-xl border border-mz-border-light px-3 py-2 text-xs font-bold text-mz-text-secondary transition-colors hover:bg-mz-bg-surface-2 hover:text-white">
-                Cerrar
+            <button type="button" id="product-image-close" data-close-dialog="product-image-dialog" aria-label="Cerrar imagen" class="inline-flex size-9 shrink-0 items-center justify-center rounded-xl border border-mz-border-light text-mz-text-secondary transition-colors hover:border-mz-error/50 hover:bg-mz-error/10 hover:text-mz-error" title="Cerrar imagen">
+                <x-icon name="x" class="size-5" />
             </button>
         </div>
         <div class="p-4">

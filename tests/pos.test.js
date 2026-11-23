@@ -46,6 +46,7 @@ async function pos({ pending = null, ticket = null, products = [{ id: 7, name: '
             append(...children) { this.children.push(...children); },
             closest(selector) {
                 if (selector === '[data-action]' && this.dataset.action) return this;
+                if (selector === '[data-action="remove"]' && this.dataset.action === 'remove') return this;
                 if (selector === '[data-product-id]' && this.dataset.productId) return this;
                 if (selector === '[data-view-image]' && this.dataset.viewImage !== undefined) return this;
                 if (selector === 'input, textarea, select' && ['INPUT', 'TEXTAREA', 'SELECT'].includes(this.tagName)) return this;
@@ -65,7 +66,7 @@ async function pos({ pending = null, ticket = null, products = [{ id: 7, name: '
             },
         };
     };
-    for (const id of ('pos-config pos-search pos-results pos-cart-body pos-empty pos-items-count pos-total '
+    for (const id of ('pos-config pos-search pos-results pos-cart-table pos-cart-body pos-empty pos-empty-cell pos-cart-store2-heading pos-items-count pos-total '
         + 'product-image-dialog product-image-preview product-image-title product-image-error product-image-close '
         + 'pos-wholesale pos-error pending-banner payment-dialog payment-amount payment-total payment-change payment-error '
         + 'payment-confirm payment-method payment-amount-group cash-dialog cash-type cash-title cash-error start-day-dialog '
@@ -454,7 +455,7 @@ test('bulk readding uses wholesale or overridden price and sums thousandths only
     assert.equal(ui.requests[0].payload.items[0].wholesale, true);
 });
 
-test('bulk edits retain fractions and invalid quantities or insufficient stock never truncate or clamp', async () => {
+test('bulk edits retain fractions and invalid quantities never truncate or clamp', async () => {
     const ui = await pos({ products: [bulkProduct] });
     await ui.scan();
     for (const invalid of ['0', '-1', '0.0001', '1.2345', '10000', '1e-3', '']) {
@@ -473,11 +474,10 @@ test('bulk edits retain fractions and invalid quantities or insufficient stock n
     }
     await ui.scan();
     await ui.bulk(2.75);
-    assert.equal(ui.get('bulk-dialog').open, true);
-    assert.equal(ui.get('pos-total').textContent, '$1.76');
-    await ui.get('bulk-cancel').click();
+    assert.equal(ui.get('bulk-dialog').open, false);
+    assert.equal(ui.get('pos-total').textContent, '$40.54');
     await ui.get('pos-pending').click();
-    assert.equal(ui.requests[0].payload.items[0].quantity, 0.125);
+    assert.equal(ui.requests[0].payload.items[0].quantity, 2.875);
 });
 
 test('bulk readding checks the accumulated 9999 limit', async () => {
@@ -494,7 +494,7 @@ test('bulk readding checks the accumulated 9999 limit', async () => {
     assert.equal(ui.requests[0].payload.items[0].quantity, 9999);
 });
 
-test('bulk readding validates the latest availability without changing the existing line on failure', async () => {
+test('bulk readding accumulates quantities even when displayed availability drops', async () => {
     const product = { ...bulkProduct };
     const ui = await pos({ products: [product] });
     await ui.scan();
@@ -502,13 +502,10 @@ test('bulk readding validates the latest availability without changing the exist
     product.available_stock = 0.625;
     await ui.scan();
     await ui.bulk(0.25);
-    assert.equal(ui.get('bulk-dialog').open, true);
-    assert.equal(ui.get('pos-total').textContent, '$7.05');
-    await ui.bulk(0.125);
     assert.equal(ui.get('bulk-dialog').open, false);
-    assert.equal(ui.get('pos-total').textContent, '$8.81');
+    assert.equal(ui.get('pos-total').textContent, '$10.58');
     await ui.get('pos-pending').click();
-    assert.equal(ui.requests[0].payload.items[0].quantity, 0.625);
+    assert.equal(ui.requests[0].payload.items[0].quantity, 0.75);
 });
 
 for (const available of [3, null]) {
@@ -522,17 +519,18 @@ for (const available of [3, null]) {
         assert.equal(ui.get('pos-total').textContent, '$30.00');
         await ui.editQuantity(3);
         await ui.scan();
-        assert.equal(ui.get('pos-total').textContent, available === null ? '$120.00' : '$90.00');
+        assert.equal(ui.get('pos-total').textContent, '$120.00');
         await ui.get('pos-pending').click();
-        assert.equal(ui.requests[0].payload.items[0].quantity, available === null ? 4 : 3);
+        assert.equal(ui.requests[0].payload.items[0].quantity, 4);
     });
 }
 
-test('kit with zero derived availability is blocked even when parent stock is positive', async () => {
+test('kit with zero derived availability can be added; stock is checked when charging', async () => {
     const ui = await pos({ products: [{ id: 9, name: 'Paquete agotado', sale_mode: 'kit', price: 30, stock: 100, available_stock: 0, track_inventory: true }] });
     await ui.scan();
-    assert.equal(ui.get('pos-cart-body').children.length, 0);
-    assert.match(ui.get('pos-error').innerHTML, /está agotado/);
+    assert.equal(ui.get('pos-cart-body').children.length, 1);
+    assert.equal(ui.get('pos-total').textContent, '$30.00');
+    assert.equal(ui.get('pos-error').classList.contains('hidden'), true);
 });
 
 test('bulk without inventory accepts fractions despite zero parent stock and cancellation leaves an empty cart', async () => {
@@ -615,25 +613,19 @@ test('bulk modal bidirectional calculation updates amount from quantity and quan
     assert.equal(ui.get('pos-total').textContent, '$14.10');
 });
 
-test('bulk modal validates stock and displays warning when exceeded', async () => {
+test('bulk modal allows exceeding displayed availability; stock is checked when charging', async () => {
     const ui = await pos({ products: [bulkProduct] }); // available_stock: 2.75
     await ui.scan();
 
     ui.get('bulk-quantity').value = '5.00';
     await ui.get('bulk-quantity').emit('input');
 
-    assert.equal(ui.get('bulk-error').classList.contains('hidden'), false);
-    assert.match(ui.get('bulk-error').textContent, /No hay existencia suficiente/);
+    assert.equal(ui.get('bulk-error').classList.contains('hidden'), true);
 
-    // Pressing Enter does not add to cart when exceeding stock
     await ui.get('bulk-accept').click();
-    assert.equal(ui.get('bulk-dialog').open, true);
-    assert.equal(ui.get('pos-cart-body').children.length, 0);
-
-    // Cancel closes dialog and refocuses search
-    await ui.get('bulk-cancel').click();
     assert.equal(ui.get('bulk-dialog').open, false);
-    assert.equal(ui.document.activeElement, ui.get('pos-search'));
+    assert.equal(ui.get('pos-cart-body').children.length, 1);
+    assert.equal(ui.get('pos-total').textContent, '$70.50');
 });
 
 test('search renders product metadata without an action column and hides empty store 2', async () => {
@@ -761,4 +753,53 @@ test('missing or broken photos show a fallback and cannot trigger an empty image
     await ui.get('product-image-preview').emit('error');
     assert.equal(ui.get('product-image-error').hidden, false);
     assert.equal(ui.get('product-image-preview').hidden, true);
+});
+
+for (const store2 of [null, '', '0.000', '12.000']) {
+    test(`sale detail displays product fields and large photo with store 2 ${JSON.stringify(store2)}`, async () => {
+        const ui = await pos({ products: [{
+            id: 7, name: 'Foco LED completo', barcode: 'FOCO-01', category_name: 'Motor & luces',
+            price: 325, wholesale_price: null, stock: 3, track_inventory: true,
+            warehouse_stock: '8.000', store_2_stock: store2, image_url: '/storage/foco.jpg',
+        }] });
+        assert.equal(ui.get('pos-cart-table').classList.contains('h-full'), true);
+        await ui.scan();
+        assert.equal(ui.get('pos-cart-table').classList.contains('h-full'), false);
+        const row = ui.get('pos-cart-body').children[0].innerHTML;
+        const showStore2 = store2 !== null && store2 !== '';
+        assert.match(row, /src="\/storage\/foco\.jpg"/);
+        assert.match(row, /class="size-24 rounded-lg object-contain"/);
+        assert.match(row, />FOCO-01<\/td>/);
+        assert.match(row, />Foco LED completo<\/td>/);
+        assert.match(row, />Motor &amp; luces<\/td>/);
+        assert.match(row, />8<\/td>/);
+        assert.equal([...row.matchAll(/<td\b/g)].length, showStore2 ? 11 : 10);
+        assert.equal(ui.get('pos-cart-store2-heading').hidden, !showStore2);
+        assert.equal(ui.get('pos-empty-cell').colSpan, showStore2 ? 11 : 10);
+        assert.equal(ui.get('pos-total').textContent, '$325.00');
+        const remove = ui.element('BUTTON');
+        remove.dataset = { action: 'remove', index: '0' };
+        await ui.get('pos-cart-body').emit('click', { target: remove });
+        assert.equal(ui.get('pos-cart-body').children.length, 0);
+        assert.equal(ui.get('pos-cart-store2-heading').hidden, true);
+        assert.equal(ui.get('pos-empty-cell').colSpan, 10);
+        assert.equal(ui.get('pos-cart-table').classList.contains('h-full'), true);
+    });
+}
+
+test('editing quantity updates the amount field instead of overwriting the new category column', async () => {
+    const ui = await pos();
+    await ui.scan();
+    const amount = { textContent: '$100.00' };
+    const category = { textContent: 'Motor' };
+    const row = ui.element('TR');
+    row.querySelector = (selector) => selector === '[data-line-total]' ? amount : category;
+    const input = ui.element('INPUT');
+    input.dataset = { action: 'quantity', index: '0' };
+    input.value = '2';
+    input.closest = (selector) => selector === 'tr' ? row : selector === '[data-action]' ? input : null;
+    await ui.get('pos-cart-body').emit('change', { target: input });
+    assert.equal(amount.textContent, '$200.00');
+    assert.equal(category.textContent, 'Motor');
+    assert.equal(ui.get('pos-total').textContent, '$200.00');
 });
