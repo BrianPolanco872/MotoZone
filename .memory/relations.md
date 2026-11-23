@@ -246,3 +246,13 @@ plan-sidebar-corte-bajo-punto-venta-01 -> implementado_por -> fix-sidebar-corte-
 plan-sidebar-orden-modulos-y-sin-panel-01 -> implementado_por -> fix-sidebar-orden-modulos-y-sin-panel-01
 plan-pos-ultima-venta-pendientes-01 -> aprobado_por -> usuario
 plan-pos-ultima-venta-pendientes-01 -> implementado_por -> fix-pos-ultima-venta-pendientes-01
+plan-pos-pendientes-eliminar-01 -> implementado_por -> fix-pos-pendientes-eliminar-01
+feature-pos-ventas-dia-devoluciones-01 -> implemented_by_plan -> plan-pos-ventas-dia-devoluciones-01
+plan-pos-ventas-dia-devoluciones-01 -> aprobado_por -> usuario
+plan-pos-ventas-dia-devoluciones-01 -> implementa_feature -> feature-pos-ventas-dia-devoluciones-01
+plan-pos-ventas-dia-devoluciones-01 -> implementado_por -> fix-pos-ventas-dia-devoluciones-01
+fix-pos-ventas-dia-devoluciones-01 -> implementa_feature -> feature-pos-ventas-dia-devoluciones-01
+plan-pos-ventas-dia-devoluciones-01 -> implementado_por -> fix-pos-ventas-dia-sin-filtro-cajero-01
+fix-pos-ventas-dia-sin-filtro-cajero-01 -> corrige -> fix-pos-ventas-dia-devoluciones-01
+plan-pos-reabrir-corte-visibilidad-01 -> aprobado_por -> usuario
+plan-pos-reabrir-corte-visibilidad-01 -> implementado_por -> fix-pos-reabrir-corte-visibilidad-01

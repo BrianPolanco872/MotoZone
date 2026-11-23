@@ -41,6 +41,22 @@ if (configElement) {
     const startDayAmount = document.getElementById('start-day-amount');
     const startDayError = document.getElementById('start-day-error');
 
+    const daySalesDialog = document.getElementById('day-sales-dialog');
+    const daySalesSearch = document.getElementById('day-sales-search');
+    const daySalesDate = document.getElementById('day-sales-date');
+    const daySalesRows = document.getElementById('day-sales-rows');
+    const daySalesEmpty = document.getElementById('day-sales-empty');
+    const daySalesItems = document.getElementById('day-sales-items');
+    const daySalesItemsEmpty = document.getElementById('day-sales-items-empty');
+    const daySalesCancelled = document.getElementById('day-sales-cancelled');
+    const daySalesReturn = document.getElementById('day-sales-return');
+    const daySalesCancel = document.getElementById('day-sales-cancel');
+    const daySalesPrint = document.getElementById('day-sales-print');
+    let daySales = [];
+    let selectedDaySaleId = null;
+    let selectedDayItemId = null;
+    let daySalesTimer = null;
+
     // Producto común (artículo libre)
     const customProductDialog = document.getElementById('custom-product-dialog');
     const customProductForm = document.getElementById('custom-product-form');
@@ -189,8 +205,8 @@ if (configElement) {
         }
     };
 
-    const printLastSaleTicket = async () => {
-        if (!lastSaleId || !config.routes.ticketData) {
+    const printTicketById = async (saleId) => {
+        if (!saleId || !config.routes.ticketData) {
             return;
         }
 
@@ -201,7 +217,7 @@ if (configElement) {
         }
 
         try {
-            const response = await fetch(config.routes.ticketData.replace('__SALE__', lastSaleId), {
+            const response = await fetch(config.routes.ticketData.replace('__SALE__', saleId), {
                 headers: { Accept: 'application/json' },
             });
 
@@ -219,6 +235,185 @@ if (configElement) {
             showError(error.message);
         } finally {
             container.classList.add('hidden');
+        }
+    };
+
+    const printLastSaleTicket = async () => {
+        await printTicketById(lastSaleId);
+    };
+
+    const selectedDaySale = () => daySales.find((sale) => sale.id === selectedDaySaleId) ?? null;
+
+    const loadDaySales = async () => {
+        if (!config.routes.dayList) {
+            return;
+        }
+
+        const params = new URLSearchParams();
+        if (daySalesDate?.value) params.set('date', daySalesDate.value);
+        if (daySalesSearch?.value.trim()) params.set('search', daySalesSearch.value.trim());
+
+        const response = await fetch(`${config.routes.dayList}?${params.toString()}`, {
+            headers: { Accept: 'application/json' },
+        });
+
+        if (!response.ok) {
+            throw new Error('No se pudieron cargar las ventas del día.');
+        }
+
+        const data = await response.json();
+        daySales = data.sales ?? [];
+
+        if (!daySales.some((sale) => sale.id === selectedDaySaleId)) {
+            selectedDaySaleId = null;
+            selectedDayItemId = null;
+        }
+
+        renderDaySales();
+        renderDaySaleDetail();
+    };
+
+    const renderDaySales = () => {
+        if (!daySalesRows) {
+            return;
+        }
+
+        daySalesRows.innerHTML = daySales.map((sale) => `
+            <tr data-day-sale="${sale.id}" class="cursor-pointer border-t border-mz-border-light/60 transition-colors ${sale.id === selectedDaySaleId ? 'bg-mz-accent-primary/20' : 'hover:bg-mz-bg-surface-2'}">
+                <td class="px-3 py-2 font-mono font-bold text-white">${escapeHtml(sale.code)}${sale.cancelled ? ' <span class="text-[9px] font-bold text-mz-error">CANCELADO</span>' : ''}</td>
+                <td class="px-2 py-2 tabular-nums text-mz-text-secondary">${sale.item_count}</td>
+                <td class="px-2 py-2 font-mono text-mz-text-secondary">${escapeHtml(sale.time ?? '—')}</td>
+                <td class="px-3 py-2 text-right font-mono font-bold text-white">${formatMoney(sale.total)}</td>
+            </tr>
+        `).join('');
+
+        if (daySalesEmpty) {
+            daySalesEmpty.hidden = daySales.length > 0;
+        }
+    };
+
+    const renderDaySaleDetail = () => {
+        const sale = selectedDaySale();
+        const setText = (id, value) => {
+            const element = document.getElementById(id);
+            if (element) element.textContent = value;
+        };
+
+        setText('day-sales-detail-code', sale ? sale.code : '—');
+        setText('day-sales-detail-cashier', sale ? (sale.cashier ?? '—') : '—');
+        setText('day-sales-detail-client', sale ? (sale.client ?? '—') : '—');
+        setText('day-sales-total', sale ? formatMoney(sale.total) : '$0.00');
+        setText('day-sales-paid', sale ? formatMoney(sale.amount_paid) : '$0.00');
+
+        if (daySalesCancelled) {
+            daySalesCancelled.hidden = ! sale?.cancelled;
+        }
+
+        if (!daySalesItems) {
+            return;
+        }
+
+        const items = sale?.items ?? [];
+        daySalesItems.innerHTML = items.map((item) => {
+            const available = Number(item.available_quantity) > 0;
+            return `<tr data-day-item="${item.id}" class="cursor-pointer border-t border-mz-border-light/60 transition-colors ${item.id === selectedDayItemId ? 'bg-mz-warning/20' : 'hover:bg-mz-bg-surface-2'} ${available ? '' : 'opacity-50'}">
+                <td class="px-3 py-2 tabular-nums text-white">${formatQuantity(item.quantity)}</td>
+                <td class="px-2 py-2 text-mz-text-secondary">${escapeHtml(item.description ?? '')}${item.sku ? ` <span class="font-mono text-[10px] text-mz-text-muted">${escapeHtml(item.sku)}</span>` : ''}${Number(item.returned_quantity) > 0 ? ` <span class="text-[10px] font-bold text-mz-success">Devuelto: ${formatQuantity(item.returned_quantity)}</span>` : ''}</td>
+                <td class="px-3 py-2 text-right font-mono text-white">${formatMoney(item.line_total)}</td>
+            </tr>`;
+        }).join('');
+
+        if (daySalesItemsEmpty) {
+            daySalesItemsEmpty.hidden = items.length > 0;
+        }
+
+        if (daySalesReturn) {
+            daySalesReturn.disabled = ! sale || sale.cancelled
+                || ! items.some((item) => item.id === selectedDayItemId && Number(item.available_quantity) > 0);
+        }
+        if (daySalesCancel) {
+            daySalesCancel.disabled = ! sale || sale.cancelled;
+        }
+        if (daySalesPrint) {
+            daySalesPrint.disabled = ! sale || ! config.routes.ticketData;
+        }
+    };
+
+    const selectDaySale = (saleId) => {
+        selectedDaySaleId = saleId;
+        selectedDayItemId = null;
+        renderDaySales();
+        renderDaySaleDetail();
+    };
+
+    const returnSelectedItem = async () => {
+        const sale = selectedDaySale();
+        if (!sale || !selectedDayItemId || !config.routes.returnItem) {
+            return;
+        }
+
+        if (! window.confirm('¿Devolver este artículo al inventario y descontarlo de la venta?')) {
+            return;
+        }
+
+        const url = config.routes.returnItem
+            .replace('__SALE__', sale.id)
+            .replace('__ITEM__', selectedDayItemId);
+
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf },
+                body: JSON.stringify({}),
+            });
+
+            if (! response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data.message || 'No se pudo devolver el artículo.');
+            }
+
+            await loadDaySales();
+            selectedDaySaleId = sale.id;
+            const updated = selectedDaySale();
+            const stillAvailable = updated?.items.some((item) => item.id === selectedDayItemId && Number(item.available_quantity) > 0);
+            if (! stillAvailable) {
+                selectedDayItemId = null;
+            }
+            renderDaySales();
+            renderDaySaleDetail();
+        } catch (error) {
+            showError(error.message);
+        }
+    };
+
+    const cancelSelectedSale = async () => {
+        const sale = selectedDaySale();
+        if (!sale || !config.routes.cancel) {
+            return;
+        }
+
+        if (! window.confirm(`¿Cancelar la venta ${sale.code}? Se devolverán todos sus artículos al inventario.`)) {
+            return;
+        }
+
+        try {
+            const response = await fetch(config.routes.cancel.replace('__SALE__', sale.id), {
+                method: 'DELETE',
+                headers: { Accept: 'application/json', 'X-CSRF-TOKEN': csrf },
+            });
+
+            if (! response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data.message || 'No se pudo cancelar la venta.');
+            }
+
+            await loadDaySales();
+            selectedDaySaleId = sale.id;
+            selectedDayItemId = null;
+            renderDaySales();
+            renderDaySaleDetail();
+        } catch (error) {
+            showError(error.message);
         }
     };
 
@@ -1017,13 +1212,26 @@ if (configElement) {
 
             info.append(folio, detail);
 
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'inline-flex items-center gap-1.5 rounded-lg bg-mz-accent-primary px-3 py-1.5 text-xs font-bold text-white transition-all hover:bg-mz-accent-hover active:scale-95';
-            button.textContent = 'Traer a mi panel';
-            button.addEventListener('click', () => bringPendingToPanel(sale.id));
+            const bringButton = document.createElement('button');
+            bringButton.type = 'button';
+            bringButton.className = 'inline-flex items-center gap-1.5 rounded-lg bg-mz-accent-primary px-3 py-1.5 text-xs font-bold text-white transition-all hover:bg-mz-accent-hover active:scale-95';
+            bringButton.textContent = 'Traer a mi panel';
+            bringButton.addEventListener('click', () => bringPendingToPanel(sale.id));
 
-            row.append(info, button);
+            const actions = document.createElement('div');
+            actions.className = 'flex items-center gap-2';
+            actions.appendChild(bringButton);
+
+            if (permissions.cancel_sale) {
+                const deleteButton = document.createElement('button');
+                deleteButton.type = 'button';
+                deleteButton.className = 'inline-flex items-center rounded-lg border border-mz-border-light px-2.5 py-1.5 text-xs font-bold text-mz-text-muted transition-all hover:border-mz-error/40 hover:bg-mz-error/10 hover:text-mz-error';
+                deleteButton.textContent = 'Eliminar';
+                deleteButton.addEventListener('click', () => deletePendingSale(sale.id));
+                actions.appendChild(deleteButton);
+            }
+
+            row.append(info, actions);
             list.appendChild(row);
         });
     };
@@ -1052,6 +1260,28 @@ if (configElement) {
             items = mapSaleItems(sale.items);
             renderCart();
             pendingSalesDialog?.close();
+        } catch (error) {
+            showError(error.message);
+        }
+    };
+
+    const deletePendingSale = async (saleId) => {
+        if (! window.confirm('¿Eliminar este ticket pendiente? No se podrá cobrar después.')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(config.routes.cancel.replace('__SALE__', saleId), {
+                method: 'DELETE',
+                headers: { Accept: 'application/json', 'X-CSRF-TOKEN': csrf },
+            });
+
+            if (! response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data.message || 'No se pudo eliminar el ticket pendiente.');
+            }
+
+            await refreshPendingSales();
         } catch (error) {
             showError(error.message);
         }
@@ -1312,6 +1542,66 @@ if (configElement) {
     document.getElementById('pos-pending-list')?.addEventListener('click', () => {
         pendingSalesDialog?.showModal();
         refreshPendingSales().catch((error) => showError(error.message));
+    });
+
+    const localToday = () => {
+        const date = new Date();
+        date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+        return date.toISOString().slice(0, 10);
+    };
+
+    document.getElementById('pos-day-sales')?.addEventListener('click', () => {
+        if (daySalesDate && ! daySalesDate.value) {
+            daySalesDate.value = localToday();
+        }
+        daySalesDialog?.showModal();
+        loadDaySales().catch((error) => showError(error.message));
+    });
+
+    daySalesSearch?.addEventListener('input', () => {
+        clearTimeout(daySalesTimer);
+        daySalesTimer = setTimeout(() => loadDaySales().catch((error) => showError(error.message)), 250);
+    });
+
+    daySalesDate?.addEventListener('change', () => loadDaySales().catch((error) => showError(error.message)));
+
+    document.getElementById('day-sales-today')?.addEventListener('click', () => {
+        if (daySalesDate) {
+            daySalesDate.value = localToday();
+        }
+        loadDaySales().catch((error) => showError(error.message));
+    });
+
+    daySalesRows?.addEventListener('click', (event) => {
+        const row = event.target.closest('[data-day-sale]');
+        if (row) {
+            selectDaySale(Number(row.dataset.daySale));
+        }
+    });
+
+    daySalesItems?.addEventListener('click', (event) => {
+        const row = event.target.closest('[data-day-item]');
+        if (! row) {
+            return;
+        }
+
+        const id = Number(row.dataset.dayItem);
+        const item = selectedDaySale()?.items.find((candidate) => candidate.id === id);
+        if (! item || Number(item.available_quantity) <= 0) {
+            return;
+        }
+
+        selectedDayItemId = id;
+        renderDaySaleDetail();
+    });
+
+    daySalesReturn?.addEventListener('click', returnSelectedItem);
+    daySalesCancel?.addEventListener('click', cancelSelectedSale);
+    daySalesPrint?.addEventListener('click', () => {
+        const sale = selectedDaySale();
+        if (sale) {
+            printTicketById(sale.id);
+        }
     });
 
     document.getElementById('pos-new-sale')?.addEventListener('click', () => {

@@ -47,7 +47,7 @@
     <div id="pos-error" class="mt-4 hidden rounded-2xl border border-mz-error/30 bg-gradient-to-r from-mz-error/15 via-mz-bg-surface to-mz-bg-surface px-5 py-4 text-sm text-mz-error shadow-xl shadow-black/20" role="alert"></div>
 
     {{-- Botón para reabrir corte cuando se cerró --}}
-    <button id="pos-reopen-day" class="mt-3 hidden inline-flex items-center gap-2 rounded-xl border border-mz-warning/40 bg-mz-warning/10 px-4 py-2.5 text-xs font-bold text-mz-warning hover:bg-mz-warning/20 transition-all shadow-sm" type="button">
+    <button id="pos-reopen-day" class="mt-3 inline-flex items-center gap-2 rounded-xl border border-mz-warning/40 bg-mz-warning/10 px-4 py-2.5 text-xs font-bold text-mz-warning hover:bg-mz-warning/20 transition-all shadow-sm {{ ($permissions['own_day_closed'] ?? false) ? '' : 'hidden' }}" type="button">
         <x-icon name="refresh" class="size-4 shrink-0" />
         Reabrir mi corte del día
     </button>
@@ -237,6 +237,10 @@
                         <button type="button" id="pos-print-ticket" disabled class="inline-flex items-center justify-center gap-2 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 hover:bg-mz-bg-surface-2 px-4 py-2 text-xs font-bold text-mz-text-secondary hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed active:scale-95">
                             <x-icon name="printer" class="size-4 text-mz-accent-primary" />
                             Reimprimir último ticket
+                        </button>
+                        <button type="button" id="pos-day-sales" class="inline-flex items-center justify-center gap-2 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 hover:bg-mz-bg-surface-2 px-4 py-2 text-xs font-bold text-mz-text-secondary hover:text-white transition-all active:scale-95">
+                            <x-icon name="report" class="size-4 text-mz-accent-primary" />
+                            Ventas del día y devoluciones
                         </button>
                         <button type="button" id="pos-charge" @disabled(! $permissions['sell']) class="inline-flex items-center justify-center gap-2.5 rounded-xl bg-gradient-to-r from-mz-accent-primary to-mz-accent-hover hover:brightness-110 px-6 py-2.5 text-sm font-extrabold text-white shadow-xl shadow-mz-accent-primary/25 transition-all transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
                             <x-icon name="banknotes" class="size-5" />
@@ -627,10 +631,116 @@
         </div>
     </dialog>
 
+    <!-- MODAL DE VENTAS DEL DÍA Y DEVOLUCIONES -->
+    <dialog id="day-sales-dialog" aria-labelledby="day-sales-title" class="w-[calc(100%-1rem)] max-w-6xl rounded-2xl border border-mz-border-light bg-mz-bg-surface p-0 shadow-2xl shadow-black/95 backdrop:bg-black/75" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); box-sizing: border-box;">
+        <div class="flex items-center justify-between gap-3 border-b border-mz-border-light bg-mz-bg-surface-2/40 px-5 py-4">
+            <div class="flex items-center gap-3">
+                <div class="flex size-9 items-center justify-center rounded-xl bg-mz-accent-primary/15 text-mz-accent-primary border border-mz-accent-primary/25">
+                    <x-icon name="report" class="size-5" />
+                </div>
+                <div>
+                    <h2 id="day-sales-title" class="text-base font-bold text-white">Ventas del día y devoluciones</h2>
+                    <p class="text-xs text-mz-text-muted">Consulta ventas, devuelve artículos e imprime copias</p>
+                </div>
+            </div>
+            <button type="button" data-close-dialog="day-sales-dialog" class="rounded-xl p-1.5 text-mz-text-muted hover:bg-mz-bg-surface-2 hover:text-white transition-colors" aria-label="Cerrar">
+                <x-icon name="x" class="size-5" />
+            </button>
+        </div>
+
+        <div class="grid max-h-[78dvh] grid-cols-1 gap-4 overflow-y-auto p-4 lg:grid-cols-2 lg:overflow-hidden">
+            <section class="flex min-h-0 flex-col gap-3 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/30 p-3">
+                <label for="day-sales-search" class="text-xs font-bold text-mz-text-secondary">Buscar por código del producto o descripción de la venta</label>
+                <input id="day-sales-search" type="search" autocomplete="off" placeholder="Código o descripción" class="mz-input h-10 w-full text-sm">
+
+                <div class="min-h-0 flex-1 overflow-auto rounded-xl border border-mz-border-light pos-scrollbar">
+                    <table class="w-full text-left text-xs">
+                        <thead class="sticky top-0 bg-mz-bg-surface-2 text-mz-text-muted">
+                            <tr>
+                                <th class="px-3 py-2 font-bold">Código</th>
+                                <th class="px-2 py-2 font-bold">Arts</th>
+                                <th class="px-2 py-2 font-bold">Hora</th>
+                                <th class="px-3 py-2 text-right font-bold">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody id="day-sales-rows"></tbody>
+                    </table>
+                    <p id="day-sales-empty" class="px-3 py-8 text-center text-sm text-mz-text-muted">No hay ventas para este día.</p>
+                </div>
+
+                <div class="flex flex-wrap items-end gap-2 border-t border-mz-border-light pt-3">
+                    <div class="min-w-36 flex-1">
+                        <label for="day-sales-date" class="text-xs font-bold text-mz-text-secondary">Del día:</label>
+                        <input id="day-sales-date" type="date" class="mz-input mt-1 h-10 w-full text-sm">
+                    </div>
+                    <button type="button" id="day-sales-today" class="h-10 rounded-xl border border-mz-accent-primary/40 bg-mz-accent-primary/15 px-3 text-xs font-bold text-mz-accent-primary transition-all hover:bg-mz-accent-primary hover:text-white active:scale-95">Hoy</button>
+                </div>
+            </section>
+
+            <section class="relative flex min-h-0 flex-col gap-3 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/30 p-3">
+                <div class="grid grid-cols-3 gap-2 rounded-xl border border-mz-border-light bg-mz-bg-primary/60 p-3 text-xs">
+                    <div class="min-w-0">
+                        <p class="text-[10px] font-bold uppercase tracking-wider text-mz-text-muted">Código</p>
+                        <p id="day-sales-detail-code" class="truncate font-mono font-bold text-white">—</p>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-[10px] font-bold uppercase tracking-wider text-mz-text-muted">Cajero</p>
+                        <p id="day-sales-detail-cashier" class="truncate font-semibold text-white">—</p>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-[10px] font-bold uppercase tracking-wider text-mz-text-muted">Cliente</p>
+                        <p id="day-sales-detail-client" class="truncate font-semibold text-white">—</p>
+                    </div>
+                </div>
+
+                <div id="day-sales-cancelled" hidden class="rounded-xl border-2 border-mz-error bg-mz-error/15 py-3 text-center font-display text-3xl font-black tracking-[0.3em] text-mz-error">CANCELADO</div>
+
+                <div class="min-h-0 flex-1 overflow-auto rounded-xl border border-mz-border-light pos-scrollbar">
+                    <table class="w-full text-left text-xs">
+                        <thead class="sticky top-0 bg-mz-bg-surface-2 text-mz-text-muted">
+                            <tr>
+                                <th class="px-3 py-2 font-bold">Cant.</th>
+                                <th class="px-2 py-2 font-bold">Descripción</th>
+                                <th class="px-3 py-2 text-right font-bold">Importe</th>
+                            </tr>
+                        </thead>
+                        <tbody id="day-sales-items"></tbody>
+                    </table>
+                    <p id="day-sales-items-empty" class="px-3 py-8 text-center text-sm text-mz-text-muted">Selecciona una venta para ver el detalle.</p>
+                </div>
+
+                <button type="button" id="day-sales-return" disabled class="inline-flex items-center justify-center gap-2 rounded-xl border border-mz-warning/40 bg-mz-warning/10 px-4 py-2.5 text-xs font-bold text-mz-warning transition-all hover:bg-mz-warning hover:text-mz-bg-primary disabled:cursor-not-allowed disabled:opacity-40 active:scale-95">
+                    Devolver Artículo seleccionado
+                </button>
+
+                <div class="grid grid-cols-2 gap-2">
+                    <div class="rounded-xl border border-mz-accent-primary/40 bg-mz-accent-primary/10 p-3">
+                        <p class="text-[10px] font-bold uppercase tracking-widest text-mz-accent-primary">Total:</p>
+                        <p id="day-sales-total" class="font-display text-2xl font-black tabular-nums text-white">$0.00</p>
+                    </div>
+                    <div class="rounded-xl border border-mz-border-light bg-mz-bg-primary/60 p-3">
+                        <p class="text-[10px] font-bold uppercase tracking-widest text-mz-text-muted">Pago Con:</p>
+                        <p id="day-sales-paid" class="font-display text-2xl font-black tabular-nums text-white">$0.00</p>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap gap-2">
+                    <button type="button" id="day-sales-cancel" disabled class="inline-flex flex-1 items-center justify-center rounded-xl border border-mz-error/40 bg-mz-error/10 px-4 py-2.5 text-xs font-bold text-mz-error transition-all hover:bg-mz-error hover:text-white disabled:cursor-not-allowed disabled:opacity-40 active:scale-95">Cancelar Venta</button>
+                    <button type="button" id="day-sales-print" disabled class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 px-4 py-2.5 text-xs font-bold text-mz-text-secondary transition-all hover:text-white disabled:cursor-not-allowed disabled:opacity-40 active:scale-95">
+                        <x-icon name="printer" class="size-4 text-mz-accent-primary" />
+                        Imprimir copia
+                    </button>
+                </div>
+            </section>
+        </div>
+    </dialog>
+
     {{-- Contenedor de impresión de tickets térmicos --}}
     <div id="ticket-print-container" class="hidden"></div>
 
     <style>
+        /* Tailwind genera .inline-flex después de .hidden: hace falta especificidad para ocultar de verdad. */
+        #pos-reopen-day.hidden { display: none; }
         #ticket-print-container {
             font-family: "Courier New", ui-monospace, monospace;
             font-size: 11px;
@@ -678,9 +788,12 @@
                 'store' => route('pos.sales.store'),
                 'charge' => route('pos.sales.charge', ['sale' => '__SALE__']),
                 'show' => route('pos.sales.show', ['sale' => '__SALE__']),
+                'cancel' => route('pos.sales.cancel', ['sale' => '__SALE__']),
                 'cash' => $permissions['cash'] ? route('pos.cash.index') : null,
                 'pending' => route('pos.sales.pending'),
                 'pendingList' => route('pos.sales.pendingList'),
+                'dayList' => route('pos.sales.dayList'),
+                'returnItem' => route('pos.sales.returnItem', ['sale' => '__SALE__', 'saleItem' => '__ITEM__']),
                 'ticket' => route('pos.sales.ticket', ['sale' => '__SALE__']),
                 'ticketData' => route('pos.sales.ticketData', ['sale' => '__SALE__']),
                 'reopen_my_day' => route('pos.cuts.reopen-my-day'),

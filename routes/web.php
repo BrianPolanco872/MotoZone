@@ -56,6 +56,7 @@ Route::middleware(['auth', 'active', 'permission:pos.access'])->prefix('pos')->n
 
     Route::get('/ventas/pendientes', [PosSaleController::class, 'pending'])->name('sales.pending');
     Route::get('/ventas/pendientes/lista', [PosSaleController::class, 'pendingList'])->name('sales.pendingList');
+    Route::get('/ventas/del-dia/lista', [PosSaleController::class, 'dayList'])->name('sales.dayList');
     Route::get('/ventas/del-dia', [PosSaleController::class, 'day'])->name('sales.day');
     Route::get('/ventas/anteriores', [PosSaleController::class, 'previous'])->name('sales.previous');
     Route::get('/ventas/{sale}', [PosController::class, 'show'])->name('sales.show');
@@ -70,6 +71,10 @@ Route::middleware(['auth', 'active', 'permission:pos.access'])->prefix('pos')->n
     Route::post('/devoluciones', [PosSaleReturnController::class, 'store'])
         ->middleware(['permission:pos.returns.request', 'permission:pos.return.do'])
         ->name('returns.store');
+
+    Route::post('/ventas/{sale}/devolver-articulo/{saleItem}', [PosSaleController::class, 'returnItem'])
+        ->middleware(['permission:pos.returns.request', 'permission:pos.return.do'])
+        ->name('sales.returnItem');
 
     Route::put('/devoluciones/{saleReturn}/aprobar', [PosSaleReturnController::class, 'approve'])
         ->middleware('permission:pos.returns.approve')

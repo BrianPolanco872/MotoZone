@@ -188,6 +188,53 @@ class ReturnService
     }
 
     /**
+     * Devuelve artículos de una venta pagada al instante, reutilizando el flujo
+     * de solicitud + autorización para no duplicar stock, caja ni auditoría.
+     *
+     * @param  array<int, array{sale_item_id: int, quantity: int|float}>  $items
+     */
+    public function returnPaidItemsNow(User $user, Sale $sale, array $items, string $reason): SaleReturn
+    {
+        $return = $this->request($user, [
+            'sale_id' => $sale->id,
+            'reason' => $reason,
+            'items' => $items,
+        ]);
+
+        return $this->approve($return, $user);
+    }
+
+    public function returnSingleItemNow(User $user, Sale $sale, SaleItem $saleItem, int|float $quantity): SaleReturn
+    {
+        return $this->returnPaidItemsNow($user, $sale, [
+            ['sale_item_id' => $saleItem->id, 'quantity' => $quantity],
+        ], 'Devolución de artículo desde el POS');
+    }
+
+    public function cancelPaidSaleNow(User $user, Sale $sale): SaleReturn
+    {
+        $items = $sale->items
+            ->filter(fn (SaleItem $item): bool => $item->availableReturnQuantity() > 0)
+            ->map(fn (SaleItem $item): array => [
+                'sale_item_id' => $item->id,
+                'quantity' => $item->availableReturnQuantity(),
+            ])->all();
+
+        if ($items === []) {
+            throw ValidationException::withMessages(['sale' => 'Esta venta no tiene artículos por devolver.']);
+        }
+
+        $return = $this->returnPaidItemsNow($user, $sale, $items, 'Cancelación de venta desde el POS');
+
+        $sale->update([
+            'status' => Sale::STATUS_CANCELLED,
+            'notes' => trim(($sale->notes ? $sale->notes.' | ' : '')."Cancelada por {$user->name}"),
+        ]);
+
+        return $return->fresh();
+    }
+
+    /**
      * @param  array<int, array{sale_item_id: int, quantity: int|float|string}>  $items
      * @return array<int, array{sale_item_id: int, quantity: int|float}>
      */

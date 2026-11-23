@@ -8,8 +8,11 @@ use App\Http\Requests\Pos\StoreSaleRequest;
 use App\Models\AuditLog;
 use App\Models\DailyCut;
 use App\Models\Sale;
+use App\Models\SaleItem;
+use App\Models\SaleReturn;
 use App\Models\User;
 use App\Services\AuditLogService;
+use App\Services\ReturnService;
 use App\Services\SaleService;
 use App\Services\TicketSettings;
 use Illuminate\Contracts\View\View;
@@ -23,6 +26,7 @@ class SaleController extends Controller
 {
     public function __construct(
         private readonly AuditLogService $audit,
+        private readonly ReturnService $returns,
     ) {}
 
     public function store(StoreSaleRequest $request, SaleService $service): JsonResponse|RedirectResponse
@@ -102,8 +106,15 @@ class SaleController extends Controller
     {
         $this->authorizeSaleAccess($request->user(), $sale);
 
+        $wasPaid = $sale->isPaid();
         $before = $sale->only(['status', 'notes']);
-        $service->cancelPending($sale, $request->user());
+
+        if ($wasPaid) {
+            $this->returns->cancelPaidSaleNow($request->user(), $sale);
+        } else {
+            $service->cancelPending($sale, $request->user());
+        }
+
         $after = $sale->fresh()->only(['status', 'notes']);
 
         $this->audit->log([
@@ -115,10 +126,11 @@ class SaleController extends Controller
         ]);
 
         if ($request->expectsJson()) {
-            return response()->json(['ok' => true, 'redirect' => route('pos.sales.pending')]);
+            return response()->json(['ok' => true, 'redirect' => $wasPaid ? route('pos.sales.day') : route('pos.sales.pending')]);
         }
 
-        return redirect()->route('pos.sales.pending')->with('status', 'Venta pendiente cancelada.');
+        return redirect()->route($wasPaid ? 'pos.sales.day' : 'pos.sales.pending')
+            ->with('status', $wasPaid ? 'Venta cancelada y artículos devueltos al inventario.' : 'Venta pendiente cancelada.');
     }
 
     public function pending(Request $request): View
@@ -161,6 +173,101 @@ class SaleController extends Controller
                 'item_count' => $sale->items->count(),
                 'cashier' => $canSeeAny ? $sale->user?->name : null,
             ]),
+        ]);
+    }
+
+    public function dayList(Request $request): JsonResponse
+    {
+        $request->validate([
+            'date' => ['nullable', 'date'],
+            'search' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        $user = $request->user();
+        $date = Carbon::parse($request->query('date', today()->toDateString()));
+        $search = trim((string) $request->query('search', ''));
+
+        $query = Sale::query()
+            ->whereIn('status', [Sale::STATUS_PAID, Sale::STATUS_CANCELLED])
+            ->whereBetween('paid_at', [$date->copy()->startOfDay(), $date->copy()->endOfDay()])
+            ->where('user_id', $user->id)
+            ->when($search !== '', fn ($query) => $query->where(function ($query) use ($search): void {
+                $query->where('folio', 'like', "%{$search}%")
+                    ->orWhereHas('items', fn ($items) => $items
+                        ->where('sku', 'like', "%{$search}%")
+                        ->orWhere('product_name', 'like', "%{$search}%")
+                        ->orWhere('custom_name', 'like', "%{$search}%"));
+            }));
+
+        // shortcut: 100 ventas por consulta; paginar si el modal crece.
+        $sales = $query
+            ->with('items', 'user')
+            ->withSum(['returns as refunded_total' => fn ($query) => $query->where('status', SaleReturn::STATUS_APPROVED)], 'total')
+            ->orderByDesc('paid_at')
+            ->limit(100)
+            ->get()
+            ->map(fn (Sale $sale): array => [
+                'id' => $sale->id,
+                'code' => $sale->folio,
+                'status' => $sale->status,
+                'cancelled' => $sale->status === Sale::STATUS_CANCELLED,
+                'time' => $sale->paid_at?->format('H:i'),
+                'cashier' => $sale->user?->name,
+                'client' => $sale->user?->name,
+                'item_count' => $sale->items->count(),
+                'total' => round((float) $sale->total - (float) ($sale->refunded_total ?? 0), 2),
+                'amount_paid' => (float) $sale->amount_paid,
+                'items' => $sale->items->map(fn (SaleItem $item): array => [
+                    'id' => $item->id,
+                    'sku' => $item->sku,
+                    'description' => $item->product_name ?: $item->custom_name,
+                    'quantity' => $item->quantity,
+                    'returned_quantity' => $item->returned_quantity,
+                    'available_quantity' => $item->availableReturnQuantity(),
+                    'unit_price' => (float) $item->unit_price,
+                    'line_total' => (float) $item->line_total,
+                ])->all(),
+            ]);
+
+        return response()->json(['sales' => $sales]);
+    }
+
+    public function returnItem(Request $request, Sale $sale, SaleItem $saleItem): JsonResponse
+    {
+        $this->authorizeSaleAccess($request->user(), $sale);
+        abort_unless($saleItem->sale_id === $sale->id, 404);
+        abort_unless($sale->isPaid(), 422, 'La venta ya no está pagada.');
+
+        $validated = $request->validate([
+            'quantity' => ['nullable', 'numeric', 'min:0', 'max:9999'],
+        ]);
+
+        $quantity = isset($validated['quantity'])
+            ? (float) $validated['quantity']
+            : $saleItem->availableReturnQuantity();
+
+        $return = $this->returns->returnSingleItemNow($request->user(), $sale, $saleItem, $quantity);
+
+        $this->audit->log([
+            'action' => AuditLog::ACTION_RETURN_SALE,
+            'entity_type' => 'sale_return',
+            'entity_id' => $return->id,
+            'before' => null,
+            'after' => [
+                'sale_id' => $sale->id,
+                'sale_item_id' => $saleItem->id,
+                'quantity' => $quantity,
+                'total' => (float) $return->total,
+            ],
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'return' => ['id' => $return->id, 'total' => (float) $return->total],
+            'item' => [
+                'id' => $saleItem->id,
+                'returned_quantity' => $saleItem->fresh()->returned_quantity,
+            ],
         ]);
     }
 

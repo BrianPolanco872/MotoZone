@@ -45,6 +45,7 @@ class PosController extends Controller
                 'products_view' => $user?->can('pos.products.view') ?? false,
                 'products_edit' => $user?->can('pos.products.edit') ?? false,
                 'day_closed' => DailyCut::isDayClosed(today()->toDateString()),
+                'own_day_closed' => DailyCut::isDayClosedForUser(today()->toDateString(), $user),
             ],
             'initial_cash_registered' => $hasInitialCash,
             'frequentProducts' => $this->frequentProducts(),

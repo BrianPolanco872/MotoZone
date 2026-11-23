@@ -20,10 +20,10 @@ class PosPendingSalesTest extends TestCase
         $this->seed(RolePermissionSeeder::class);
     }
 
-    private function employee(): User
+    private function employee(array $permissions = []): User
     {
         $user = User::factory()->create()->assignRole('empleado');
-        $user->givePermissionTo(['pos.access', 'pos.sell']);
+        $user->givePermissionTo(array_merge(['pos.access', 'pos.sell'], $permissions));
 
         return $user;
     }
@@ -64,6 +64,29 @@ class PosPendingSalesTest extends TestCase
         $this->actingAs($admin)->getJson(route('pos.sales.pendingList'))
             ->assertOk()
             ->assertJsonCount(2, 'sales');
+    }
+
+    public function test_cashier_can_cancel_a_pending_ticket_without_deleting_its_history(): void
+    {
+        $cashier = $this->employee(['pos.cancel.sale']);
+        $sale = $this->pendingSale($cashier, 'PEND-CANCEL');
+
+        $this->actingAs($cashier)->deleteJson(route('pos.sales.cancel', $sale))
+            ->assertOk()
+            ->assertJsonPath('ok', true);
+
+        $this->assertSame(Sale::STATUS_CANCELLED, $sale->fresh()->status);
+        $this->assertDatabaseHas('sales', ['id' => $sale->id, 'status' => Sale::STATUS_CANCELLED]);
+
+        $this->actingAs($cashier)->getJson(route('pos.sales.pendingList'))
+            ->assertOk()
+            ->assertJsonCount(0, 'sales');
+
+        $withoutPermission = $this->employee();
+        $otherSale = $this->pendingSale($withoutPermission, 'PEND-SIN-PERM');
+
+        $this->actingAs($withoutPermission)->deleteJson(route('pos.sales.cancel', $otherSale))
+            ->assertForbidden();
     }
 
     public function test_pos_screen_exposes_last_sale_payment_and_pending_tickets_dialog(): void
