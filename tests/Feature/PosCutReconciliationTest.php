@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\CashMovement;
+use App\Models\Category;
 use App\Models\CustomerPayment;
 use App\Models\DailyCut;
 use App\Models\Product;
@@ -43,6 +44,50 @@ class PosCutReconciliationTest extends TestCase
         $this->assertSame(0.0, $totals['cash_box_panel']['subtotal']);
         $this->assertTrue($totals['reconciliation']['is_reconciled']);
         $this->assertDatabaseHas('cash_movements', ['sale_id' => $sale->id, 'amount' => 100]);
+    }
+
+    public function test_navidad_cash_sale_never_registers_money_in_the_cash_box(): void
+    {
+        $this->freezeTime();
+        $user = $this->admin();
+        $category = Category::factory()->create(['name' => 'Navidad']);
+        $product = $this->product(['category_id' => $category->id]);
+
+        $sale = app(SaleService::class)->create($user, [
+            'idempotency_key' => 'navidad-real-cash', 'payment_method' => 'cash',
+            'items' => [['product_id' => $product->id, 'quantity' => 1]],
+        ]);
+
+        $this->assertDatabaseMissing('cash_movements', ['sale_id' => $sale->id]);
+        $totals = app(DailyCutService::class)->build(today(), $user);
+        $this->assertSame(0.0, $totals['cash_box_panel']['sales_movements']);
+        $this->assertSame(0.0, $totals['computer_panel']['cash_sales']);
+        $this->assertSame(100.0, $totals['navidad_total']);
+        $this->assertSame(100.0, $totals['sales']['total']);
+        $this->assertTrue($totals['reconciliation']['is_reconciled']);
+    }
+
+    public function test_mixed_navidad_sale_only_registers_the_non_navidad_cash(): void
+    {
+        $this->freezeTime();
+        $user = $this->admin();
+        $category = Category::factory()->create(['name' => 'navidad']);
+        $navidadProduct = $this->product(['category_id' => $category->id]);
+        $otherProduct = $this->product();
+
+        $sale = app(SaleService::class)->create($user, [
+            'idempotency_key' => 'navidad-real-mixed-items', 'payment_method' => 'cash',
+            'items' => [
+                ['product_id' => $navidadProduct->id, 'quantity' => 1],
+                ['product_id' => $otherProduct->id, 'quantity' => 1],
+            ],
+        ]);
+
+        $this->assertDatabaseHas('cash_movements', ['sale_id' => $sale->id, 'amount' => 100]);
+        $totals = app(DailyCutService::class)->build(today(), $user);
+        $this->assertSame(100.0, $totals['cash_box_panel']['sales_movements']);
+        $this->assertSame(100.0, $totals['navidad_total']);
+        $this->assertSame(200.0, $totals['sales']['total']);
     }
 
     public function test_mixed_payment_without_breakdown_is_not_reported_as_reconciled_or_purely_electronic(): void

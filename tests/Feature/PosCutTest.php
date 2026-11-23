@@ -88,6 +88,32 @@ class PosCutTest extends TestCase
         ]);
     }
 
+    /**
+     * @param  array<int, array<string, mixed>>  $items
+     */
+    private function makeCashSaleWithItems(User $user, string $key, array $items): Sale
+    {
+        $total = round(array_sum(array_column($items, 'line_total')), 2);
+        $sale = $this->makePaidSale($user, $total, $key);
+
+        SaleItem::where('sale_id', $sale->id)->delete();
+        foreach ($items as $item) {
+            $sale->items()->create($item);
+        }
+
+        CashMovement::create([
+            'user_id' => $user->id,
+            'sale_id' => $sale->id,
+            'type' => 'in',
+            'category' => 'sale',
+            'amount' => $total,
+            'concept' => "Venta {$sale->folio}",
+            'happened_at' => now(),
+        ]);
+
+        return $sale;
+    }
+
     public function test_global_cut_includes_all_employees_sales(): void
     {
         $admin = User::factory()->create()->assignRole('admin');
@@ -289,6 +315,151 @@ class PosCutTest extends TestCase
             ['name' => 'Velas', 'quantity' => 1, 'total' => 25.0],
         ], $response->viewData('totals')['navidad_products']);
         $this->assertSame(125.0, $response->viewData('totals')['navidad_total']);
+    }
+
+    public function test_navidad_cash_sales_leave_cash_panels_but_stay_in_totals(): void
+    {
+        $this->freezeTime();
+        $employee = $this->employeeWithCut();
+
+        $this->makeCashSaleWithItems($employee, 'cut-navidad-caja-1', [
+            [
+                'product_name' => 'Arbolito',
+                'category_name' => 'Navidad',
+                'quantity' => 2,
+                'unit_price' => 50,
+                'line_total' => 100,
+                'line_cost' => 40,
+            ],
+        ]);
+
+        $totals = $this->actingAs($employee)->get(route('pos.cuts.index'))->viewData('totals');
+
+        $this->assertSame(0.0, $totals['cash_box_panel']['sales_movements']);
+        $this->assertSame(0.0, $totals['computer_panel']['cash_sales']);
+        $this->assertSame(100.0, $totals['sales']['total_cash']);
+        $this->assertSame(100.0, $totals['totals']['sales']);
+        $this->assertSame(100.0, $totals['navidad_total']);
+        $this->assertTrue($totals['reconciliation']['is_reconciled']);
+    }
+
+    public function test_global_cut_also_excludes_navidad_cash_from_cash_panels(): void
+    {
+        $this->freezeTime();
+        $admin = User::factory()->create()->assignRole('admin');
+        $admin->givePermissionTo(['pos.access', 'pos.sell', 'pos.cut.manage', 'pos.sales.day.any']);
+
+        $this->makeCashSaleWithItems($admin, 'cut-navidad-global-1', [
+            [
+                'product_name' => 'Arbolito',
+                'category_name' => 'Navidad',
+                'quantity' => 1,
+                'unit_price' => 100,
+                'line_total' => 100,
+                'line_cost' => 40,
+            ],
+        ]);
+
+        $totals = $this->actingAs($admin)->get(route('pos.cuts.index'))->viewData('totals');
+
+        $this->assertSame(0.0, $totals['cash_box_panel']['sales_movements']);
+        $this->assertSame(0.0, $totals['computer_panel']['cash_sales']);
+        $this->assertSame(100.0, $totals['navidad_total']);
+    }
+
+    public function test_mixed_cash_sale_excludes_only_the_navidad_line_from_cash_panels(): void
+    {
+        $this->freezeTime();
+        $employee = $this->employeeWithCut();
+
+        $this->makeCashSaleWithItems($employee, 'cut-navidad-caja-2', [
+            [
+                'product_name' => 'Arbolito',
+                'category_name' => 'navidad',
+                'quantity' => 1,
+                'unit_price' => 100,
+                'line_total' => 100,
+                'line_cost' => 40,
+            ],
+            [
+                'product_name' => 'Aceite',
+                'category_name' => 'Mostrador',
+                'quantity' => 1,
+                'unit_price' => 50,
+                'line_total' => 50,
+                'line_cost' => 30,
+            ],
+        ]);
+
+        $totals = $this->actingAs($employee)->get(route('pos.cuts.index'))->viewData('totals');
+
+        $this->assertSame(50.0, $totals['cash_box_panel']['sales_movements']);
+        $this->assertSame(50.0, $totals['computer_panel']['cash_sales']);
+        $this->assertSame(100.0, $totals['navidad_total']);
+        $this->assertSame(150.0, $totals['sales']['total_cash']);
+    }
+
+    public function test_non_navidad_cash_sale_keeps_full_amount_in_cash_panels(): void
+    {
+        $this->freezeTime();
+        $employee = $this->employeeWithCut();
+
+        $this->makeCashSaleWithItems($employee, 'cut-navidad-caja-3', [
+            [
+                'product_name' => 'Aceite',
+                'category_name' => 'Mostrador',
+                'quantity' => 1,
+                'unit_price' => 100,
+                'line_total' => 100,
+                'line_cost' => 60,
+            ],
+        ]);
+
+        $totals = $this->actingAs($employee)->get(route('pos.cuts.index'))->viewData('totals');
+
+        $this->assertSame(100.0, $totals['cash_box_panel']['sales_movements']);
+        $this->assertSame(100.0, $totals['computer_panel']['cash_sales']);
+        $this->assertSame(0.0, $totals['navidad_total']);
+    }
+
+    public function test_cash_in_panel_stays_initial_plus_change_with_navidad_sales(): void
+    {
+        $this->freezeTime();
+        $employee = $this->employeeWithCut();
+
+        $this->makeCashSaleWithItems($employee, 'cut-navidad-caja-4', [
+            [
+                'product_name' => 'Arbolito',
+                'category_name' => 'Navidad',
+                'quantity' => 1,
+                'unit_price' => 100,
+                'line_total' => 100,
+                'line_cost' => 40,
+            ],
+        ]);
+
+        CashMovement::create([
+            'user_id' => $employee->id,
+            'type' => 'in',
+            'category' => 'initial',
+            'amount' => 500.00,
+            'concept' => 'Dinero inicial',
+            'happened_at' => now(),
+        ]);
+        CashMovement::create([
+            'user_id' => $employee->id,
+            'type' => 'in',
+            'category' => 'change',
+            'amount' => 50.00,
+            'concept' => 'Cambio',
+            'happened_at' => now(),
+        ]);
+
+        $totals = $this->actingAs($employee)->get(route('pos.cuts.index'))->viewData('totals');
+
+        $this->assertSame(550.0, $totals['computer_panel']['cash_in_total']);
+        $this->assertSame(550.0, $totals['cash_box_panel']['cash_in_total']);
+        $this->assertSame(0.0, $totals['cash_box_panel']['sales_movements']);
     }
 
     public function test_printed_legacy_cut_keeps_saved_integer_quantities_instead_of_rebuilding_them(): void

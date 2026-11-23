@@ -416,15 +416,25 @@ class SaleService
             }
         }
 
-        CashMovement::create([
-            'user_id' => $user->id,
-            'sale_id' => $sale->id,
-            'type' => CashMovement::TYPE_IN,
-            'category' => 'sale',
-            'amount' => (float) $sale->total,
-            'concept' => "Venta {$sale->folio}",
-            'happened_at' => $sale->paid_at ?? now(),
-        ]);
+        // Navidad se maneja aparte: su importe nunca entra como efectivo de caja.
+        $navidadAmount = round(array_sum(array_map(static function (array $item): float {
+            return mb_strtolower(trim((string) ($item['category_name'] ?? ''))) === 'navidad'
+                ? (float) $item['line_total']
+                : 0.0;
+        }, $preparedItems)), 2);
+        $cashAmount = round((float) $sale->total - $navidadAmount, 2);
+
+        if ($cashAmount > 0) {
+            CashMovement::create([
+                'user_id' => $user->id,
+                'sale_id' => $sale->id,
+                'type' => CashMovement::TYPE_IN,
+                'category' => 'sale',
+                'amount' => $cashAmount,
+                'concept' => "Venta {$sale->folio}",
+                'happened_at' => $sale->paid_at ?? now(),
+            ]);
+        }
     }
 
     /**

@@ -268,3 +268,13 @@ feature-productos-calculadora-listas-01 -> implemented_by_plan -> plan-productos
 plan-productos-calculadora-listas-03 -> aprobado_por -> usuario
 plan-productos-calculadora-listas-03 -> implementado_por -> fix-productos-calculadora-listas-03
 fix-productos-calculadora-listas-03 -> implementa_feature -> feature-productos-calculadora-listas-01
+feature-ventas-navidad-separadas-01 -> implemented_by_plan -> plan-ventas-navidad-separadas-01
+plan-ventas-navidad-separadas-01 -> implementa_feature -> feature-ventas-navidad-separadas-01
+plan-ventas-navidad-separadas-01 -> amplia -> plan-corte-navidad-panel-01
+plan-ventas-navidad-separadas-01 -> se_apoya_en -> fix-corte-navidad-panel-01
+plan-ventas-navidad-separadas-01 -> aprobado_por -> usuario
+plan-ventas-navidad-separadas-01 -> implementado_por -> fix-ventas-navidad-separadas-01
+fix-ventas-navidad-separadas-01 -> implementa_feature -> feature-ventas-navidad-separadas-01
+plan-ventas-navidad-separadas-01 -> implementado_por -> fix-ventas-navidad-separadas-02
+fix-ventas-navidad-separadas-02 -> implementa_feature -> feature-ventas-navidad-separadas-01
+fix-ventas-navidad-separadas-02 -> corrige -> fix-ventas-navidad-separadas-01

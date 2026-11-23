@@ -130,6 +130,7 @@ class DailyCutService
         // Ingresos: dinero inicial + cambio + otros ingresos + pagos de clientes
         $computerCashIn = round($initial + $change + $otherIn, 2);
         // Ventas en efectivo cobradas
+        $navidadCashFromSales = round((float) $cashSales->sum(fn (Sale $sale): float => $this->navidadAmount($sale)), 2);
         $computerCashSales = $employee
             ? round((float) Sale::query()->paid()->where('payment_method', 'cash')
                 ->whereBetween('paid_at', [$start, $end])
@@ -138,6 +139,15 @@ class DailyCutService
                     ->whereBetween('happened_at', [$start, $end]))
                 ->sum('total'), 2)
             : $salesTotalCash;
+        // Navidad se reporta en su propio panel, nunca dentro del dinero de caja.
+        $navidadCashForComputer = $navidadCashFromSales;
+        if ($employee) {
+            $employeeSaleIds = $cash->where('user_id', $employee->id)->where('type', 'in')->where('category', 'sale')
+                ->pluck('sale_id')->filter()->all();
+            $navidadCashForComputer = round((float) $cashSales->whereIn('id', $employeeSaleIds)
+                ->sum(fn (Sale $sale): float => $this->navidadAmount($sale)), 2);
+        }
+        $computerCashSales = round($computerCashSales - $navidadCashForComputer, 2);
         // Pagos de clientes en efectivo (manual category customer_payment)
         $computerCustomerPayments = $customerPayments;
         // Egresos: devoluciones + salidas (proveedores, gastos, retiros, otros)
@@ -156,10 +166,12 @@ class DailyCutService
         // Incluye la categoría automática 'sale' (ventas en efectivo) y 'refund' (devoluciones)
         $cashBoxIn = round($initial + $change + $otherIn, 2);
         // Ventas en efectivo registradas como movimiento de caja (categoría 'sale')
-        $boxSalesMovements = $this->sumMovement(
-            $cash->filter(fn (CashMovement $movement): bool => $movement->sale?->isPaid()
-                && $movement->sale->payment_method === 'cash'),
-            'in', 'sale',
+        $cashSaleMovements = $cash->filter(fn (CashMovement $movement): bool => $movement->sale?->isPaid()
+            && $movement->sale->payment_method === 'cash');
+        $boxSalesMovements = round(
+            $this->sumMovement($cashSaleMovements, 'in', 'sale')
+                - $this->navidadFromCashMovements($cashSaleMovements),
+            2
         );
         // Pagos de clientes
         $boxCustomerPayments = $customerPayments;
@@ -187,7 +199,7 @@ class DailyCutService
                 $departments[$key]['total'] += (float) $item->line_total;
                 $departments[$key]['ticket_ids'][$sale->id] = true;
 
-                if (mb_strtolower(trim((string) $item->category_name)) === 'navidad') {
+                if ($this->isNavidadCategory($item->category_name)) {
                     $productName = $item->product_name ?: ($item->custom_name ?: 'Producto sin nombre');
                     $navidadProducts[$productName] ??= ['name' => $productName, 'quantity' => 0, 'total' => 0.0];
                     $navidadProducts[$productName]['quantity'] += Quantity::milli($item->quantity);
@@ -533,6 +545,37 @@ class DailyCutService
             ->where('type', $type)
             ->where('category', $category)
             ->sum(fn (CashMovement $movement): float => (float) $movement->amount), 2);
+    }
+
+    private function isNavidadCategory(?string $categoryName): bool
+    {
+        return mb_strtolower(trim((string) $categoryName)) === 'navidad';
+    }
+
+    private function navidadAmount(Sale $sale): float
+    {
+        return round((float) $sale->items->sum(function ($item): float {
+            return $this->isNavidadCategory($item->category_name) ? (float) $item->line_total : 0.0;
+        }), 2);
+    }
+
+    /**
+     * @param  Collection<int, CashMovement>  $movements
+     */
+    private function navidadFromCashMovements(Collection $movements): float
+    {
+        return round((float) $movements->where('type', 'in')->where('category', 'sale')
+            ->sum(function (CashMovement $movement): float {
+                if (! $movement->sale) {
+                    return 0.0;
+                }
+
+                // Los movimientos nuevos ya excluyen Navidad en el origen;
+                // solo se descuenta lo que aún quede dentro del movimiento.
+                $nonNavidad = round((float) $movement->sale->total - $this->navidadAmount($movement->sale), 2);
+
+                return max(0.0, round((float) $movement->amount - $nonNavidad, 2));
+            }), 2);
     }
 
     /**
