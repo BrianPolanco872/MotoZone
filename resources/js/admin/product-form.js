@@ -173,4 +173,26 @@ if (form) {
     margin?.addEventListener('input', calculatePrice);
     taxRate?.addEventListener('input', calculatePrice);
 
+    const priceListsButton = form.querySelector('[data-calculate-price-lists]');
+    const formatMoney = (value) => `$${value.toFixed(2)}`;
+
+    priceListsButton?.addEventListener('click', () => {
+        const costValue = Number.parseFloat(cost?.value);
+
+        if (!Number.isFinite(costValue)) {
+            return;
+        }
+
+        let previousPrice = costValue;
+
+        for (const [index, row] of form.querySelectorAll('[data-price-list-row]').entries()) {
+            const percentage = Number.parseFloat(row.querySelector('[data-price-list-percentage]')?.value) || 0;
+            const listPrice = round(index === 0
+                ? previousPrice * (1 + percentage / 100)
+                : previousPrice * (1 - percentage / 100));
+            row.querySelector('[data-price-list-price]').textContent = formatMoney(listPrice);
+            previousPrice = listPrice;
+        }
+    });
+
 }

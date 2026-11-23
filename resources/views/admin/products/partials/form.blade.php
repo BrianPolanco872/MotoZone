@@ -275,6 +275,48 @@
                     </label>
                 </div>
             </x-card>
+
+            {{-- Listas de precios (solo referencia, no se guarda) --}}
+            <x-card padded>
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <h2 class="text-base font-semibold text-mz-text-primary">Listas de precios (referencia)</h2>
+                        <p class="text-xs text-mz-text-secondary">Calcula precios de apoyo sin modificar el producto ni guardar estos valores.</p>
+                    </div>
+                    <button type="button" data-calculate-price-lists class="x-button x-button-secondary size-sm">Calcular listas</button>
+                </div>
+
+                <div class="mt-4">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-mz-border text-left text-xs font-semibold text-mz-text-secondary">
+                                <th class="py-2 pr-3">Lista</th>
+                                <th class="py-2 pr-3">IVA / Desc. (%)</th>
+                                <th class="py-2 text-right">Precio</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ([
+                                ['Precio Público', '16'],
+                                ['Lista 1 / CESVE, TALLER', '10'],
+                                ['Lista 2 / MINORISTA', '21'],
+                                ['Lista 3 / SENIOR', '18'],
+                                ['Lista 4 / MASTER', '15'],
+                                ['Lista 5 / DISTRIBUIDOR, POWERSPORT', '10'],
+                            ] as [$listName, $listPercentage])
+                                <tr data-price-list-row class="border-b border-mz-border-light last:border-0">
+                                    <td class="py-2 pr-3 font-medium text-mz-text-primary">{{ $listName }}</td>
+                                    <td class="py-2 pr-3">
+                                        <input type="number" step="0.01" data-price-list-percentage value="{{ $listPercentage }}" aria-label="Porcentaje de {{ $listName }}" class="mz-input h-9 w-24 text-right" placeholder="0">
+                                    </td>
+                                    <td class="py-2 text-right tabular-nums" data-price-list-price>$0.00</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+                <p class="mt-3 text-xs text-mz-text-secondary">Precio Público suma IVA al costo; las listas L1 a L5 aplican descuento en cascada sobre la lista anterior.</p>
+            </x-card>
         </div>
     </div>
 

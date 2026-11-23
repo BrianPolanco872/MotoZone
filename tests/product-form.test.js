@@ -26,6 +26,9 @@ function productForm({ mode = 'unit', existing = [], products = [], fetcher = nu
                     if (selector === '[data-kit-row]') return Object.hasOwn(child.dataset, 'kitRow');
                     if (selector === '[data-component-id]') return Object.hasOwn(child.dataset, 'componentId');
                     if (selector === '[data-remove-component]') return Object.hasOwn(child.dataset, 'removeComponent');
+                    if (selector === '[data-price-list-row]') return Object.hasOwn(child.dataset, 'priceListRow');
+                    if (selector === '[data-price-list-percentage]') return Object.hasOwn(child.dataset, 'priceListPercentage');
+                    if (selector === '[data-price-list-price]') return Object.hasOwn(child.dataset, 'priceListPrice');
                     return false;
                 };
                 return this.children.flatMap((child) => [...(matches(child) ? [child] : []), ...child.querySelectorAll(selector)]);
@@ -44,7 +47,8 @@ function productForm({ mode = 'unit', existing = [], products = [], fetcher = nu
     };
     const fields = new Map();
     for (const selector of ['[data-product-inventory]', '[data-kit-fields]', '[data-kit-rows]', '#component-search',
-        '[data-component-results]', '[data-component-status]', '#stock', '#min_stock', '#warehouse_stock', '#store_2_stock', '#cost', '#margin', '#price', '#tax_rate']) {
+        '[data-component-results]', '[data-component-status]', '#stock', '#min_stock', '#warehouse_stock', '#store_2_stock', '#cost', '#margin', '#price', '#tax_rate',
+        '[data-calculate-price-lists]']) {
         fields.set(selector, element());
     }
     const get = (selector) => fields.get(selector);
@@ -58,7 +62,11 @@ function productForm({ mode = 'unit', existing = [], products = [], fetcher = nu
             if (selector === '[name="sale_mode"]:checked') return radios.find((radio) => radio.checked);
             return get(selector) || null;
         },
-        querySelectorAll: (selector) => selector === '[name="sale_mode"]' ? radios : [],
+        querySelectorAll: (selector) => {
+            if (selector === '[name="sale_mode"]') return radios;
+            if (selector === '[data-price-list-row]') return priceListRows;
+            return [];
+        },
     });
     for (const [index, component] of existing.entries()) {
         const row = element();
@@ -74,6 +82,18 @@ function productForm({ mode = 'unit', existing = [], products = [], fetcher = nu
         row.append(id, quantity, remove);
         get('[data-kit-rows]').append(row);
     }
+    const priceListRows = ['16', '10', '21', '18', '15', '10'].map((percentage) => {
+        const row = element();
+        row.dataset.priceListRow = '';
+        const percentageInput = element('INPUT');
+        percentageInput.dataset.priceListPercentage = '';
+        percentageInput.value = percentage;
+        const priceCell = element('TD');
+        priceCell.dataset.priceListPrice = '';
+        priceCell.textContent = '$0.00';
+        row.append(percentageInput, priceCell);
+        return row;
+    });
     document = { querySelector: () => form, createElement: element, activeElement: null };
     const requests = [];
     const timers = new Map();
@@ -88,7 +108,7 @@ function productForm({ mode = 'unit', existing = [], products = [], fetcher = nu
         },
     });
     return {
-        get, requests, document, radios,
+        get, requests, document, radios, priceListRows,
         async mode(value) {
             radios.forEach((radio) => { radio.checked = radio.value === value; });
             await radios.find((radio) => radio.checked).emit('change');
@@ -246,4 +266,32 @@ test('opening an existing kit and editing its mode does not recalculate its save
     assert.equal(ui.get('#price').value, '20');
     await ui.get('#cost').emit('input');
     assert.equal(ui.get('#price').value, '23.20');
+});
+
+test('price list calculator cascades VAT then stacked discounts from cost without changing product fields', async () => {
+    const ui = productForm({ initial: { cost: '100.33', margin: '30', price: '999', tax_rate: '8' } });
+
+    await ui.get('[data-calculate-price-lists]').click();
+
+    const priceOf = (index) => ui.priceListRows[index].querySelector('[data-price-list-price]').textContent;
+
+    assert.deepEqual([0, 1, 2, 3, 4, 5].map(priceOf), [
+        '$116.38', '$104.74', '$82.74', '$67.85', '$57.67', '$51.90',
+    ]);
+    assert.equal(ui.get('#price').value, '999');
+    assert.equal(ui.get('#cost').value, '100.33');
+    assert.equal(ui.get('#margin').value, '30');
+    assert.equal(ui.get('#tax_rate').value, '8');
+});
+
+test('price list calculator recomputes the cascade from edited percentages', async () => {
+    const ui = productForm({ initial: { cost: '100', price: '999' } });
+    ui.priceListRows[0].querySelector('[data-price-list-percentage]').value = '20';
+    ui.priceListRows[1].querySelector('[data-price-list-percentage]').value = '50';
+
+    await ui.get('[data-calculate-price-lists]').click();
+
+    assert.deepEqual([0, 1, 2].map((index) => ui.priceListRows[index].querySelector('[data-price-list-price]').textContent), [
+        '$120.00', '$60.00', '$47.40',
+    ]);
 });

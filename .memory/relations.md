@@ -256,3 +256,15 @@ plan-pos-ventas-dia-devoluciones-01 -> implementado_por -> fix-pos-ventas-dia-si
 fix-pos-ventas-dia-sin-filtro-cajero-01 -> corrige -> fix-pos-ventas-dia-devoluciones-01
 plan-pos-reabrir-corte-visibilidad-01 -> aprobado_por -> usuario
 plan-pos-reabrir-corte-visibilidad-01 -> implementado_por -> fix-pos-reabrir-corte-visibilidad-01
+feature-productos-calculadora-listas-01 -> implemented_by_plan -> plan-productos-calculadora-listas-01
+plan-productos-calculadora-listas-01 -> aprobado_por -> usuario
+plan-productos-calculadora-listas-01 -> implementado_por -> fix-productos-calculadora-listas-01
+fix-productos-calculadora-listas-01 -> implementa_feature -> feature-productos-calculadora-listas-01
+feature-productos-calculadora-listas-01 -> implemented_by_plan -> plan-productos-calculadora-listas-02
+plan-productos-calculadora-listas-02 -> aprobado_por -> usuario
+plan-productos-calculadora-listas-02 -> implementado_por -> fix-productos-calculadora-listas-02
+fix-productos-calculadora-listas-02 -> implementa_feature -> feature-productos-calculadora-listas-01
+feature-productos-calculadora-listas-01 -> implemented_by_plan -> plan-productos-calculadora-listas-03
+plan-productos-calculadora-listas-03 -> aprobado_por -> usuario
+plan-productos-calculadora-listas-03 -> implementado_por -> fix-productos-calculadora-listas-03
+fix-productos-calculadora-listas-03 -> implementa_feature -> feature-productos-calculadora-listas-01
