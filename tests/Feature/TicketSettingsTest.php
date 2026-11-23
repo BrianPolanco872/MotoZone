@@ -80,8 +80,10 @@ class TicketSettingsTest extends TestCase
     {
         $admin = User::factory()->create()->assignRole('admin');
 
-        $this->actingAs($admin)->get(route('pos.tickets.edit'))
-            ->assertOk()->assertSeeInOrder(['Corte del día', 'Tickets', 'Empleados'])
+        $response = $this->actingAs($admin)->get(route('pos.tickets.edit'));
+
+        $response->assertOk()
+            ->assertSeeInOrder(['Punto de venta', 'Corte del día', 'Caja', 'Abonos / Créditos', 'Empleados', 'Tickets', 'Bitácora', 'Mi perfil'])
             ->assertSee('Conexión')->assertSee('Campos')->assertSee('Vista previa', false);
     }
 

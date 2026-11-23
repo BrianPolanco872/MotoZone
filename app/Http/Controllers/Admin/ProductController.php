@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\ProductRequest;
+use App\Models\Category;
 use App\Models\Product;
 use App\Models\StockMovement;
 use App\Services\AuditLogService;
 use App\Support\Quantity;
+use App\Support\XlsxExport;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -21,6 +23,7 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class ProductController extends Controller
 {
@@ -89,6 +92,7 @@ class ProductController extends Controller
                 $price = round($product->cost * (1 + $margin / 100) * (1 + $taxRate), 2);
                 $product->update([
                     'price' => $price,
+                    'margin_percentage' => $margin,
                     'tax_rate' => $taxRate,
                 ]);
             } else {
@@ -145,6 +149,55 @@ class ProductController extends Controller
         return redirect()
             ->route('admin.products.index')
             ->with('status', "Se eliminaron {$deletedProducts} productos del inventario.");
+    }
+
+    /**
+     * Exporta el inventario completo como libro de Excel (.xlsx).
+     */
+    public function export(): BinaryFileResponse
+    {
+        $headers = [
+            'Código', 'Código de barras', 'Segundo código', 'Nombre', 'Marca', 'Descripción',
+            'Categoría', 'Precio de venta', 'Precio mayoreo', 'Costo', 'IVA (%)', 'Stock',
+            'Almacén', 'Tienda 2', 'Stock mínimo', 'Activo', 'Modo de venta', 'Visible en inicio',
+        ];
+
+        $rows = [];
+
+        Product::query()->with('category')->chunkById(500, function (Collection $products) use (&$rows): void {
+            foreach ($products as $product) {
+                $rows[] = [
+                    $product->sku,
+                    $product->barcode,
+                    $product->barcode2,
+                    $product->name,
+                    $product->brand,
+                    $product->description,
+                    $product->category?->name,
+                    (float) $product->price,
+                    $product->wholesale_price === null ? null : (float) $product->wholesale_price,
+                    (float) $product->cost,
+                    round(((float) $product->tax_rate) * 100, 2),
+                    $product->stock,
+                    (float) $product->warehouse_stock,
+                    (float) $product->store_2_stock,
+                    $product->min_stock,
+                    $product->is_active ? 'Sí' : 'No',
+                    $product->sale_mode === Product::MODE_KIT ? 'Paquete' : ($product->sale_mode === Product::MODE_BULK ? 'Granel' : 'Unidad'),
+                    $product->home_visible ? 'Sí' : 'No',
+                ];
+            }
+        });
+
+        $path = sys_get_temp_dir().DIRECTORY_SEPARATOR.'inventario_'.Str::random(12).'.xlsx';
+
+        XlsxExport::store($path, 'Inventario', $headers, $rows);
+
+        return response()
+            ->download($path, 'inventario_'.now()->format('Ymd_His').'.xlsx', [
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            ])
+            ->deleteFileAfterSend(true);
     }
 
     public function import(Request $request, AuditLogService $audit): RedirectResponse
@@ -374,6 +427,7 @@ class ProductController extends Controller
         return view('admin.products.create', [
             'product' => new Product,
             'kitRows' => $this->kitRows(new Product),
+            'categories' => $this->categoryNames(),
         ]);
     }
 
@@ -402,8 +456,9 @@ class ProductController extends Controller
     public function edit(Product $product): View
     {
         return view('admin.products.edit', [
-            'product' => $product,
+            'product' => $product->load('category'),
             'kitRows' => $this->kitRows($product),
+            'categories' => $this->categoryNames(),
         ]);
     }
 
@@ -563,6 +618,9 @@ class ProductController extends Controller
         $data['brand'] = $request->validated('brand', $product?->brand ?? '') ?? '';
         $data['description'] = $request->validated('description', $product?->description ?? '') ?? '';
         $data['cost'] = $request->validated('cost', $product?->cost ?? 0) ?? 0;
+        if ($request->has('margin')) {
+            $data['margin_percentage'] = $request->validated('margin');
+        }
         $data['min_stock'] = $request->validated('min_stock', $product?->min_stock ?? 0) ?? 0;
         if ($data['sale_mode'] === Product::MODE_KIT) {
             $data['track_inventory'] = false;
@@ -574,7 +632,43 @@ class ProductController extends Controller
         $data['slug'] = $this->uniqueSlug($data['name'], $product);
         $data['tax_rate'] = round(((float) $request->validated('tax_rate')) / 100, 4);
 
+        if ($request->has('category')) {
+            $data['category_id'] = $this->resolveCategoryId((string) $request->validated('category', ''));
+        }
+
         return $data;
+    }
+
+    /** @return list<string> */
+    private function categoryNames(): array
+    {
+        return Category::query()->orderBy('name')->pluck('name')->all();
+    }
+
+    private function resolveCategoryId(string $name): ?int
+    {
+        $name = trim($name);
+
+        if ($name === '') {
+            return null;
+        }
+
+        $category = Category::query()->where('name', $name)->first();
+
+        if ($category !== null) {
+            return $category->id;
+        }
+
+        $base = Str::slug($name) ?: 'categoria';
+        $slug = $base;
+        $suffix = 2;
+
+        while (Category::query()->where('slug', $slug)->exists()) {
+            $slug = "{$base}-{$suffix}";
+            $suffix++;
+        }
+
+        return Category::create(['name' => $name, 'slug' => $slug])->id;
     }
 
     private function uniqueSlug(string $name, ?Product $product = null): string

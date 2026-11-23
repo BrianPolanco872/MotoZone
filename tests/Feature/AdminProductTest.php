@@ -28,6 +28,7 @@ use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\TestWith;
 use RuntimeException;
 use Tests\TestCase;
+use ZipArchive;
 
 class AdminProductTest extends TestCase
 {
@@ -410,7 +411,8 @@ class AdminProductTest extends TestCase
 
             $this->assertSame(3, $xpath->query('//input[@name="sale_mode"]')->length);
             $this->assertSame('unit', $xpath->query('//input[@name="sale_mode"][@checked]')->item(0)->getAttribute('value'));
-            $this->assertSame('1', $xpath->query('//input[@name="stock"]')->item(0)->getAttribute('step'));
+            $this->assertSame('text', $xpath->query('//input[@name="stock"]')->item(0)->getAttribute('type'));
+            $this->assertSame('decimal', $xpath->query('//input[@name="stock"]')->item(0)->getAttribute('inputmode'));
 
             foreach (['brand', 'description'] as $field) {
                 $input = $xpath->query('//*[@name="'.$field.'"]')->item(0);
@@ -419,6 +421,97 @@ class AdminProductTest extends TestCase
                 $this->assertFalse($input->hasAttribute('required'));
             }
         }
+    }
+
+    public function test_inventory_fields_are_plain_text_and_category_is_written_manually(): void
+    {
+        $admin = $this->admin();
+        Category::factory()->create(['name' => 'Frenos']);
+
+        $createResponse = $this->actingAs($admin)->get(route('admin.products.create'))->assertOk();
+        $document = new DOMDocument;
+        $document->loadHTML('<?xml encoding="UTF-8">'.$createResponse->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+        $xpath = new DOMXPath($document);
+
+        foreach (['stock', 'min_stock', 'warehouse_stock', 'store_2_stock'] as $field) {
+            $input = $xpath->query('//input[@name="'.$field.'"]')->item(0);
+            $this->assertInstanceOf(DOMElement::class, $input);
+            $this->assertSame('text', $input->getAttribute('type'));
+            $this->assertSame('decimal', $input->getAttribute('inputmode'));
+            $this->assertFalse($input->hasAttribute('step'));
+        }
+
+        $categoryInput = $xpath->query('//input[@id="category"]')->item(0);
+        $this->assertInstanceOf(DOMElement::class, $categoryInput);
+        $this->assertSame('text', $categoryInput->getAttribute('type'));
+        $this->assertSame('product-categories', $categoryInput->getAttribute('list'));
+        $this->assertStringContainsString('Frenos', $createResponse->getContent());
+
+        $this->actingAs($admin)->post(route('admin.products.store'), [
+            'name' => 'Producto con categoría manual',
+            'category' => 'Llantas',
+            'price' => '100',
+            'tax_rate' => '16',
+            'sale_mode' => 'unit',
+            'stock' => '12',
+            'min_stock' => '2',
+            'warehouse_stock' => '3',
+            'store_2_stock' => '4',
+            'track_inventory' => '1',
+        ])->assertRedirect(route('admin.products.index'))->assertSessionHasNoErrors();
+
+        $product = Product::query()->where('name', 'Producto con categoría manual')->firstOrFail();
+        $this->assertSame('Llantas', $product->category?->name);
+        $this->assertDatabaseHas('categories', ['name' => 'Llantas']);
+        $this->assertSame(12, $product->stock);
+        $this->assertSame(3.0, (float) $product->warehouse_stock);
+
+        $editResponse = $this->actingAs($admin)->get(route('admin.products.edit', $product))->assertOk();
+        $document = new DOMDocument;
+        $document->loadHTML('<?xml encoding="UTF-8">'.$editResponse->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+        $xpath = new DOMXPath($document);
+        $this->assertSame('Llantas', $xpath->query('//input[@id="category"]')->item(0)->getAttribute('value'));
+
+        $this->actingAs($admin)->put(route('admin.products.update', $product), [
+            'name' => $product->name,
+            'category' => 'Frenos',
+            'price' => '100',
+            'tax_rate' => '16',
+            'sale_mode' => 'unit',
+            'stock' => '12',
+            'min_stock' => '2',
+            'warehouse_stock' => '3',
+            'store_2_stock' => '4',
+            'track_inventory' => '1',
+        ])->assertRedirect(route('admin.products.index'))->assertSessionHasNoErrors();
+
+        $this->assertSame('Frenos', $product->fresh()->category?->name);
+        $this->assertDatabaseCount('categories', 2);
+    }
+
+    public function test_manual_selling_price_does_not_change_the_entered_margin(): void
+    {
+        $admin = $this->admin();
+
+        $this->actingAs($admin)->post(route('admin.products.store'), $this->productInput([
+            'name' => 'Margen manual',
+            'cost' => '80',
+            'margin' => '30',
+            'price' => '121',
+        ]))->assertRedirect(route('admin.products.index'))->assertSessionHasNoErrors();
+
+        $product = Product::query()->where('name', 'Margen manual')->firstOrFail();
+        $this->assertSame(121.0, (float) $product->price);
+        $this->assertSame(30.0, $product->marginPercentage());
+
+        $response = $this->actingAs($admin)->get(route('admin.products.edit', $product))->assertOk();
+        $document = new DOMDocument;
+        $document->loadHTML('<?xml encoding="UTF-8">'.$response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+        $xpath = new DOMXPath($document);
+        $input = $xpath->query('//input[@id="margin"]')->item(0);
+        $this->assertInstanceOf(DOMElement::class, $input);
+        $this->assertSame('margin', $input->getAttribute('name'));
+        $this->assertSame('30', $input->getAttribute('value'));
     }
 
     public function test_employee_cannot_manage_products(): void
@@ -1305,6 +1398,44 @@ class AdminProductTest extends TestCase
         $this->assertDatabaseCount('products', 0);
     }
 
+    public function test_admin_can_export_full_inventory_as_excel_workbook(): void
+    {
+        $category = Category::factory()->create(['name' => 'Frenos']);
+        Product::factory()->create([
+            'category_id' => $category->id,
+            'name' => 'Balata delantera',
+            'sku' => 'EXP-001',
+            'barcode' => '7501234567890',
+            'barcode2' => null,
+            'price' => 199.90,
+            'cost' => 100,
+            'stock' => 7,
+            'min_stock' => 2,
+            'tax_rate' => 0.16,
+        ]);
+
+        $response = $this->actingAs($this->admin())->get(route('admin.products.export'));
+
+        $response->assertOk();
+        $response->assertHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        $response->assertDownload();
+
+        $path = $response->getFile()->getPathname();
+        $zip = new ZipArchive;
+        $this->assertTrue($zip->open($path));
+        $sheet = $zip->getFromName('xl/worksheets/sheet1.xml');
+        $zip->close();
+
+        $this->assertIsString($sheet);
+        $this->assertStringContainsString('Código de barras', $sheet);
+        $this->assertStringContainsString('EXP-001', $sheet);
+        $this->assertStringContainsString('Balata delantera', $sheet);
+        $this->assertStringContainsString('Frenos', $sheet);
+        $this->assertStringContainsString('<v>199.9</v>', $sheet);
+        $this->assertStringContainsString('<v>16</v>', $sheet);
+        $this->assertStringContainsString('<v>7</v>', $sheet);
+    }
+
     public function test_import_keeps_skipping_rows_with_an_existing_sku(): void
     {
         $existing = Product::factory()->create(['sku' => 'IMP-001', 'barcode' => 'EXISTING', 'barcode2' => 'SECOND']);
@@ -1528,7 +1659,7 @@ class AdminProductTest extends TestCase
         $xpath = new DOMXPath($document);
         $this->assertSame('bulk', $xpath->query('//input[@name="sale_mode"][@checked]')->item(0)->getAttribute('value'));
         $this->assertSame('1.125', $xpath->query('//input[@id="stock"]')->item(0)->getAttribute('value'));
-        $this->assertSame('0.001', $xpath->query('//input[@id="stock"]')->item(0)->getAttribute('step'));
+        $this->assertSame('text', $xpath->query('//input[@id="stock"]')->item(0)->getAttribute('type'));
         $this->assertSame('0.250', $xpath->query('//input[@id="min_stock"]')->item(0)->getAttribute('value'));
         $this->assertSame(2.75, $product->fresh()->stock);
     }
@@ -1992,7 +2123,8 @@ class AdminProductTest extends TestCase
         foreach (['warehouse_stock' => '', 'store_2_stock' => '0.000'] as $field => $value) {
             $input = $xpath->query('//input[@name="'.$field.'"]')->item(0);
             $this->assertSame($value, $input->getAttribute('value'));
-            $this->assertSame($mode === 'bulk' ? '0.001' : '1', $input->getAttribute('step'));
+            $this->assertSame('text', $input->getAttribute('type'));
+            $this->assertSame('decimal', $input->getAttribute('inputmode'));
             $this->assertFalse($input->hasAttribute('required'));
             $this->assertFalse($input->hasAttribute('disabled'));
             $this->assertSame(0, $xpath->query('ancestor::fieldset[@disabled]', $input)->length);

@@ -82,10 +82,6 @@ class User extends Authenticatable
                 'label' => 'Ver sus ventas del día',
                 'description' => 'Consultar sus ventas y su corte del día.',
             ],
-            'pos.sales.day.any' => [
-                'label' => 'Ver las ventas de todos',
-                'description' => 'Consultar ventas y cortes de todos los empleados.',
-            ],
         ],
         'Devoluciones' => [
             'pos.returns.request' => [

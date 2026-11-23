@@ -216,6 +216,16 @@ test('lookup errors are announced without changing an existing recipe', async ()
     assert.equal(ui.get('[data-kit-rows]').children.length, 1);
 });
 
+test('editing the final price keeps the margin the user entered', async () => {
+    const ui = productForm({ initial: { cost: '80', margin: '30', price: '120.64', tax_rate: '16' } });
+
+    ui.get('#price').value = '121';
+    await ui.get('#price').emit('input');
+
+    assert.equal(ui.get('#price').value, '121');
+    assert.equal(ui.get('#margin').value, '30');
+});
+
 test('sale mode selection leaves the existing price calculation unchanged', async () => {
     const ui = productForm();
     ui.get('#cost').value = '7.50';

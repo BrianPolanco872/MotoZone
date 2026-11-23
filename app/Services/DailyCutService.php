@@ -175,6 +175,7 @@ class DailyCutService
         // ---------- Ganancia y departamentos ----------
         $profit = 0.0;
         $departments = [];
+        $navidadProducts = [];
 
         foreach ($sales as $sale) {
             foreach ($sale->items as $item) {
@@ -185,6 +186,13 @@ class DailyCutService
                 $departments[$key]['quantity'] += Quantity::milli($item->quantity);
                 $departments[$key]['total'] += (float) $item->line_total;
                 $departments[$key]['ticket_ids'][$sale->id] = true;
+
+                if (mb_strtolower(trim((string) $item->category_name)) === 'navidad') {
+                    $productName = $item->product_name ?: ($item->custom_name ?: 'Producto sin nombre');
+                    $navidadProducts[$productName] ??= ['name' => $productName, 'quantity' => 0, 'total' => 0.0];
+                    $navidadProducts[$productName]['quantity'] += Quantity::milli($item->quantity);
+                    $navidadProducts[$productName]['total'] += (float) $item->line_total;
+                }
             }
         }
 
@@ -218,6 +226,15 @@ class DailyCutService
         }, $departments));
 
         usort($departmentRows, fn (array $a, array $b): int => $b['total'] <=> $a['total']);
+
+        $navidadRows = array_map(static fn (array $product): array => [
+            'name' => $product['name'],
+            'quantity' => Quantity::number($product['quantity']),
+            'total' => round($product['total'], 2),
+        ], $navidadProducts);
+        $navidadRows = array_values($navidadRows);
+        usort($navidadRows, fn (array $a, array $b): int => $b['total'] <=> $a['total']);
+        $navidadTotal = round(array_sum(array_column($navidadRows, 'total')), 2);
 
         // ---------- Conciliación ----------
         $difference = round($cashBoxSubtotal - $computerSubtotal, 2);
@@ -292,6 +309,8 @@ class DailyCutService
                 'tickets' => $sales->count(),
             ],
             'departments' => $departmentRows,
+            'navidad_products' => $navidadRows,
+            'navidad_total' => $navidadTotal,
             'returns' => [
                 'count' => $returns->count(),
                 'total' => $refunds,

@@ -201,6 +201,10 @@
                         <span>Venta guardada con éxito: Folio <span id="last-sale-folio" class="font-bold text-white font-mono"></span></span>
                     </div>
                     <span class="text-xs text-mz-text-muted hidden sm:inline">Listo para imprimir ticket</span>
+                    <div class="mt-2 flex w-full flex-wrap gap-x-4 gap-y-1 border-t border-mz-success/20 pt-2 font-semibold text-mz-text-secondary">
+                        <span>Pago con: <span id="last-sale-paid" class="font-mono text-white">—</span></span>
+                        <span>Cambio: <span id="last-sale-change" class="font-mono text-white">—</span></span>
+                    </div>
                 </div>
 
                 <div class="flex flex-wrap items-center justify-between gap-2">
@@ -219,14 +223,20 @@
                             <x-icon name="trash" class="size-4" />
                             Eliminar venta
                         </button>
-                        <button type="button" id="pos-pending" @disabled(! $permissions['sell']) class="inline-flex items-center justify-center gap-2 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 hover:bg-mz-bg-surface-2 px-4 py-2 text-xs font-bold text-mz-text-secondary hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed active:scale-95">
-                            <x-icon name="pause" class="size-4 text-mz-warning" />
-                            <span>Dejar pendiente</span>
-                            <kbd class="hidden md:inline rounded bg-black/40 px-1.5 py-0.2 text-[10px] font-mono text-mz-text-muted">F6</kbd>
-                        </button>
+                        <div class="flex items-center gap-1.5">
+                            <button type="button" id="pos-pending" @disabled(! $permissions['sell']) class="inline-flex items-center justify-center gap-2 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 hover:bg-mz-bg-surface-2 px-4 py-2 text-xs font-bold text-mz-text-secondary hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed active:scale-95">
+                                <x-icon name="pause" class="size-4 text-mz-warning" />
+                                <span>Dejar pendiente</span>
+                                <kbd class="hidden md:inline rounded bg-black/40 px-1.5 py-0.2 text-[10px] font-mono text-mz-text-muted">F6</kbd>
+                            </button>
+                            <button type="button" id="pos-pending-list" aria-label="Ver tickets pendientes" title="Ver tickets pendientes" class="inline-flex size-9 shrink-0 items-center justify-center rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 text-mz-text-secondary transition-all hover:border-mz-warning/50 hover:text-mz-warning active:scale-95">
+                                <x-icon name="report" class="size-4" />
+                                <span id="pos-pending-count" class="hidden -ml-1 rounded-full bg-mz-warning px-1.5 text-[10px] font-bold text-mz-bg-primary">0</span>
+                            </button>
+                        </div>
                         <button type="button" id="pos-print-ticket" disabled class="inline-flex items-center justify-center gap-2 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 hover:bg-mz-bg-surface-2 px-4 py-2 text-xs font-bold text-mz-text-secondary hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed active:scale-95">
                             <x-icon name="printer" class="size-4 text-mz-accent-primary" />
-                            Imprimir ticket
+                            Reimprimir último ticket
                         </button>
                         <button type="button" id="pos-charge" @disabled(! $permissions['sell']) class="inline-flex items-center justify-center gap-2.5 rounded-xl bg-gradient-to-r from-mz-accent-primary to-mz-accent-hover hover:brightness-110 px-6 py-2.5 text-sm font-extrabold text-white shadow-xl shadow-mz-accent-primary/25 transition-all transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
                             <x-icon name="banknotes" class="size-5" />
@@ -595,6 +605,28 @@
         </form>
     </dialog>
 
+    <!-- MODAL DE TICKETS PENDIENTES -->
+    <dialog id="pending-sales-dialog" aria-labelledby="pending-sales-title" class="w-full max-w-xl rounded-2xl border border-mz-border-light bg-mz-bg-surface p-0 shadow-2xl shadow-black/95 backdrop:bg-black/75" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); box-sizing: border-box;">
+        <div class="flex items-center justify-between gap-3 border-b border-mz-border-light bg-mz-bg-surface-2/40 px-5 py-4">
+            <div class="flex items-center gap-3">
+                <div class="flex size-9 items-center justify-center rounded-xl bg-mz-warning/15 text-mz-warning border border-mz-warning/25">
+                    <x-icon name="pause" class="size-5" />
+                </div>
+                <div>
+                    <h2 id="pending-sales-title" class="text-base font-bold text-white">Tickets pendientes</h2>
+                    <p class="text-xs text-mz-text-muted">Cotizaciones guardadas sin cobrar</p>
+                </div>
+            </div>
+            <button type="button" data-close-dialog="pending-sales-dialog" class="rounded-xl p-1.5 text-mz-text-muted hover:bg-mz-bg-surface-2 hover:text-white transition-colors" aria-label="Cerrar">
+                <x-icon name="x" class="size-5" />
+            </button>
+        </div>
+        <div class="max-h-[70dvh] overflow-y-auto pos-scrollbar p-4">
+            <p id="pending-sales-empty" class="py-10 text-center text-sm text-mz-text-muted">No hay tickets pendientes.</p>
+            <div id="pending-sales-list" class="space-y-2"></div>
+        </div>
+    </dialog>
+
     {{-- Contenedor de impresión de tickets térmicos --}}
     <div id="ticket-print-container" class="hidden"></div>
 
@@ -648,6 +680,7 @@
                 'show' => route('pos.sales.show', ['sale' => '__SALE__']),
                 'cash' => $permissions['cash'] ? route('pos.cash.index') : null,
                 'pending' => route('pos.sales.pending'),
+                'pendingList' => route('pos.sales.pendingList'),
                 'ticket' => route('pos.sales.ticket', ['sale' => '__SALE__']),
                 'ticketData' => route('pos.sales.ticketData', ['sale' => '__SALE__']),
                 'reopen_my_day' => route('pos.cuts.reopen-my-day'),

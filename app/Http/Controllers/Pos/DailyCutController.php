@@ -38,7 +38,7 @@ class DailyCutController extends Controller
         ]);
 
         $user = $request->user();
-        $canSeeAny = $user->can('pos.sales.day.any');
+        $canSeeAny = $user->hasRole('admin');
 
         $date = Carbon::parse($request->query('date', today()->toDateString()));
         $employee = null;

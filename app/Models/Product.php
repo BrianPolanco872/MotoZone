@@ -40,6 +40,7 @@ class Product extends Model
         'description',
         'price',
         'cost',
+        'margin_percentage',
         'wholesale_price',
         'tax_rate',
         'stock',
@@ -60,6 +61,7 @@ class Product extends Model
         return [
             'price' => 'decimal:2',
             'cost' => 'decimal:2',
+            'margin_percentage' => 'decimal:2',
             'wholesale_price' => 'decimal:2',
             'tax_rate' => 'decimal:4',
             'stock' => QuantityCast::class,
@@ -249,13 +251,19 @@ class Product extends Model
 
     public function marginPercentage(): ?float
     {
+        if ($this->margin_percentage !== null) {
+            return round((float) $this->margin_percentage, 2);
+        }
+
         $cost = (float) $this->cost;
 
         if ($cost <= 0) {
             return null;
         }
 
-        return round((((float) $this->price - $cost) / $cost) * 100, 2);
+        $priceWithoutTax = (float) $this->price / (1 + (float) $this->tax_rate);
+
+        return round((($priceWithoutTax - $cost) / $cost) * 100, 2);
     }
 
     public function hasCost(): bool

@@ -90,8 +90,7 @@ class PosCutTest extends TestCase
 
     public function test_global_cut_includes_all_employees_sales(): void
     {
-        $admin = $this->employeeWithCut();
-        $admin->givePermissionTo('pos.sales.day.any');
+        $admin = User::factory()->create()->assignRole('admin');
         $employeeA = User::factory()->create()->assignRole('empleado');
         $employeeA->givePermissionTo(['pos.access', 'pos.sell']);
         $employeeB = User::factory()->create()->assignRole('empleado');
@@ -241,12 +240,55 @@ class PosCutTest extends TestCase
 
         $response = $this->actingAs($employee)->get(route('pos.cuts.index'));
 
-        $response->assertOk()->assertSee('Cantidad vendida (medidas mixtas)')->assertSee('1.25');
+        $response->assertOk()->assertSee('Ventas segunda tienda');
         $totals = $response->viewData('totals');
         $this->assertSame([['name' => 'Mostrador', 'quantity' => 1.25, 'total' => 125.0, 'tickets' => 1]], $totals['departments']);
         $this->assertSame(112.5, $totals['totals']['net_sales']);
         $this->assertSame(47.5, $totals['totals']['profit']);
         $this->get(route('pos.cuts.print'))->assertOk()->assertSee('1.25')->assertDontSee('1.250');
+    }
+
+    public function test_navidad_panel_shows_only_navidad_products_and_their_total(): void
+    {
+        $this->freezeTime();
+        $employee = $this->employeeWithCut();
+        $sale = $this->makePaidSale($employee, 100.00, 'cut-navidad-1');
+
+        SaleItem::where('sale_id', $sale->id)->delete();
+        $sale->items()->create([
+            'product_name' => 'Arbolito',
+            'category_name' => 'Navidad',
+            'quantity' => 2,
+            'unit_price' => 50,
+            'line_total' => 100,
+            'line_cost' => 40,
+        ]);
+        $sale->items()->create([
+            'product_name' => 'Velas',
+            'category_name' => 'navidad',
+            'quantity' => 1,
+            'unit_price' => 25,
+            'line_total' => 25,
+            'line_cost' => 10,
+        ]);
+        $sale->items()->create([
+            'product_name' => 'Aceite',
+            'category_name' => 'Mostrador',
+            'quantity' => 1,
+            'unit_price' => 200,
+            'line_total' => 200,
+            'line_cost' => 100,
+        ]);
+
+        $response = $this->actingAs($employee)->get(route('pos.cuts.index'));
+
+        $response->assertOk()->assertSee('Ventas segunda tienda')->assertSee('Arbolito')->assertSee('Velas')
+            ->assertSee('$125.00')->assertDontSee('Aceite');
+        $this->assertSame([
+            ['name' => 'Arbolito', 'quantity' => 2, 'total' => 100.0],
+            ['name' => 'Velas', 'quantity' => 1, 'total' => 25.0],
+        ], $response->viewData('totals')['navidad_products']);
+        $this->assertSame(125.0, $response->viewData('totals')['navidad_total']);
     }
 
     public function test_printed_legacy_cut_keeps_saved_integer_quantities_instead_of_rebuilding_them(): void
@@ -380,12 +422,29 @@ class PosCutTest extends TestCase
         $response->assertDontSee(route('pos.cuts.reopen-my-day'));
     }
 
+    public function test_employee_filter_is_only_available_to_admins(): void
+    {
+        $this->freezeTime();
+        $employee = $this->employeeWithCut(['pos.sales.day.any']);
+        $other = User::factory()->create()->assignRole('empleado');
+        $other->givePermissionTo(['pos.access', 'pos.sell']);
+
+        $response = $this->actingAs($employee)->get(route('pos.cuts.index', ['employee' => $other->id]));
+
+        $response->assertOk()->assertDontSee('cut-employee')->assertSee('Corte de '.$employee->name);
+        $this->assertSame($employee->id, $response->viewData('employee')?->id);
+
+        $admin = User::factory()->create()->assignRole('admin');
+        $this->actingAs($admin)->get(route('pos.cuts.index'))
+            ->assertOk()->assertSee('cut-employee');
+    }
+
     public function test_admin_does_not_see_reopen_sale_on_employee_cut(): void
     {
         $employee = User::factory()->create()->assignRole('empleado');
         $employee->givePermissionTo(['pos.access', 'pos.sell', 'pos.cut.own']);
 
-        $admin = $this->employeeWithCut(['pos.sales.day.any']);
+        $admin = User::factory()->create()->assignRole('admin');
 
         $this->actingAs($employee)
             ->post(route('pos.cuts.close-my-day'), ['date' => now()->toDateString()])

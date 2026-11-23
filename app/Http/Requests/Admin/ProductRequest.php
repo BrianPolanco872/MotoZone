@@ -55,6 +55,7 @@ class ProductRequest extends FormRequest
 
         return [
             'name' => ['required', 'string', 'max:255'],
+            'category' => ['nullable', 'string', 'max:255'],
             'brand' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
             'barcode' => [
@@ -74,6 +75,7 @@ class ProductRequest extends FormRequest
             ],
             'price' => ['required', 'numeric', 'min:0'],
             'cost' => ['nullable', 'numeric', 'min:0'],
+            'margin' => ['nullable', 'numeric', 'between:0,100'],
             'wholesale_price' => ['nullable', 'numeric', 'min:0'],
             'tax_rate' => ['required', 'numeric', 'between:0,100'],
             'sale_mode' => ['required', Rule::in([Product::MODE_UNIT, Product::MODE_BULK, Product::MODE_KIT])],

@@ -166,29 +166,11 @@ if (form) {
         updating = false;
     };
 
-    const calculateMargin = () => {
-        if (!cost || !margin || !price || updating) {
-            return;
-        }
-
-        const costValue = Number.parseFloat(cost.value);
-        const priceValue = Number.parseFloat(price.value);
-
-        if (!Number.isFinite(costValue) || !Number.isFinite(priceValue) || costValue <= 0) {
-            return;
-        }
-
-        updating = true;
-        margin.value = round(((priceValue - costValue) / costValue) * 100).toFixed(2);
-        updating = false;
-    };
-
     cost?.addEventListener('input', () => {
         calculatePrice();
     });
 
     margin?.addEventListener('input', calculatePrice);
     taxRate?.addEventListener('input', calculatePrice);
-    price?.addEventListener('input', calculateMargin);
 
 }

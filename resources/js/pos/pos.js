@@ -141,9 +141,24 @@ if (configElement) {
 
     const clearError = () => errorBox?.classList.add('hidden');
 
+    const renderLastSalePayment = () => {
+        const paid = document.getElementById('last-sale-paid');
+        const change = document.getElementById('last-sale-change');
+        const sale = lastSaleData?.sale;
+
+        if (paid) {
+            paid.textContent = sale ? formatMoney(sale.amount_paid) : '—';
+        }
+
+        if (change) {
+            change.textContent = sale ? formatMoney(sale.change_amount) : '—';
+        }
+    };
+
     const showLastSaleIndicator = (id, folio) => {
         lastSaleId = id;
         lastSaleFolio = folio;
+        renderLastSalePayment();
 
         const indicator = document.getElementById('last-sale-indicator');
         const folioEl = document.getElementById('last-sale-folio');
@@ -160,6 +175,7 @@ if (configElement) {
         lastSaleId = null;
         lastSaleFolio = null;
         lastSaleData = null;
+        renderLastSalePayment();
 
         const indicator = document.getElementById('last-sale-indicator');
         const printBtn = document.getElementById('pos-print-ticket');
@@ -837,6 +853,7 @@ if (configElement) {
 
                         if (ticketResponse.ok) {
                             lastSaleData = await ticketResponse.json();
+                            renderLastSalePayment();
                         }
                     } catch (error) {
                         // No bloquea el flujo si no se pueden cargar los detalles del ticket
@@ -907,50 +924,134 @@ if (configElement) {
         }
     };
 
+    const fetchSaleForPanel = async (saleId) => {
+        const response = await fetch(config.routes.show.replace('__SALE__', saleId), {
+            headers: { Accept: 'application/json' },
+        });
+
+        if (!response.ok) {
+            throw new Error('La venta pendiente ya no está disponible.');
+        }
+
+        return (await response.json()).sale;
+    };
+
+    const mapSaleItems = (saleItems) => saleItems.map((item) => ({
+        product_id: item.product_id,
+        is_custom: Boolean(item.is_custom),
+        custom_name: item.custom_name ?? null,
+        custom_price: item.is_custom ? Number(item.custom_price ?? item.unit_price) : null,
+        name: item.is_custom ? (item.custom_name ?? item.name) : item.name,
+        image_url: item.image_url ?? null,
+        category_name: item.category_name ?? null,
+        warehouse_stock: item.warehouse_stock ?? null,
+        store_2_stock: item.store_2_stock ?? null,
+        sku: item.sku,
+        barcode: item.barcode,
+        price: Number(item.unit_price),
+        wholesale_price: null,
+        unit_price: Number(item.unit_price),
+        manual_price: null,
+        sale_mode: item.sale_mode ?? 'unit',
+        quantity: Number(item.quantity),
+        tax_rate: Number(item.tax_rate) || 0,
+        stock: null,
+        min_stock: 0,
+        track_inventory: false,
+    }));
+
     const loadPendingSale = async (saleId) => {
         try {
-            const response = await fetch(config.routes.show.replace('__SALE__', saleId), {
-                headers: { Accept: 'application/json' },
-            });
+            const sale = await fetchSaleForPanel(saleId);
 
-            if (!response.ok) {
-                throw new Error('La venta pendiente ya no está disponible.');
-            }
-
-            const data = await response.json();
-            pendingSaleId = Number(data.sale.id);
-            items = data.sale.items.map((item) => ({
-                product_id: item.product_id,
-                is_custom: Boolean(item.is_custom),
-                custom_name: item.custom_name ?? null,
-                custom_price: item.is_custom ? Number(item.custom_price ?? item.unit_price) : null,
-                name: item.is_custom ? (item.custom_name ?? item.name) : item.name,
-                image_url: item.image_url ?? null,
-                category_name: item.category_name ?? null,
-                warehouse_stock: item.warehouse_stock ?? null,
-                store_2_stock: item.store_2_stock ?? null,
-                sku: item.sku,
-                barcode: item.barcode,
-                price: Number(item.unit_price),
-                wholesale_price: null,
-                unit_price: Number(item.unit_price),
-                manual_price: null,
-                sale_mode: item.sale_mode ?? 'unit',
-                quantity: Number(item.quantity),
-                tax_rate: Number(item.tax_rate) || 0,
-                stock: null,
-                min_stock: 0,
-                track_inventory: false,
-            }));
-
-            paymentTotal.dataset.total = String(data.sale.total);
+            pendingSaleId = Number(sale.id);
+            items = mapSaleItems(sale.items);
+            paymentTotal.dataset.total = String(sale.total);
             if (paymentMethod) {
-                paymentMethod.value = data.sale.payment_method || 'cash';
+                paymentMethod.value = sale.payment_method || 'cash';
             }
             pendingBanner.classList.remove('hidden');
             wholesaleToggle.disabled = true;
             renderCart();
             openPayment();
+        } catch (error) {
+            showError(error.message);
+        }
+    };
+
+    const pendingSalesDialog = document.getElementById('pending-sales-dialog');
+    let pendingSales = [];
+
+    const renderPendingSales = () => {
+        const count = document.getElementById('pos-pending-count');
+
+        if (count) {
+            count.textContent = String(pendingSales.length);
+            count.classList.toggle('hidden', pendingSales.length === 0);
+        }
+
+        const list = document.getElementById('pending-sales-list');
+
+        if (!list) {
+            return;
+        }
+
+        const empty = document.getElementById('pending-sales-empty');
+        list.replaceChildren();
+        empty?.classList.toggle('hidden', pendingSales.length > 0);
+
+        pendingSales.forEach((sale) => {
+            const row = document.createElement('div');
+            row.className = 'flex flex-wrap items-center justify-between gap-3 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/50 px-3 py-2.5';
+
+            const info = document.createElement('div');
+            info.className = 'min-w-0';
+
+            const folio = document.createElement('p');
+            folio.className = 'font-mono text-xs font-bold text-white';
+            folio.textContent = sale.folio;
+
+            const detail = document.createElement('p');
+            detail.className = 'text-xs text-mz-text-muted';
+            detail.textContent = `${sale.created_at} · ${sale.item_count} producto${sale.item_count === 1 ? '' : 's'} · ${formatMoney(sale.total)}`;
+
+            info.append(folio, detail);
+
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'inline-flex items-center gap-1.5 rounded-lg bg-mz-accent-primary px-3 py-1.5 text-xs font-bold text-white transition-all hover:bg-mz-accent-hover active:scale-95';
+            button.textContent = 'Traer a mi panel';
+            button.addEventListener('click', () => bringPendingToPanel(sale.id));
+
+            row.append(info, button);
+            list.appendChild(row);
+        });
+    };
+
+    const refreshPendingSales = async () => {
+        if (!config.routes.pendingList) {
+            return;
+        }
+
+        const response = await fetch(config.routes.pendingList, {
+            headers: { Accept: 'application/json' },
+        });
+
+        if (!response.ok) {
+            throw new Error('No se pudieron cargar los tickets pendientes.');
+        }
+
+        pendingSales = (await response.json()).sales ?? [];
+        renderPendingSales();
+    };
+
+    const bringPendingToPanel = async (saleId) => {
+        try {
+            const sale = await fetchSaleForPanel(saleId);
+            resetSale();
+            items = mapSaleItems(sale.items);
+            renderCart();
+            pendingSalesDialog?.close();
         } catch (error) {
             showError(error.message);
         }
@@ -1198,12 +1299,19 @@ if (configElement) {
 
         try {
             await postJson(config.routes.store, buildPayload('pending', 0));
-            window.location.href = config.routes.pending;
+            resetSale();
+            // El ticket ya quedó guardado aunque falle la actualización del conteo.
+            await refreshPendingSales().catch(() => {});
         } catch (error) {
             showError(error.message);
         } finally {
             submitting = false;
         }
+    });
+
+    document.getElementById('pos-pending-list')?.addEventListener('click', () => {
+        pendingSalesDialog?.showModal();
+        refreshPendingSales().catch((error) => showError(error.message));
     });
 
     document.getElementById('pos-new-sale')?.addEventListener('click', () => {
@@ -1488,6 +1596,7 @@ if (configElement) {
     paymentMethod?.addEventListener('change', updateChange);
 
     renderCart();
+    refreshPendingSales().catch(() => {});
 
     const pendingId = new URLSearchParams(window.location.search).get('pending');
 

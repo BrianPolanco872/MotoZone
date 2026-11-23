@@ -16,6 +16,10 @@
             </p>
         </div>
         <div class="flex items-center gap-2">
+            <a href="{{ route('admin.products.export') }}" class="x-button x-button-secondary size-sm">
+                <x-icon name="inventory" class="size-4" />
+                Exportar inventario
+            </a>
             <a href="{{ route('admin.products.create') }}" class="x-button x-button-primary size-sm">
                 <x-icon name="plus" class="size-4" />
                 Nuevo producto

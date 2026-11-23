@@ -235,3 +235,14 @@ plan-pos-vista-amplia-existencias-01 -> implementado_por -> fix-pos-vista-amplia
 fix-pos-vista-amplia-existencias-06 -> implementa_feature -> feature-pos-vista-amplia-existencias-01
 plan-pos-vista-amplia-existencias-01 -> implementado_por -> fix-pos-vista-amplia-existencias-07
 fix-pos-vista-amplia-existencias-07 -> implementa_feature -> feature-pos-vista-amplia-existencias-01
+plan-productos-limpiar-con-historial-01 -> implementado_por -> fix-productos-limpiar-columna-snapshot-01
+fix-productos-limpiar-columna-snapshot-01 -> corrige -> fix-productos-limpiar-con-historial-01
+plan-productos-modalidades-venta-01 -> implementado_por -> fix-productos-campos-manuales-categoria-01
+plan-margen-iva-01 -> implementado_por -> fix-margen-iva-redondeo-01
+plan-margen-iva-01 -> implementado_por -> fix-margen-fijo-manual-01
+plan-corte-navidad-panel-01 -> implementado_por -> fix-corte-navidad-panel-01
+plan-filtro-empleado-corte-solo-admin-01 -> implementado_por -> fix-filtro-empleado-corte-solo-admin-01
+plan-sidebar-corte-bajo-punto-venta-01 -> implementado_por -> fix-sidebar-corte-bajo-punto-venta-01
+plan-sidebar-orden-modulos-y-sin-panel-01 -> implementado_por -> fix-sidebar-orden-modulos-y-sin-panel-01
+plan-pos-ultima-venta-pendientes-01 -> aprobado_por -> usuario
+plan-pos-ultima-venta-pendientes-01 -> implementado_por -> fix-pos-ultima-venta-pendientes-01

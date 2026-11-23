@@ -15,6 +15,8 @@
         $co = $totals['cash_out'] ?? [];
         $rec = $totals['reconciliation'] ?? [];
         $departments = $totals['departments'] ?? [];
+        $navidadProducts = $totals['navidad_products'] ?? [];
+        $navidadTotal = $totals['navidad_total'] ?? 0;
         $hasSnapshot = $snapshot !== null;
         $cashCounted = $hasSnapshot ? ((float) ($snapshot->cash_counted ?? 0)) : 0.0;
         $countedDiff = $hasSnapshot ? ((float) ($snapshot->difference ?? 0)) : 0.0;
@@ -284,37 +286,36 @@
             </table>
         </div>
 
-        {{-- Ventas por departamento --}}
+        {{-- Ventas segunda tienda --}}
         <div class="mz-card mz-card-padded">
-            <h3 class="text-lg font-semibold text-mz-text-primary mb-4">Ventas por departamento</h3>
-            <?php $hasDepts = ! empty($departments); ?>
-            @if ($hasDepts)
+            <h3 class="text-lg font-semibold text-mz-text-primary mb-4">Ventas segunda tienda</h3>
+            @if (! empty($navidadProducts))
                 <table class="w-full text-sm text-mz-text-secondary">
                     <thead>
                         <tr class="border-b border-mz-border-light text-xs uppercase text-mz-text-muted">
-                            <th class="py-3 text-left font-medium">Departamento</th>
-                            <th class="py-3 text-right font-medium">Cantidad vendida (medidas mixtas)</th>
+                            <th class="py-3 text-left font-medium">Producto</th>
+                            <th class="py-3 text-right font-medium">Cantidad vendida</th>
                             <th class="py-3 text-right font-medium">Importe</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-mz-border-light">
-                        @foreach ($departments as $department)
+                        @foreach ($navidadProducts as $product)
                             <tr>
-                                <td class="py-3">{{ $department['name'] }}</td>
-                                <td class="py-3 text-right">{{ \App\Support\Quantity::format($department['quantity']) }}</td>
-                                <td class="py-3 text-right">${{ number_format((float) $department['total'], 2) }}</td>
+                                <td class="py-3">{{ $product['name'] }}</td>
+                                <td class="py-3 text-right">{{ \App\Support\Quantity::format($product['quantity']) }}</td>
+                                <td class="py-3 text-right">${{ number_format((float) $product['total'], 2) }}</td>
                             </tr>
                         @endforeach
                         <tr class="font-bold text-mz-text-primary border-t border-mz-border pt-3">
-                            <td class="py-3">Total</td>
-                            <td class="py-3 text-right">{{ \App\Support\Quantity::format(array_sum(array_column($departments, 'quantity'))) }}</td>
-                            <td class="py-3 text-right">${{ number_format((float) $t['sales'], 2) }}</td>
+                            <td class="py-3">Total Navidad</td>
+                            <td class="py-3 text-right">{{ \App\Support\Quantity::format(array_sum(array_column($navidadProducts, 'quantity'))) }}</td>
+                            <td class="py-3 text-right">${{ number_format((float) $navidadTotal, 2) }}</td>
                         </tr>
                     </tbody>
                 </table>
             @else
                 <div class="text-center text-mz-text-muted text-sm py-8">
-                    Sin ventas hoy
+                    Sin ventas de segunda tienda hoy
                 </div>
             @endif
         </div>

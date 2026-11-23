@@ -139,6 +139,31 @@ class SaleController extends Controller
         ]);
     }
 
+    public function pendingList(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $canSeeAny = $user->can('pos.sales.day.any');
+
+        $sales = Sale::query()
+            ->pending()
+            ->when(! $canSeeAny, fn ($query) => $query->where('user_id', $user->id))
+            ->with('items', 'user')
+            ->orderByDesc('created_at')
+            ->limit(20)
+            ->get();
+
+        return response()->json([
+            'sales' => $sales->map(fn (Sale $sale) => [
+                'id' => $sale->id,
+                'folio' => $sale->folio,
+                'created_at' => $sale->created_at?->format('d/m/Y H:i'),
+                'total' => (float) $sale->total,
+                'item_count' => $sale->items->count(),
+                'cashier' => $canSeeAny ? $sale->user?->name : null,
+            ]),
+        ]);
+    }
+
     public function day(Request $request): View
     {
         $request->validate([

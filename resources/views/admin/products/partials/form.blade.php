@@ -4,7 +4,6 @@
     $errorClass = 'mt-1 text-xs font-medium text-mz-error';
     $saleMode = old('sale_mode', $product->saleMode());
     $isKit = $saleMode === \App\Models\Product::MODE_KIT;
-    $stockStep = $saleMode === \App\Models\Product::MODE_BULK ? '0.001' : '1';
 @endphp
 
 @if ($errors->any())
@@ -45,6 +44,18 @@
                         <label for="brand" class="{{ $labelClass }}">Marca (opcional)</label>
                         <input id="brand" name="brand" type="text" value="{{ old('brand', $product->brand) }}" class="mz-input mt-1.5 h-11 w-full" placeholder="DID">
                         @error('brand') <p class="{{ $errorClass }}">{{ $message }}</p> @enderror
+                    </div>
+
+                    <div>
+                        <label for="category" class="{{ $labelClass }}">Categoría (opcional)</label>
+                        <input id="category" name="category" type="text" list="product-categories" value="{{ old('category', $product->category?->name) }}" class="mz-input mt-1.5 h-11 w-full" placeholder="Frenos">
+                        <datalist id="product-categories">
+                            @foreach ($categories as $categoryName)
+                                <option value="{{ $categoryName }}"></option>
+                            @endforeach
+                        </datalist>
+                        <p class="mt-1 text-xs text-mz-text-secondary">Escribe el nombre; si no existe, se crea.</p>
+                        @error('category') <p class="{{ $errorClass }}">{{ $message }}</p> @enderror
                     </div>
 
                     <div class="sm:col-span-2">
@@ -147,8 +158,8 @@
 
                     <div>
                         <label for="margin" class="{{ $labelClass }}">Ganancia (%)</label>
-                        <input id="margin" type="number" step="0.01" value="{{ old('margin', $product->marginPercentage() ?? 30) }}" class="mz-input mt-1.5 h-11 w-full" placeholder="30">
-                        <p class="mt-1 text-xs text-mz-text-secondary">Al escribir el costo y la ganancia, el precio de venta se calcula solo.</p>
+                        <input id="margin" name="margin" type="number" step="0.01" min="0" max="100" value="{{ old('margin', $product->marginPercentage() ?? 30) }}" class="mz-input mt-1.5 h-11 w-full" placeholder="30">
+                        <p class="mt-1 text-xs text-mz-text-secondary">Al escribir el costo y la ganancia, el precio de venta se calcula solo. Si ajustas el precio manualmente, la ganancia se conserva.</p>
                     </div>
 
                     <div>
@@ -191,13 +202,13 @@
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div>
                             <label for="stock" class="{{ $labelClass }}">Existencia en tienda</label>
-                            <input id="stock" name="stock" type="number" step="{{ $stockStep }}" min="0" max="4294967295" value="{{ old('stock', $product->stock ?? 0) }}" required class="mz-input mt-1.5 h-11 w-full" placeholder="0">
+                            <input id="stock" name="stock" type="text" inputmode="decimal" autocomplete="off" value="{{ old('stock', $product->stock ?? 0) }}" required class="mz-input mt-1.5 h-11 w-full" placeholder="0">
                             @error('stock') <p class="{{ $errorClass }}">{{ $message }}</p> @enderror
                         </div>
 
                         <div>
                             <label for="min_stock" class="{{ $labelClass }}">Mínimo para alerta</label>
-                            <input id="min_stock" name="min_stock" type="number" step="{{ $stockStep }}" min="0" max="4294967295" value="{{ old('min_stock', $product->min_stock ?? 0) }}" class="mz-input mt-1.5 h-11 w-full" placeholder="0">
+                            <input id="min_stock" name="min_stock" type="text" inputmode="decimal" autocomplete="off" value="{{ old('min_stock', $product->min_stock ?? 0) }}" class="mz-input mt-1.5 h-11 w-full" placeholder="0">
                             <p class="mt-1 text-xs text-mz-text-secondary">Se avisa cuando quede esta cantidad o menos.</p>
                             @error('min_stock') <p class="{{ $errorClass }}">{{ $message }}</p> @enderror
                         </div>
@@ -207,12 +218,12 @@
                     <p id="location-stocks-help" class="text-xs text-mz-text-secondary sm:col-span-2">Cantidades opcionales de consulta manual. No se suman a la existencia vendible ni se descuentan al vender, incluso en paquetes. Deja vacío si no hay dato.</p>
                     <div>
                         <label for="warehouse_stock" class="{{ $labelClass }}">Bodega (opcional)</label>
-                        <input id="warehouse_stock" name="warehouse_stock" type="number" step="{{ $stockStep }}" min="0" max="4294967295" value="{{ old('warehouse_stock', $product->warehouse_stock) }}" aria-describedby="location-stocks-help warehouse-stock-error" aria-invalid="{{ $errors->has('warehouse_stock') ? 'true' : 'false' }}" class="mz-input mt-1.5 h-11 w-full">
+                        <input id="warehouse_stock" name="warehouse_stock" type="text" inputmode="decimal" autocomplete="off" value="{{ old('warehouse_stock', $product->warehouse_stock) }}" aria-describedby="location-stocks-help warehouse-stock-error" aria-invalid="{{ $errors->has('warehouse_stock') ? 'true' : 'false' }}" class="mz-input mt-1.5 h-11 w-full">
                         <p id="warehouse-stock-error" class="{{ $errorClass }}">{{ $errors->first('warehouse_stock') }}</p>
                     </div>
                     <div>
                         <label for="store_2_stock" class="{{ $labelClass }}">Tienda 2 (opcional)</label>
-                        <input id="store_2_stock" name="store_2_stock" type="number" step="{{ $stockStep }}" min="0" max="4294967295" value="{{ old('store_2_stock', $product->store_2_stock) }}" aria-describedby="location-stocks-help store-2-stock-error" aria-invalid="{{ $errors->has('store_2_stock') ? 'true' : 'false' }}" class="mz-input mt-1.5 h-11 w-full">
+                        <input id="store_2_stock" name="store_2_stock" type="text" inputmode="decimal" autocomplete="off" value="{{ old('store_2_stock', $product->store_2_stock) }}" aria-describedby="location-stocks-help store-2-stock-error" aria-invalid="{{ $errors->has('store_2_stock') ? 'true' : 'false' }}" class="mz-input mt-1.5 h-11 w-full">
                         <p id="store-2-stock-error" class="{{ $errorClass }}">{{ $errors->first('store_2_stock') }}</p>
                     </div>
                 </div>

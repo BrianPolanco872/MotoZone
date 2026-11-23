@@ -55,6 +55,7 @@ Route::middleware(['auth', 'active', 'permission:pos.access'])->prefix('pos')->n
         ->name('sales.cancel');
 
     Route::get('/ventas/pendientes', [PosSaleController::class, 'pending'])->name('sales.pending');
+    Route::get('/ventas/pendientes/lista', [PosSaleController::class, 'pendingList'])->name('sales.pendingList');
     Route::get('/ventas/del-dia', [PosSaleController::class, 'day'])->name('sales.day');
     Route::get('/ventas/anteriores', [PosSaleController::class, 'previous'])->name('sales.previous');
     Route::get('/ventas/{sale}', [PosController::class, 'show'])->name('sales.show');
@@ -185,6 +186,7 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'active'])->group(fu
         Route::post('/productos/aplicar-precios', [AdminProductController::class, 'massUpdate'])->name('products.massUpdate');
         Route::post('/productos/limpiar-inventario', [AdminProductController::class, 'clearInventory'])->name('products.clearInventory');
         Route::post('/productos/importar', [AdminProductController::class, 'import'])->name('products.import');
+        Route::get('/productos/exportar', [AdminProductController::class, 'export'])->name('products.export');
     });
 
     Route::middleware('permission:admin.users.manage')->group(function () {

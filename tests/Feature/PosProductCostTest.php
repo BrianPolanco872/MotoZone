@@ -56,7 +56,18 @@ class PosProductCostTest extends TestCase
         $this->assertEquals(5, $product->min_stock);
         $this->assertTrue($product->track_inventory);
         $this->assertTrue($product->hasCost());
-        $this->assertEquals(100.00, $product->marginPercentage());
+        $this->assertEquals(72.41, $product->marginPercentage());
+    }
+
+    public function test_margin_percentage_removes_iva_from_the_final_price(): void
+    {
+        $product = Product::factory()->create([
+            'cost' => 80,
+            'price' => 121,
+            'tax_rate' => 0.16,
+        ]);
+
+        $this->assertEquals(30.39, $product->marginPercentage());
     }
 
     public function test_product_without_cost_shows_no_cost_in_index(): void

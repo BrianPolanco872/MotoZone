@@ -12,10 +12,6 @@
 
     $adminNavigation = [];
 
-    if ($isAdmin) {
-        $adminNavigation[] = ['label' => 'Panel', 'icon' => 'home', 'route' => 'admin.dashboard'];
-    }
-
     if ($user?->can('admin.products.manage')) {
         $adminNavigation[] = ['label' => 'Productos', 'icon' => 'inventory', 'route' => 'admin.products.index'];
     }
@@ -29,6 +25,12 @@
         $adminNavigation[] = ['label' => 'Punto de venta', 'icon' => 'cart', 'route' => 'pos.index'];
     }
 
+    if ($user?->can('pos.cut.manage')) {
+        $adminNavigation[] = ['label' => 'Corte del día', 'icon' => 'report', 'route' => 'pos.cuts.index'];
+    } elseif ($user?->can('pos.cut.own')) {
+        $adminNavigation[] = ['label' => 'Mi corte', 'icon' => 'chart', 'route' => 'pos.cuts.mine'];
+    }
+
     if ($user?->can('pos.caja.view') || $user?->can('pos.cash.manage')) {
         $adminNavigation[] = ['label' => 'Caja', 'icon' => 'banknotes', 'route' => 'pos.cash.index'];
     }
@@ -37,21 +39,16 @@
         $adminNavigation[] = ['label' => 'Abonos / Créditos', 'icon' => 'banknotes', 'route' => 'pos.abonos.index'];
     }
 
-    if ($user?->can('pos.cut.manage')) {
-        $adminNavigation[] = ['label' => 'Corte del día', 'icon' => 'report', 'route' => 'pos.cuts.index'];
-        if ($user?->can('pos.access')) {
-            $adminNavigation[] = ['label' => 'Bitácora', 'icon' => 'report', 'route' => 'pos.bitacora.index', 'active' => 'pos.bitacora.*'];
-        }
-    } elseif ($user?->can('pos.cut.own')) {
-        $adminNavigation[] = ['label' => 'Mi corte', 'icon' => 'chart', 'route' => 'pos.cuts.mine'];
+    if ($user?->can('admin.users.manage')) {
+        $adminNavigation[] = ['label' => 'Empleados', 'icon' => 'users', 'route' => 'admin.users.index'];
     }
 
     if ($isAdmin && $user?->can('pos.access')) {
         $adminNavigation[] = ['label' => 'Tickets', 'icon' => 'report', 'route' => 'pos.tickets.edit'];
     }
 
-    if ($user?->can('admin.users.manage')) {
-        $adminNavigation[] = ['label' => 'Empleados', 'icon' => 'users', 'route' => 'admin.users.index'];
+    if ($user?->can('pos.cut.manage') && $user?->can('pos.access')) {
+        $adminNavigation[] = ['label' => 'Bitácora', 'icon' => 'report', 'route' => 'pos.bitacora.index', 'active' => 'pos.bitacora.*'];
     }
 
     $adminNavigation[] = ['label' => 'Mi perfil', 'icon' => 'lock', 'route' => 'admin.profile.edit'];
