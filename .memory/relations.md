@@ -278,3 +278,9 @@ fix-ventas-navidad-separadas-01 -> implementa_feature -> feature-ventas-navidad-
 plan-ventas-navidad-separadas-01 -> implementado_por -> fix-ventas-navidad-separadas-02
 fix-ventas-navidad-separadas-02 -> implementa_feature -> feature-ventas-navidad-separadas-01
 fix-ventas-navidad-separadas-02 -> corrige -> fix-ventas-navidad-separadas-01
+feature-productos-quitar-boton-limpiar-01 -> implemented_by_plan -> plan-productos-quitar-boton-limpiar-01
+plan-productos-quitar-boton-limpiar-01 -> implementa_feature -> feature-productos-quitar-boton-limpiar-01
+plan-productos-quitar-boton-limpiar-01 -> aprobado_por -> usuario
+plan-productos-quitar-boton-limpiar-01 -> se_apoya_en -> plan-productos-limpiar-con-historial-01
+plan-productos-quitar-boton-limpiar-01 -> implementado_por -> fix-productos-quitar-boton-limpiar-01
+fix-productos-quitar-boton-limpiar-01 -> implementa_feature -> feature-productos-quitar-boton-limpiar-01

@@ -1036,29 +1036,20 @@ class AdminProductTest extends TestCase
         $this->assertDatabaseCount('stock_movements', 0);
     }
 
-    public function test_clear_inventory_form_preserves_post_csrf_and_cancelable_confirmation(): void
+    public function test_product_list_offers_mass_price_update_but_not_inventory_cleanup(): void
     {
-        $response = $this->actingAs($this->admin())->get(route('admin.products.index'))->assertOk();
+        $response = $this->actingAs($this->admin())->get(route('admin.products.index'))
+            ->assertOk()
+            ->assertDontSeeText('Limpiar inventario')
+            ->assertDontSee(route('admin.products.clearInventory'));
+
         $document = new DOMDocument;
         $document->loadHTML('<?xml encoding="UTF-8">'.$response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
         $xpath = new DOMXPath($document);
-        $form = $xpath->query('//form[@id="clear-inventory-form"]')->item(0);
+        $button = $xpath->query('//form[@action="'.route('admin.products.massUpdate').'"]//button[@type="submit"]')->item(0);
 
-        $this->assertInstanceOf(DOMElement::class, $form);
-        $this->assertSame(route('admin.products.clearInventory'), $form->getAttribute('action'));
-        $this->assertSame('POST', $form->getAttribute('method'));
-        $token = $xpath->query('.//input[@name="_token"]', $form)->item(0);
-        $this->assertInstanceOf(DOMElement::class, $token);
-        $this->assertSame(csrf_token(), $token->getAttribute('value'));
-        $button = $xpath->query('//button[contains(@onclick, "clear-inventory-form")]')->item(0);
         $this->assertInstanceOf(DOMElement::class, $button);
-        $this->assertSame('button', $button->getAttribute('type'));
-        $confirmation = $button->getAttribute('onclick');
-        $this->assertStringContainsString('if(confirm(', $confirmation);
-        $this->assertStringContainsString("document.getElementById('clear-inventory-form').submit()", $confirmation);
-        foreach (['TODOS los productos', 'movimientos históricos', 'desvincularán de la web', 'no se puede deshacer', 'respaldo recuperable'] as $warning) {
-            $this->assertStringContainsString($warning, $confirmation);
-        }
+        $this->assertSame('Aplicar a todos', trim($button->textContent));
     }
 
     public function test_stock_history_migration_upgrades_an_existing_movement_without_changing_its_data(): void
