@@ -1,0 +1,69 @@
+{
+  "_barlow-condensed-500-normal-BgYH2mbd.woff2": {
+    "file": "assets/barlow-condensed-500-normal-BgYH2mbd.woff2",
+    "src": "_barlow-condensed-500-normal-BgYH2mbd.woff2"
+  },
+  "_barlow-condensed-500-normal-HIEiP5Ov.woff": {
+    "file": "assets/barlow-condensed-500-normal-HIEiP5Ov.woff",
+    "src": "_barlow-condensed-500-normal-HIEiP5Ov.woff"
+  },
+  "_barlow-condensed-600-normal-BFJEwTuo.woff": {
+    "file": "assets/barlow-condensed-600-normal-BFJEwTuo.woff",
+    "src": "_barlow-condensed-600-normal-BFJEwTuo.woff"
+  },
+  "_barlow-condensed-600-normal-DepVgxBB.woff2": {
+    "file": "assets/barlow-condensed-600-normal-DepVgxBB.woff2",
+    "src": "_barlow-condensed-600-normal-DepVgxBB.woff2"
+  },
+  "_barlow-condensed-700-normal-Dmwat-ge.woff": {
+    "file": "assets/barlow-condensed-700-normal-Dmwat-ge.woff",
+    "src": "_barlow-condensed-700-normal-Dmwat-ge.woff"
+  },
+  "_barlow-condensed-700-normal-v1xN8_Wq.woff2": {
+    "file": "assets/barlow-condensed-700-normal-v1xN8_Wq.woff2",
+    "src": "_barlow-condensed-700-normal-v1xN8_Wq.woff2"
+  },
+  "_fonts-BPoGPi5d.css": {
+    "file": "assets/fonts-BPoGPi5d.css",
+    "src": "_fonts-BPoGPi5d.css"
+  },
+  "_instrument-sans-400-normal-D1W7dsQl.woff": {
+    "file": "assets/instrument-sans-400-normal-D1W7dsQl.woff",
+    "src": "_instrument-sans-400-normal-D1W7dsQl.woff"
+  },
+  "_instrument-sans-400-normal-DRC__1Mx.woff2": {
+    "file": "assets/instrument-sans-400-normal-DRC__1Mx.woff2",
+    "src": "_instrument-sans-400-normal-DRC__1Mx.woff2"
+  },
+  "_instrument-sans-500-normal-Dk9ku72i.woff2": {
+    "file": "assets/instrument-sans-500-normal-Dk9ku72i.woff2",
+    "src": "_instrument-sans-500-normal-Dk9ku72i.woff2"
+  },
+  "_instrument-sans-500-normal-Z6ESRlEs.woff": {
+    "file": "assets/instrument-sans-500-normal-Z6ESRlEs.woff",
+    "src": "_instrument-sans-500-normal-Z6ESRlEs.woff"
+  },
+  "_instrument-sans-600-normal-B7fBEWYG.woff2": {
+    "file": "assets/instrument-sans-600-normal-B7fBEWYG.woff2",
+    "src": "_instrument-sans-600-normal-B7fBEWYG.woff2"
+  },
+  "_instrument-sans-600-normal-B9e8oLYv.woff": {
+    "file": "assets/instrument-sans-600-normal-B9e8oLYv.woff",
+    "src": "_instrument-sans-600-normal-B9e8oLYv.woff"
+  },
+  "resources/css/app.css": {
+    "file": "assets/app-D-qynIed.css",
+    "name": "app",
+    "names": [
+      "app.css"
+    ],
+    "src": "resources/css/app.css",
+    "isEntry": true
+  },
+  "resources/js/app.js": {
+    "file": "assets/app-Cwwn1UCV.js",
+    "name": "app",
+    "src": "resources/js/app.js",
+    "isEntry": true
+  }
+}
