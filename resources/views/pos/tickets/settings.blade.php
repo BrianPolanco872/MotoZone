@@ -6,6 +6,7 @@
 @section('content')
     @php
         $savedSettings = ['business' => $settings['business'], 'ticket' => $settings['ticket']];
+        $paperWidth = (int) old('ticket.width_mm', $settings['ticket']['width_mm']) === 80 ? 80 : 58;
         $options = [
             'show_logo' => ['Isotipo MotoZone', 'Incluye el distintivo MZ en el encabezado.'],
             'show_tax_id' => ['RFC del negocio', 'Muestra la identificación fiscal registrada.'],
@@ -17,19 +18,14 @@
     @endphp
 
     <style>
+        @include('pos.tickets.receipt-styles')
         .ticket-settings-tab[aria-selected="true"] { color: #f97316; border-color: #f97316; background: rgb(249 115 22 / 8%); }
-        #ticket-paper { width: var(--ticket-width, 80mm); max-width: 100%; overflow-wrap: anywhere; }
-        #ticket-paper table { width: 100%; table-layout: auto; border-collapse: collapse; }
-        #ticket-paper th:first-child { width: 100%; }
-        #ticket-paper th:not(:first-child), #ticket-paper td:not(:first-child) { text-align: right; white-space: nowrap; padding-left: 2mm; }
         #ticket-paper [hidden], [data-ticket-settings] [hidden] { display: none !important; }
         @media print {
-            @page { size: auto; margin: 4mm; }
             html, body { background: white !important; height: auto !important; color: black !important; }
             body > div, body > div > div, main, [data-ticket-settings], #ticket-settings-form, [data-ticket-workspace], [data-ticket-preview] { display: block !important; padding: 0 !important; margin: 0 !important; min-height: 0 !important; border: 0 !important; background: white !important; }
             body > div > aside, header, main > :not([data-ticket-settings]), [data-ticket-settings] > :not(form), #ticket-settings-form > :not([data-ticket-workspace]), [data-ticket-workspace] > :not([data-ticket-preview]), [data-ticket-preview] > :not(#ticket-paper) { display: none !important; }
             [data-ticket-preview][hidden] { display: block !important; }
-            #ticket-paper { margin: 0 auto !important; box-shadow: none !important; padding: 0 !important; width: calc(var(--ticket-width, 80mm) - 8mm); max-width: 100%; color: black; }
         }
     </style>
 
@@ -72,7 +68,7 @@
                         <label for="ticket-width" class="mb-2 block text-sm font-medium">Ancho del papel</label>
                         <select id="ticket-width" name="ticket[width_mm]" class="mz-select">
                             @foreach ([80 => '80 mm · Estándar', 58 => '58 mm · Compacto'] as $width => $label)
-                                <option value="{{ $width }}" @selected((int) old('ticket.width_mm', $settings['ticket']['width_mm']) === $width)>{{ $label }}</option>
+                                <option value="{{ $width }}" @selected($paperWidth === $width)>{{ $label }}</option>
                             @endforeach
                         </select>
                         <p class="mt-2 text-xs leading-relaxed text-mz-text-muted">Selecciona también este tamaño en el controlador de tu impresora. Imprime a escala 100 %, sin encabezados ni pies del navegador.</p>
@@ -116,24 +112,46 @@
 
                 <section id="ticket-panel-preview" role="tabpanel" aria-labelledby="ticket-tab-preview" tabindex="0" data-ticket-panel="preview" data-ticket-preview hidden class="rounded-xl border border-mz-border bg-mz-bg-surface p-4 sm:p-5">
                     <div class="mb-5 flex items-center justify-between gap-2"><h3 class="text-sm font-semibold">Vista previa</h3><span class="rounded bg-mz-accent-primary/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-widest text-mz-accent-primary">Borrador</span></div>
-                    <article id="ticket-paper" aria-label="Ticket de ejemplo" class="mx-auto bg-white px-4 py-7 font-mono text-[11px] leading-relaxed text-black shadow-xl shadow-black/20">
-                        <div class="space-y-1 text-center">
-                            <div data-ticket-visible="show_logo" class="mx-auto mb-3 flex size-12 items-center justify-center rounded-lg border-2 border-black text-xl font-black italic">MZ</div>
-                            <p data-ticket-text="business.name" class="text-base font-bold uppercase tracking-wide"></p>
-                            <p data-ticket-text="business.address" class="whitespace-pre-line"></p>
-                            <p data-ticket-text="business.phone"></p>
-                            <p data-ticket-visible="show_tax_id">RFC: <span data-ticket-text="business.tax_id"></span></p>
+                    <article id="ticket-paper" aria-label="Ticket de ejemplo" class="ticket-sheet" style="--ticket-width: {{ $paperWidth }}mm">
+                        <div class="center receipt-heading">
+                            <div data-ticket-visible="show_logo" class="receipt-logo">MZ</div>
+                            <p data-ticket-text="business.name" class="business"></p>
+                            <p data-ticket-text="business.address" class="muted"></p>
+                            <p class="muted">Tel. <span data-ticket-text="business.phone"></span></p>
+                            <p class="muted" data-ticket-visible="show_tax_id">RFC <span data-ticket-text="business.tax_id"></span></p>
                         </div>
-                        <div class="my-4 border-t border-dashed border-black/40"></div>
-                        <div class="text-center"><p class="font-bold tracking-widest">V-000019</p><p>VENTA DE EJEMPLO</p><p data-ticket-visible="show_cashier">Atendió: Cajero de ejemplo</p></div>
-                        <div class="my-4 border-t border-dashed border-black/40"></div>
-                        <table class="w-full text-left"><thead><tr class="text-[10px]"><th class="pb-2 font-normal">PRODUCTO</th><th class="pb-2 text-center font-normal">CANT.</th><th class="pb-2 text-right font-normal">IMPORTE</th></tr></thead><tbody><tr><td><span class="font-bold">Aceite</span><span data-ticket-visible="show_sku" class="block text-[10px]">SKU: ACE-001</span></td><td class="text-center">1</td><td class="text-right">$148.00</td></tr></tbody></table>
-                        <div class="my-4 border-t border-dashed border-black/40"></div>
-                        <div class="space-y-1"><p class="flex justify-between gap-2"><span>Subtotal</span><span>$127.59</span></p><p data-ticket-visible="show_tax" class="flex justify-between gap-2"><span>IVA incluido</span><span>$20.41</span></p><p class="flex justify-between gap-2 py-2 text-base font-bold"><span>TOTAL</span><span>$148.00</span></p><p class="flex justify-between gap-2"><span>Efectivo</span><span>$500.00</span></p><p class="flex justify-between gap-2"><span>Cambio</span><span>$352.00</span></p></div>
-                        <div class="my-4 border-t border-dashed border-black/40"></div>
-                        <div class="space-y-3 text-center"><p data-ticket-text="ticket.footer" class="whitespace-pre-line font-bold"></p><p data-ticket-text="ticket.policy" class="whitespace-pre-line text-[10px]"></p><div data-ticket-visible="show_qr" hidden><img data-ticket-qr hidden alt="Código QR de soporte o facturación" class="mx-auto size-28 object-contain" /></div></div>
+                        <hr class="divider">
+                        <div class="center receipt-heading">
+                            <p class="muted">VENTA DE EJEMPLO</p>
+                            <p class="muted" data-ticket-visible="show_cashier">Atendió: Cajero de ejemplo</p>
+                        </div>
+                        <hr class="divider">
+                        <table class="items">
+                            <thead><tr><th scope="col" class="num quantity">Cant.</th><th scope="col" class="description">Producto</th><th scope="col" class="num">Importe</th></tr></thead>
+                            <tbody><tr><td class="num quantity">1</td><td class="description"><span class="item-name">Aceite</span><span class="muted item-detail"><span data-ticket-visible="show_sku">ACE-001 · </span>$148.00 por unidad</span></td><td class="num">$148.00</td></tr></tbody>
+                        </table>
+                        <hr class="divider">
+                        <div class="receipt-summary">
+                            <p>N.º de artículos: 1</p>
+                            <table>
+                                <tr data-ticket-visible="show_tax"><td class="label">IVA incluido</td><td class="num">$20.41</td></tr>
+                                <tr class="total-row"><td>Total</td><td class="num">$148.00</td></tr>
+                                <tr><td class="label">Pago con</td><td class="num">$500.00</td></tr>
+                                <tr><td class="label">Cambio</td><td class="num">$352.00</td></tr>
+                            </table>
+                        </div>
+                        <hr class="divider">
+                        <div class="center receipt-end">
+                            <p class="muted">Método de pago: Efectivo</p>
+                            <p data-ticket-text="ticket.footer" class="receipt-footer"></p>
+                            <p data-ticket-text="ticket.policy" class="muted receipt-footer"></p>
+                            <div data-ticket-visible="show_qr" hidden>
+                                <img data-ticket-qr hidden alt="Código QR de soporte o facturación" class="receipt-qr">
+                                <p class="muted">Facturación / Soporte</p>
+                            </div>
+                        </div>
                     </article>
-                    <div class="mt-5 space-y-3"><p class="text-center text-xs text-mz-text-muted">Ejemplo · <span data-ticket-width-label>80</span> mm · No es un comprobante de venta</p><x-button variant="secondary" data-ticket-print class="w-full"><x-icon name="printer" class="size-4" /> Probar impresión</x-button><p class="text-center text-xs leading-relaxed text-mz-text-muted">Para descargar, elige «Guardar como PDF» en el diálogo de impresión.</p></div>
+                    <div class="mt-5 space-y-3"><p class="text-center text-xs text-mz-text-muted">Ejemplo · <span data-ticket-width-label>{{ $paperWidth }}</span> mm · No es un comprobante de venta</p><x-button variant="secondary" data-ticket-print class="w-full"><x-icon name="printer" class="size-4" /> Probar impresión</x-button><p class="text-center text-xs leading-relaxed text-mz-text-muted">Para descargar, elige «Guardar como PDF» en el diálogo de impresión.</p></div>
                 </section>
             </div>
 

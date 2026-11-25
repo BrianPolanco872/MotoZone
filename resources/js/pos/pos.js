@@ -205,42 +205,43 @@ if (configElement) {
         }
     };
 
-    const printTicketById = async (saleId) => {
-        if (!saleId || !config.routes.ticketData) {
+    let ticketPrintFrame = null;
+
+    const printTicketById = (saleId) => {
+        if (!saleId || !config.routes.ticket || ticketPrintFrame) {
             return;
         }
 
-        const container = document.getElementById('ticket-print-container');
+        clearError();
+        const frame = document.createElement('iframe');
+        frame.className = 'pos-ticket-frame';
+        frame.title = 'Impresión de ticket';
+        frame.tabIndex = -1;
+        frame.setAttribute('aria-hidden', 'true');
+        frame.addEventListener('load', async () => {
+            try {
+                const ticket = frame.contentDocument?.getElementById('sale-ticket');
+                if (!ticket) {
+                    showError('No se pudo abrir el comprobante para imprimir.');
+                    return;
+                }
 
-        if (!container) {
-            return;
-        }
-
-        try {
-            const response = await fetch(config.routes.ticketData.replace('__SALE__', saleId), {
-                headers: { Accept: 'application/json' },
-            });
-
-            if (!response.ok) {
-                throw new Error('No se pudo obtener los datos del ticket.');
+                await Promise.all(Array.from(ticket.querySelectorAll('img'), (image) => image.decode()));
+                frame.contentWindow.print();
+            } catch {
+                showError('No se pudo preparar el comprobante para imprimir.');
+            } finally {
+                frame.remove();
+                ticketPrintFrame = null;
             }
+        }, { once: true });
 
-            const data = await response.json();
-            container.innerHTML = data.ticket_html;
-            await Promise.all(Array.from(container.querySelectorAll('img'), (image) => image.decode()));
-
-            container.classList.remove('hidden');
-            window.print();
-        } catch (error) {
-            showError(error.message);
-        } finally {
-            container.classList.add('hidden');
-        }
+        frame.src = config.routes.ticket.replace('__SALE__', saleId);
+        ticketPrintFrame = frame;
+        document.body.appendChild(frame);
     };
 
-    const printLastSaleTicket = async () => {
-        await printTicketById(lastSaleId);
-    };
+    const printLastSaleTicket = () => printTicketById(lastSaleId);
 
     const selectedDaySale = () => daySales.find((sale) => sale.id === selectedDaySaleId) ?? null;
 
@@ -335,7 +336,7 @@ if (configElement) {
             daySalesCancel.disabled = ! sale || sale.cancelled;
         }
         if (daySalesPrint) {
-            daySalesPrint.disabled = ! sale || ! config.routes.ticketData;
+            daySalesPrint.disabled = ! sale || ! config.routes.ticket;
         }
     };
 

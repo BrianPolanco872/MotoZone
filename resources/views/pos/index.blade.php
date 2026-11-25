@@ -735,49 +735,10 @@
         </div>
     </dialog>
 
-    {{-- Contenedor de impresión de tickets térmicos --}}
-    <div id="ticket-print-container" class="hidden"></div>
-
     <style>
         /* Tailwind genera .inline-flex después de .hidden: hace falta especificidad para ocultar de verdad. */
         #pos-reopen-day.hidden { display: none; }
-        #ticket-print-container {
-            font-family: "Courier New", ui-monospace, monospace;
-            font-size: 11px;
-            line-height: 1.45;
-            color: #0f172a;
-        }
-        #ticket-print-container .ticket-sheet {
-            width: var(--ticket-width, 80mm);
-            max-width: 100%;
-            padding: 10mm 4mm;
-            background: #fff;
-        }
-        #ticket-print-container .center { text-align: center; }
-        #ticket-print-container .business { font-size: 15px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
-        #ticket-print-container .muted { color: #475569; font-size: 10px; }
-        #ticket-print-container .divider { border: 0; border-top: 1px dashed #94a3b8; margin: 8px 0; }
-        #ticket-print-container table { width: 100%; border-collapse: collapse; }
-        #ticket-print-container th { text-align: left; font-size: 10px; text-transform: uppercase; color: #475569; padding-bottom: 4px; }
-        #ticket-print-container th.num, #ticket-print-container td.num { text-align: right; white-space: nowrap; padding-left: 2mm; }
-        #ticket-print-container td { padding: 3px 0; vertical-align: top; }
-        #ticket-print-container .item-name { font-weight: 700; }
-        #ticket-print-container p { margin: 4px 0; overflow-wrap: anywhere; }
-        #ticket-print-container table { table-layout: auto; }
-        #ticket-print-container th:first-child { width: 100%; }
-        #ticket-print-container td:first-child { overflow-wrap: anywhere; }
-        #ticket-print-container td.num { font-size: 10px; }
-        #ticket-print-container .totals td { padding: 2px 0; }
-        #ticket-print-container .total-row td { padding-top: 6px; font-size: 14px; font-weight: 700; }
-        #ticket-print-container .folio { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; }
-        @media print {
-            body * { visibility: hidden !important; }
-            #ticket-print-container, #ticket-print-container * { visibility: visible !important; }
-            #ticket-print-container { position: absolute !important; top: 0; left: 0; width: 100%; margin: 0; padding: 0; background: #fff; }
-            #ticket-print-container .ticket-sheet { width: calc(var(--ticket-width, 80mm) - 8mm); max-width: 100%; margin: 0 auto; padding: 0; }
-            body { padding: 0; background: #fff; }
-            @page { size: auto; margin: 4mm; }
-        }
+        .pos-ticket-frame { position: fixed; top: 0; left: 0; width: 1px; height: 1px; border: 0; opacity: 0; pointer-events: none; }
     </style>
 
     <script type="application/json" id="pos-config">

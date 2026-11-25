@@ -87,6 +87,16 @@ class TicketSettingsTest extends TestCase
             ->assertSee('Conexión')->assertSee('Campos')->assertSee('Vista previa', false);
     }
 
+    public function test_ticket_settings_default_to_58_mm_without_a_saved_preference(): void
+    {
+        $admin = User::factory()->create()->assignRole('admin');
+
+        $this->actingAs($admin)->get(route('pos.tickets.edit'))->assertOk()
+            ->assertSee('value="58" selected', false)
+            ->assertSee('style="--ticket-width: 58mm"', false)
+            ->assertSee('data-ticket-width-label>58</span>', false);
+    }
+
     public function test_saved_settings_reach_both_pos_printing_paths_without_changing_sale_totals(): void
     {
         $admin = User::factory()->create()->assignRole('admin');
@@ -156,7 +166,22 @@ class TicketSettingsTest extends TestCase
         $this->assertStringContainsString('>0.625</td>', $response->json('ticket_html'));
         $this->assertStringNotContainsString('pieza(s)', $response->json('ticket_html'));
         $this->get(route('pos.sales.ticket', $sale))->assertOk()
-            ->assertSee('Cantidad devuelta a granel: 0.125')->assertSee('por unidad');
+            ->assertSee('Cantidad devuelta a granel: 0.125')->assertSee('por unidad')
+            ->assertSeeInOrder(['N.º de artículos: 0', 'Partidas a granel: 1']);
+    }
+
+    public function test_receipt_counts_sold_pieces_and_packages_without_subtracting_returns_or_adding_bulk(): void
+    {
+        $admin = User::factory()->create()->assignRole('admin');
+        $sale = $this->sale($admin);
+        $sale->items()->firstOrFail()->update(['quantity' => 2, 'returned_quantity' => 1]);
+        $sale->items()->createMany([
+            ['product_name' => 'Paquete', 'sale_mode' => Product::MODE_KIT, 'quantity' => 3, 'unit_price' => 25],
+            ['product_name' => 'A granel', 'sale_mode' => Product::MODE_BULK, 'quantity' => 0.5, 'unit_price' => 30],
+        ]);
+
+        $this->get(route('pos.sales.ticket', $sale))->assertOk()
+            ->assertSeeInOrder(['Cantidad devuelta en piezas: 1', 'N.º de artículos: 5', 'Partidas a granel: 1']);
     }
 
     public function test_return_form_displays_fractional_balance_and_uses_steps_for_each_sale_mode(): void
@@ -218,24 +243,30 @@ class TicketSettingsTest extends TestCase
 
         $this->get(route('pos.sales.ticket', $sale))->assertOk()
             ->assertSee('--ticket-width: '.$width.'mm', false)
-            ->assertSee('width: calc(var(--ticket-width, 80mm) - 8mm)', false)
+            ->assertSee('width: calc(var(--ticket-width, 80mm) - 10mm)', false)
             ->assertSee('max-width: 100%', false)->assertSee('size: auto', false)
             ->assertDontSee('mm auto', false)->assertDontSee('width: auto; max-width: none', false)
-            ->assertSeeInOrder(['Producto', trim($productName), 'Subtotal', 'Total', 'Método de pago: Tarjeta', 'Vuelve pronto.'])
+            ->assertSeeInOrder(['Cant.', 'Producto', 'Importe', trim($productName), 'N.º de artículos: 1', 'Total', 'Pago con', 'Cambio', 'Método de pago: Tarjeta', 'Vuelve pronto.'])
+            ->assertDontSee('Subtotal')->assertDontSee($sale->folio)
             ->assertSee('$123,456.78')->assertDontSee('Conserve este ticket');
 
         $response = $this->getJson(route('pos.sales.ticketData', $sale))->assertOk()
-            ->assertJsonPath('settings.ticket.width_mm', $width);
+            ->assertJsonPath('settings.ticket.width_mm', $width)
+            ->assertJsonPath('sale.folio', $sale->folio);
         $this->assertStringContainsString('--ticket-width: '.$width.'mm', $response->json('ticket_html'));
         $this->assertStringContainsString(trim($productName), $response->json('ticket_html'));
         $this->assertStringContainsString('$123,456.78', $response->json('ticket_html'));
         $this->assertSame('123456.78', $sale->refresh()->total);
 
         $this->get(route('pos.index'))->assertOk()
-            ->assertSee('width: calc(var(--ticket-width, 80mm) - 8mm)', false)
-            ->assertSee('margin: 0 auto', false)->assertSee('size: auto', false)->assertDontSee('mm auto', false);
+            ->assertDontSee('id="ticket-print-container"', false)->assertDontSee('mm auto', false);
         $this->get(route('pos.tickets.edit'))->assertOk()
-            ->assertSee('width: calc(var(--ticket-width, 80mm) - 8mm)', false)
+            ->assertSee('--ticket-width: '.$width.'mm', false)
+            ->assertSee('value="'.$width.'" selected', false)
+            ->assertSee('data-ticket-width-label>'.$width.'</span>', false)
+            ->assertSee('width: calc(var(--ticket-width, 80mm) - 10mm)', false)
+            ->assertSeeInOrder(['Cant.', 'Producto', 'Importe', 'N.º de artículos: 1', 'Total', 'Pago con', 'Cambio', 'Método de pago: Efectivo'])
+            ->assertDontSee('Subtotal')->assertDontSee('V-000019')
             ->assertSee('margin: 0 auto', false)->assertSee('size: auto', false)->assertDontSee('mm auto', false);
     }
 

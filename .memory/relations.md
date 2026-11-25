@@ -284,3 +284,15 @@ plan-productos-quitar-boton-limpiar-01 -> aprobado_por -> usuario
 plan-productos-quitar-boton-limpiar-01 -> se_apoya_en -> plan-productos-limpiar-con-historial-01
 plan-productos-quitar-boton-limpiar-01 -> implementado_por -> fix-productos-quitar-boton-limpiar-01
 fix-productos-quitar-boton-limpiar-01 -> implementa_feature -> feature-productos-quitar-boton-limpiar-01
+plan-tickets-termicos-5sprinter-01 -> implementa_feature -> feature-tickets-termicos-5sprinter-01
+plan-tickets-termicos-5sprinter-01 -> se_apoya_en -> plan-tickets-ancho-impresion-01
+plan-tickets-termicos-5sprinter-01 -> implementado_por -> fix-tickets-termicos-5sprinter-etapa1-01
+fix-tickets-termicos-5sprinter-etapa1-01 -> implementa_feature -> feature-tickets-termicos-5sprinter-01
+plan-tickets-sin-subtotal-ni-folio-01 -> implementa_feature -> feature-tickets-termicos-5sprinter-01
+plan-tickets-sin-subtotal-ni-folio-01 -> se_apoya_en -> fix-tickets-termicos-5sprinter-etapa1-01
+plan-tickets-sin-subtotal-ni-folio-01 -> implementado_por -> fix-tickets-sin-subtotal-ni-folio-01
+fix-tickets-sin-subtotal-ni-folio-01 -> implementa_feature -> feature-tickets-termicos-5sprinter-01
+plan-tickets-58mm-predeterminado-01 -> implementa_feature -> feature-tickets-termicos-5sprinter-01
+plan-tickets-58mm-predeterminado-01 -> se_apoya_en -> fix-tickets-termicos-5sprinter-etapa1-01
+plan-tickets-58mm-predeterminado-01 -> implementado_por -> fix-tickets-58mm-predeterminado-01
+fix-tickets-58mm-predeterminado-01 -> implementa_feature -> feature-tickets-termicos-5sprinter-01

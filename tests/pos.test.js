@@ -42,8 +42,9 @@ async function pos({ pending = null, ticket = null, products = [{ id: 7, name: '
                 return event;
             },
             click() { return this.disabled ? Promise.resolve() : this.emit('click'); },
-            appendChild(child) { this.children.push(child); },
+            appendChild(child) { this.children.push(child); child.parent = this; },
             append(...children) { this.children.push(...children); },
+            remove() { this.parent.children = this.parent.children.filter((child) => child !== this); },
             closest(selector) {
                 if (selector === '[data-action]' && this.dataset.action) return this;
                 if (selector === '[data-action="remove"]' && this.dataset.action === 'remove') return this;
@@ -73,7 +74,7 @@ async function pos({ pending = null, ticket = null, products = [{ id: 7, name: '
         + 'custom-product-dialog custom-product-form custom-product-name custom-product-price custom-product-quantity '
         + 'custom-product-error pos-charge pos-pending pos-new-sale pos-clear '
         + 'bulk-dialog bulk-form bulk-close-btn bulk-name bulk-price bulk-stock-info bulk-available-stock bulk-quantity bulk-amount bulk-total bulk-error bulk-cancel bulk-accept '
-        + 'last-sale-indicator last-sale-folio pos-print-ticket ticket-print-container').split(' ')) {
+        + 'last-sale-indicator last-sale-folio pos-print-ticket').split(' ')) {
         elements.set(id, element(id.endsWith('-dialog') ? 'DIALOG' : 'DIV'));
     }
     const get = (id) => elements.get(id);
@@ -88,7 +89,6 @@ async function pos({ pending = null, ticket = null, products = [{ id: 7, name: '
     get('product-image-error').hidden = true;
     get('payment-method').tagName = 'SELECT';
     get('payment-method').value = 'cash';
-    get('ticket-print-container').classList.add('hidden');
     const cashIn = element('BUTTON');
     cashIn.dataset.cashOpen = 'in';
     const cashOut = element('BUTTON');
@@ -96,7 +96,7 @@ async function pos({ pending = null, ticket = null, products = [{ id: 7, name: '
     const exact = element('BUTTON');
     const frequentButtons = products.map((product) => Object.assign(element('BUTTON'), { dataset: { addProduct: JSON.stringify(product) } }));
     const document = Object.assign(element(), {
-        head: element('HEAD'),
+        body: element('BODY'),
         getElementById: (id) => get(id) || null,
         createElement: element,
         querySelector(selector) {
@@ -115,7 +115,7 @@ async function pos({ pending = null, ticket = null, products = [{ id: 7, name: '
     });
     get('pos-config').textContent = JSON.stringify({
         permissions: { wholesale: true, price_edit: true }, csrf: 'test',
-        routes: { search: '/search', store: '/store', show: '/sale/__SALE__', charge: '/sale/__SALE__/charge', pending: '/pending', ticketData: ticket ? '/ticket/__SALE__' : undefined },
+        routes: { search: '/search', store: '/store', show: '/sale/__SALE__', charge: '/sale/__SALE__/charge', pending: '/pending', ticket: '/ticket/__SALE__', ticketData: ticket ? '/ticket-data/__SALE__' : undefined },
     });
     vm.runInNewContext(source, {
         document, numeral, URLSearchParams,
@@ -124,18 +124,14 @@ async function pos({ pending = null, ticket = null, products = [{ id: 7, name: '
         window: {
             location: { search: pending ? '?pending=41' : '' },
             confirm: (message) => { confirmations.push(message); return true; },
-            print: () => prints.push({
-                html: get('ticket-print-container').innerHTML,
-                hidden: get('ticket-print-container').classList.contains('hidden'),
-                pageStyles: document.head.children.map((style) => style.textContent),
-            }),
+            print: () => prints.push('POS'),
         },
         fetch: async (url, options) => {
             if (options?.method === 'POST') {
                 requests.push({ url, payload: JSON.parse(options.body) });
                 return { ok: true, json: async () => ({ sale: { id: 42, folio: 'TEST' } }) };
             }
-            if (url === '/ticket/42') {
+            if (url === '/ticket-data/42') {
                 return { ok: true, json: async () => ticket };
             }
             return { ok: true, json: async () => url.startsWith('/search') ? { products } : { sale: pending } };
@@ -184,35 +180,53 @@ async function pos({ pending = null, ticket = null, products = [{ id: 7, name: '
     };
 }
 
-for (const width of [58, 80]) {
-    test(`printing ${width} mm uses the receipt HTML without overriding the printer page size`, async () => {
-        const html = `<div class="ticket ticket-sheet" style="--ticket-width: ${width}mm">Ticket de prueba</div>`;
-        const ui = await pos({ ticket: { ticket_html: html, settings: { ticket: { width_mm: width } } } });
-        await ui.scan();
-        await ui.get('pos-charge').click();
-        await ui.get('payment-confirm').click();
-
-        await ui.get('pos-print-ticket').click();
-
-        assert.deepEqual(ui.prints, [{ html, hidden: false, pageStyles: [] }]);
-        assert.equal(ui.get('ticket-print-container').classList.contains('hidden'), true);
-        assert.equal(ui.requests.length, 1);
-    });
-}
-
-test('an image loading failure prevents printing and hides the print container again', async () => {
-    const ui = await pos({ ticket: { ticket_html: '<img src="qr.png">' } });
+test('printing from POS opens the receipt document, not the POS, and allows another attempt after closing the dialog', async () => {
+    const ui = await pos({ ticket: { sale: { amount_paid: 100, change_amount: 0 }, ticket_html: 'JSON fallback' } });
     await ui.scan();
     await ui.get('pos-charge').click();
     await ui.get('payment-confirm').click();
-    ui.get('ticket-print-container').querySelectorAll = () => [{ decode: async () => { throw new Error('No se pudo cargar el QR.'); } }];
 
     await ui.get('pos-print-ticket').click();
+    await ui.get('pos-print-ticket').click();
+    assert.equal(ui.document.body.children.length, 1);
+    const [frame] = ui.document.body.children;
+    assert.equal(frame.src, '/ticket/42');
+    assert.deepEqual(ui.prints, []);
 
-    assert.equal(ui.prints.length, 0);
-    assert.match(ui.get('pos-error').innerHTML, /No se pudo cargar el QR\./);
-    assert.equal(ui.get('ticket-print-container').classList.contains('hidden'), true);
+    const images = [{ decode: async () => ui.prints.push('QR preparado') }];
+    frame.contentDocument = { getElementById: (id) => id === 'sale-ticket' ? { querySelectorAll: () => images } : null };
+    frame.contentWindow = { print: () => ui.prints.push(frame.src) };
+    await frame.emit('load');
+
+    assert.deepEqual(ui.prints, ['QR preparado', '/ticket/42']);
+    assert.equal(ui.document.body.children.length, 0);
+    assert.equal(ui.requests.length, 1);
+
+    await ui.get('pos-print-ticket').click();
+    assert.equal(ui.document.body.children[0].src, '/ticket/42');
 });
+
+for (const [description, receipt, error] of [
+    ['a page other than the receipt', null, /No se pudo abrir el comprobante/],
+    ['a QR image that fails to decode', { querySelectorAll: () => [{ decode: async () => { throw new Error('QR inválido'); } }] }, /No se pudo preparar el comprobante/],
+]) {
+    test(`${description} does not print and the temporary frame is removed`, async () => {
+        const ui = await pos();
+        await ui.scan();
+        await ui.get('pos-charge').click();
+        await ui.get('payment-confirm').click();
+        await ui.get('pos-print-ticket').click();
+
+        const [frame] = ui.document.body.children;
+        frame.contentDocument = { getElementById: () => receipt };
+        frame.contentWindow = { print: () => ui.prints.push(frame.src) };
+        await frame.emit('load');
+
+        assert.deepEqual(ui.prints, []);
+        assert.match(ui.get('pos-error').innerHTML, error);
+        assert.equal(ui.document.body.children.length, 0);
+    });
+}
 
 for (const method of ['card', 'transfer']) {
     test(`${method}: changing from insufficient cash enables confirmation and submits the total`, async () => {
