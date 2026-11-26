@@ -196,7 +196,7 @@ class Product extends Model
         });
     }
 
-    public function scopeSearchExactCodes(Builder $query, string $term, bool $includeSku = false): void
+    public function scopeSearchExactCodes(Builder $query, string $term, bool $includeSku = false, bool $namePrefixOnly = false): void
     {
         if ($term === '') {
             return;
@@ -213,6 +213,13 @@ class Product extends Model
 
         if ($includeSku && ($numericCode || (clone $query)->where('sku', $term)->exists())) {
             $query->where('sku', $term);
+
+            return;
+        }
+
+        if ($namePrefixOnly) {
+            $prefix = strtr($term, ['!' => '!!', '%' => '!%', '_' => '!_']);
+            $query->whereRaw("name LIKE ? ESCAPE '!'", [$prefix.'%']);
 
             return;
         }

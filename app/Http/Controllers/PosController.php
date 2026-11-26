@@ -67,22 +67,24 @@ class PosController extends Controller
 
     public function search(Request $request): JsonResponse
     {
-        $term = trim((string) $request->query('q', ''));
+        $search = $request->query('q');
+        $term = is_string($search) ? trim($search) : '';
 
         if ($term === '') {
-            return response()->json(['products' => []]);
+            return response()->json(['products' => [], 'next_page' => null]);
         }
 
         $products = Product::query()
             ->with(['kitItems', 'category'])
             ->active()
-            ->searchExactCodes($term)
+            ->searchExactCodes($term, namePrefixOnly: true)
             ->orderBy('name')
-            ->limit(12)
-            ->get();
+            ->orderBy('id')
+            ->simplePaginate(12);
 
         return response()->json([
-            'products' => $products->map(fn (Product $product): array => $this->productPayload($product))->all(),
+            'products' => $products->getCollection()->map(fn (Product $product): array => $this->productPayload($product))->all(),
+            'next_page' => $products->hasMorePages() ? $products->currentPage() + 1 : null,
         ]);
     }
 

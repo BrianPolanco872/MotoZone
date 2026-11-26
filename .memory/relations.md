@@ -321,3 +321,9 @@ plan-busqueda-codigo-exacto-pos-productos-01 -> se_apoya_en -> plan-barcode2-pro
 plan-busqueda-codigo-exacto-pos-productos-01 -> considera_bug_activo -> bug-productos-costo-vacio-01
 plan-busqueda-codigo-exacto-pos-productos-01 -> implementado_por -> fix-busqueda-codigo-exacto-pos-productos-01
 fix-busqueda-codigo-exacto-pos-productos-01 -> implementa_feature -> feature-busqueda-codigo-exacto-pos-productos-01
+feature-pos-busqueda-prefijo-01 -> implemented_by_plan -> plan-pos-busqueda-prefijo-01
+plan-pos-busqueda-prefijo-01 -> implementa_feature -> feature-pos-busqueda-prefijo-01
+plan-pos-busqueda-prefijo-01 -> se_apoya_en -> plan-busqueda-codigo-exacto-pos-productos-01
+plan-pos-busqueda-prefijo-01 -> se_apoya_en -> feature-pos-vista-amplia-existencias-01
+plan-pos-busqueda-prefijo-01 -> implementado_por -> fix-pos-busqueda-prefijo-01
+fix-pos-busqueda-prefijo-01 -> implementa_feature -> feature-pos-busqueda-prefijo-01

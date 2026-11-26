@@ -56,7 +56,7 @@ test('the POS starts each login in day mode and remembers manual changes during 
 });
 
 async function pos({ pending = null, ticket = null, lastSale = null, daySales = [], canPrint = true, popupBlocked = false, confirm = true,
-    products = [{ id: 7, name: 'Aceite', price: 100, wholesale_price: 80, tax_rate: 0, track_inventory: false, sale_mode: 'unit' }] } = {}) {
+    products = [{ id: 7, name: 'Aceite', price: 100, wholesale_price: 80, tax_rate: 0, track_inventory: false, sale_mode: 'unit' }], searchPage } = {}) {
     const elements = new Map();
     const requests = [];
     const confirmations = [];
@@ -98,6 +98,7 @@ async function pos({ pending = null, ticket = null, lastSale = null, daySales = 
                 if (selector === '[data-action]' && this.dataset.action) return this;
                 if (selector === '[data-action="remove"]' && this.dataset.action === 'remove') return this;
                 if (selector === '[data-product-id]' && this.dataset.productId) return this;
+                if (selector === '[data-search-more]' && 'searchMore' in this.dataset) return this;
                 if (selector === '[data-day-sale]' && this.dataset.daySale) return this;
                 if (selector === '[data-view-image]' && this.dataset.viewImage !== undefined) return this;
                 if (selector === 'input, textarea, select' && ['INPUT', 'TEXTAREA', 'SELECT'].includes(this.tagName)) return this;
@@ -129,6 +130,29 @@ async function pos({ pending = null, ticket = null, lastSale = null, daySales = 
         elements.set(id, element(id.endsWith('-dialog') ? 'DIALOG' : 'DIV'));
     }
     const get = (id) => elements.get(id);
+    const resultsBox = get('pos-results');
+    resultsBox.classList.add('hidden');
+    const moreButton = element('BUTTON');
+    moreButton.dataset.searchMore = '';
+    const resultStatus = element('P');
+    const resultBody = Object.assign(element('TBODY'), {
+        rows: [],
+        insertAdjacentHTML: (_, markup) => {
+            resultsBox.html = resultsBox.innerHTML.replace('</tbody>', () => `${markup}</tbody>`);
+        },
+    });
+    const resultHeading = {
+        insertAdjacentHTML: (_, markup) => {
+            resultsBox.html = resultsBox.innerHTML.replace('</tr>', () => `${markup}</tr>`);
+        },
+    };
+    resultsBox.querySelector = (selector) => ({
+        '[data-search-more]': moreButton,
+        '[data-search-status]': resultStatus,
+        'tbody': resultBody,
+        'thead tr': resultHeading,
+    })[selector] ?? null;
+    resultsBox.contains = (target) => [resultsBox, moreButton].includes(target);
     get('day-sales-print').disabled = true;
     get('pos-search').tagName = 'INPUT';
     get('bulk-quantity').tagName = 'INPUT';
@@ -195,12 +219,18 @@ async function pos({ pending = null, ticket = null, lastSale = null, daySales = 
             if (url.startsWith('/day-sales?')) {
                 return { ok: true, json: async () => ({ sales: daySales }) };
             }
-            return { ok: true, json: async () => url.startsWith('/search') ? { products } : { sale: pending } };
+            if (url.startsWith('/search?')) {
+                return {
+                    ok: true,
+                    json: async () => searchPage ? searchPage(new URLSearchParams(url.split('?')[1])) : { products },
+                };
+            }
+            return { ok: true, json: async () => ({ sale: pending }) };
         },
     }, { filename: 'resources/js/pos/pos.js' });
     await setImmediate();
     return {
-        get, requests, confirmations, ticketTabs, sameTabNavigations, document, element, exact, frequentButtons,
+        get, requests, confirmations, ticketTabs, sameTabNavigations, document, element, exact, frequentButtons, moreButton, resultStatus,
         async selectDaySale(id) {
             const row = element('TR');
             row.dataset.daySale = String(id);
@@ -210,8 +240,8 @@ async function pos({ pending = null, ticket = null, lastSale = null, daySales = 
             get('pos-search').value = '750123';
             await get('pos-search').emit('keydown', { key: 'Enter' });
         },
-        async results() {
-            get('pos-search').value = 'aceite';
+        async results(term = 'aceite') {
+            get('pos-search').value = term;
             await get('pos-search').emit('input');
             for (const callback of timers) {
                 timers.delete(callback);
@@ -751,8 +781,11 @@ test('search renders product metadata without an action column and hides empty s
 test('clicking any result cell adds one product at its effective wholesale price', async () => {
     const ui = await pos();
     await ui.results();
+    const priceCell = ui.element('TD');
+    priceCell.dataset.resultPrice = '7';
+    ui.get('pos-results').querySelectorAll = (selector) => selector === '[data-result-price]' ? [priceCell] : [];
     await ui.key('F11');
-    assert.match(ui.get('pos-results').innerHTML, /\$80\.00/);
+    assert.equal(priceCell.textContent, '$80.00');
     assert.equal(ui.get('pos-cart-body').children.length, 0);
     const row = ui.element('TR');
     row.dataset.productId = '7';
@@ -763,6 +796,104 @@ test('clicking any result cell adds one product at its effective wholesale price
     assert.equal(ui.get('pos-total').textContent, '$80.00');
     await ui.get('pos-pending').click();
     assert.equal(ui.requests[0].payload.items[0].quantity, 1);
+});
+
+test('scrolling appends the next page once and keeps later rows selectable at the wholesale price', async () => {
+    const first = { id: 7, name: 'Casco abierto', price: 100, wholesale_price: 80 };
+    const later = { ...first, id: 8, name: 'Casco integral', store_2_stock: '3.000' };
+    const following = Promise.withResolvers();
+    const pages = [];
+    const ui = await pos({
+        searchPage: (params) => {
+            const page = params.get('page');
+            pages.push([params.get('q'), page]);
+            return page ? following.promise : { products: [first], next_page: 2 };
+        },
+    });
+    await ui.results('cas');
+    await ui.key('F11');
+    const box = ui.get('pos-results');
+    Object.assign(box, { clientHeight: 300, scrollHeight: 700, scrollTop: 200 });
+    await box.emit('scroll');
+    assert.deepEqual(pages, [['cas', null]]);
+    box.scrollTop = 360;
+    const focusedRow = ui.element('TR');
+    focusedRow.focus();
+    const loading = box.emit('scroll');
+    await box.emit('scroll');
+    following.resolve({ products: [first, later], next_page: null });
+    await loading;
+
+    assert.deepEqual(pages, [['cas', null], ['cas', '2']]);
+    assert.deepEqual([...box.innerHTML.matchAll(/data-product-id="(\d+)"/g)].map((row) => row[1]), ['7', '8']);
+    assert.match(box.innerHTML, /Existencia Tienda 2/);
+    assert.match(box.innerHTML, />3<\/td>/);
+    assert.equal(box.scrollTop, 360);
+    assert.equal(ui.document.activeElement, focusedRow);
+    assert.equal(ui.get('pos-cart-body').children.length, 0);
+    const laterRow = ui.element('TR');
+    laterRow.dataset.productId = '8';
+    await box.emit('keydown', { key: 'Enter', target: laterRow });
+    assert.equal(ui.get('pos-total').textContent, '$80.00');
+    assert.match(ui.get('pos-cart-body').children[0].innerHTML, /Casco integral/);
+});
+
+test('changing the search resets scroll and ignores a pending page from the previous term', async () => {
+    const following = Promise.withResolvers();
+    const ui = await pos({
+        searchPage: (params) => {
+            if (params.has('page')) return following.promise;
+            return params.get('q') === 'cas'
+                ? { products: [{ id: 7, name: 'Casco abierto', price: 100 }], next_page: 2 }
+                : { products: [{ id: 9, name: 'Foco LED', price: 50 }], next_page: null };
+        },
+    });
+    await ui.results('cas');
+    const box = ui.get('pos-results');
+    Object.assign(box, { clientHeight: 300, scrollHeight: 700, scrollTop: 360 });
+    const loading = box.emit('scroll');
+    await ui.results('foco');
+    following.resolve({ products: [{ id: 8, name: 'Casco integral', price: 100 }], next_page: null });
+    await loading;
+
+    assert.match(box.innerHTML, /Foco LED/);
+    assert.doesNotMatch(box.innerHTML, /Casco/);
+    assert.equal(box.scrollTop, 0);
+});
+
+test('a failed page retains loaded products and can be retried with Cargar más', async () => {
+    let nextPageCalls = 0;
+    const ui = await pos({
+        searchPage: (params) => {
+            if (!params.has('page')) return { products: [{ id: 7, name: 'Casco abierto', price: 100 }], next_page: 2 };
+            if (++nextPageCalls === 1) throw new Error('offline');
+            return { products: [{ id: 8, name: 'Casco integral', price: 100 }], next_page: null };
+        },
+    });
+    await ui.results('cas');
+    const box = ui.get('pos-results');
+    Object.assign(box, { clientHeight: 300, scrollHeight: 700, scrollTop: 360 });
+    await box.emit('scroll');
+    await box.emit('scroll');
+
+    assert.equal(nextPageCalls, 1);
+    assert.match(box.innerHTML, /Casco abierto/);
+    assert.match(ui.resultStatus.textContent, /reintentar/);
+    await box.emit('click', { target: ui.moreButton });
+    assert.match(box.innerHTML, /Casco integral/);
+    assert.equal(ui.moreButton.hidden, true);
+});
+
+test('closing the search ignores an outstanding Enter result instead of adding the product', async () => {
+    const response = Promise.withResolvers();
+    const ui = await pos({ searchPage: () => response.promise });
+    const scan = ui.scan();
+    await ui.document.emit('click', { target: ui.element() });
+    response.resolve({ products: [{ id: 7, name: 'Casco abierto', price: 100 }], next_page: null });
+    await scan;
+
+    assert.equal(ui.get('pos-cart-body').children.length, 0);
+    assert.equal(ui.get('pos-results').classList.contains('hidden'), true);
 });
 
 for (const key of ['Enter', ' ']) {

@@ -73,7 +73,7 @@
                                 </svg>
                             </div>
                             <input id="pos-search" type="search" autocomplete="off"
-                                   placeholder="Escanea código de barras 1 o 2, o busca por nombre o marca..."
+                                   placeholder="Escanea un código o escribe el inicio del nombre..."
                                    class="block w-full rounded-lg border border-mz-border-light bg-mz-bg-primary/70 py-2.5 pr-4 pl-11 text-sm text-mz-text-primary placeholder-mz-text-muted focus:border-mz-accent-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/25 transition-colors sm:pr-24">
                             <div class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-1">
                                 <kbd class="rounded bg-mz-bg-surface-2 px-2 py-0.5 text-[10px] font-mono text-mz-text-muted border border-mz-border-light">Enter ↵</kbd>

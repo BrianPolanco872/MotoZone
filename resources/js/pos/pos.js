@@ -129,6 +129,15 @@ if (configElement) {
     let idempotencyKey = uuid();
     let productCache = new Map();
     let searchTimer = null;
+    let currentSearch = null;
+
+    const closeSearch = () => {
+        clearTimeout(searchTimer);
+        searchTimer = null;
+        currentSearch = null;
+        productCache.clear();
+        resultsBox?.classList.add('hidden');
+    };
     let submitting = false;
     let lastSale = config.lastSale ?? null;
 
@@ -525,7 +534,7 @@ if (configElement) {
 
         renderCart();
         searchInput.value = '';
-        resultsBox.classList.add('hidden');
+        closeSearch();
         searchInput.focus();
         return true;
     };
@@ -576,7 +585,7 @@ if (configElement) {
         }
         isUpdatingBulk = false;
 
-        resultsBox?.classList.add('hidden');
+        closeSearch();
         if (searchInput) {
             searchInput.value = '';
         }
@@ -818,7 +827,9 @@ if (configElement) {
         renderCart();
 
         if (!resultsBox.classList.contains('hidden')) {
-            renderResults([...productCache.values()]);
+            resultsBox.querySelectorAll('[data-result-price]').forEach((cell) => {
+                cell.textContent = formatMoney(priceFor(productCache.get(Number(cell.dataset.resultPrice))));
+            });
         }
 
         if (bulkDialog?.open && bulkProduct) {
@@ -837,7 +848,28 @@ if (configElement) {
         }
     };
 
-    const renderResults = (products) => {
+    const hasStockValue = (value) => value != null && value !== '';
+    const store2Heading = '<th scope="col" class="p-4 text-right">Existencia Tienda 2</th>';
+    const store2Cell = (value) => `<td class="min-w-32 whitespace-nowrap p-4 align-middle text-right text-mz-text-secondary">${hasStockValue(value) ? formatQuantity(value) : ''}</td>`;
+
+    const searchResultRow = (product, showStore2) => {
+        const id = Number(product.id);
+        const price = priceFor(product);
+        const stock = stockFor(product);
+
+        return `<tr data-product-id="${id}" tabindex="0" aria-label="Agregar ${escapeHtml(product.name)} al ticket" class="cursor-pointer hover:bg-mz-accent-primary/5 focus-visible:outline-2 focus-visible:outline-mz-accent-primary">
+            <td class="w-28 p-4 align-middle"><div class="flex size-20 shrink-0 items-center justify-center rounded-lg border border-mz-border-light bg-mz-bg-primary">${product.image_url ? `<img data-product-thumbnail src="${escapeHtml(product.image_url)}" alt="${escapeHtml(product.name)}" class="size-20 rounded-lg object-contain"><span hidden class="text-xs text-mz-text-muted">Sin foto</span>` : '<span class="text-xs text-mz-text-muted">Sin foto</span>'}</div></td>
+            <td class="min-w-40 max-w-52 break-all p-4 align-middle font-mono text-mz-accent-primary">${escapeHtml(product.barcode || product.barcode2 || product.sku || 'S/C')}</td>
+            <td class="min-w-72 max-w-sm whitespace-normal break-words p-4 align-middle font-semibold text-mz-text-primary">${escapeHtml(product.name)}</td>
+            <td class="min-w-44 max-w-56 whitespace-normal break-words p-4 align-middle text-mz-text-secondary">${escapeHtml(product.category_name)}</td>
+            <td data-result-price="${id}" class="min-w-32 whitespace-nowrap p-4 align-middle text-right font-semibold">${formatMoney(price)}</td>
+            <td class="min-w-32 whitespace-nowrap p-4 align-middle text-right ${stock === null ? 'text-mz-text-muted' : stock > 0 ? 'text-mz-success' : 'text-mz-error'}">${stock === null ? 'Sin control' : formatQuantity(stock)}</td>
+            <td class="min-w-32 whitespace-nowrap p-4 align-middle text-right text-mz-text-secondary">${hasStockValue(product.warehouse_stock) ? formatQuantity(product.warehouse_stock) : '-'}</td>
+            ${showStore2 ? store2Cell(product.store_2_stock) : ''}
+        </tr>`;
+    };
+
+    const renderResults = (products, search) => {
         productCache = new Map(products.map((product) => [Number(product.id), product]));
 
         if (products.length === 0) {
@@ -846,58 +878,105 @@ if (configElement) {
             return;
         }
 
-        const hasStockValue = (value) => value != null && value !== '';
-        const showStore2 = products.some((product) => hasStockValue(product.store_2_stock));
+        search.showStore2 = products.some((product) => hasStockValue(product.store_2_stock));
         resultsBox.innerHTML = `
-            <p class="border-b border-mz-border px-4 py-3 text-xs font-bold uppercase text-mz-accent-primary">Resultados de búsqueda · ${products.length} coincidencias</p>
+            <p class="border-b border-mz-border px-4 py-3 text-xs font-bold uppercase text-mz-accent-primary">Resultados de búsqueda</p>
             <table class="w-full min-w-[76rem] text-left text-sm leading-relaxed">
                 <thead class="sticky top-0 bg-mz-bg-surface-2 text-[11px] uppercase text-mz-text-muted">
-                    <tr><th scope="col" class="p-4">Foto</th><th scope="col" class="p-4">Código</th><th scope="col" class="p-4">Producto</th><th scope="col" class="p-4">Categoría</th><th scope="col" class="p-4 text-right">Precio unitario</th><th scope="col" class="p-4 text-right">Existencia en tienda</th><th scope="col" class="p-4 text-right">Existencia en bodega</th>${showStore2 ? '<th scope="col" class="p-4 text-right">Existencia Tienda 2</th>' : ''}</tr>
+                    <tr><th scope="col" class="p-4">Foto</th><th scope="col" class="p-4">Código</th><th scope="col" class="p-4">Producto</th><th scope="col" class="p-4">Categoría</th><th scope="col" class="p-4 text-right">Precio unitario</th><th scope="col" class="p-4 text-right">Existencia en tienda</th><th scope="col" class="p-4 text-right">Existencia en bodega</th>${search.showStore2 ? store2Heading : ''}</tr>
                 </thead>
-                <tbody class="divide-y divide-mz-border-light/40">${products.map((product) => {
-                    const id = Number(product.id);
-                    const price = priceFor(product);
-                    const stock = stockFor(product);
-                    return `<tr data-product-id="${id}" tabindex="0" aria-label="Agregar ${escapeHtml(product.name)} al ticket" class="cursor-pointer hover:bg-mz-accent-primary/5 focus-visible:outline-2 focus-visible:outline-mz-accent-primary">
-                        <td class="w-28 p-4 align-middle"><div class="flex size-20 shrink-0 items-center justify-center rounded-lg border border-mz-border-light bg-mz-bg-primary">${product.image_url ? `<img data-product-thumbnail src="${escapeHtml(product.image_url)}" alt="${escapeHtml(product.name)}" class="size-20 rounded-lg object-contain"><span hidden class="text-xs text-mz-text-muted">Sin foto</span>` : '<span class="text-xs text-mz-text-muted">Sin foto</span>'}</div></td>
-                        <td class="min-w-40 max-w-52 break-all p-4 align-middle font-mono text-mz-accent-primary">${escapeHtml(product.barcode || product.barcode2 || product.sku || 'S/C')}</td>
-                        <td class="min-w-72 max-w-sm whitespace-normal break-words p-4 align-middle font-semibold text-mz-text-primary">${escapeHtml(product.name)}</td>
-                        <td class="min-w-44 max-w-56 whitespace-normal break-words p-4 align-middle text-mz-text-secondary">${escapeHtml(product.category_name)}</td>
-                        <td class="min-w-32 whitespace-nowrap p-4 align-middle text-right font-semibold">${formatMoney(price)}</td>
-                        <td class="min-w-32 whitespace-nowrap p-4 align-middle text-right ${stock === null ? 'text-mz-text-muted' : stock > 0 ? 'text-mz-success' : 'text-mz-error'}">${stock === null ? 'Sin control' : formatQuantity(stock)}</td>
-                        <td class="min-w-32 whitespace-nowrap p-4 align-middle text-right text-mz-text-secondary">${hasStockValue(product.warehouse_stock) ? formatQuantity(product.warehouse_stock) : '-'}</td>
-                        ${showStore2 ? `<td class="min-w-32 whitespace-nowrap p-4 align-middle text-right text-mz-text-secondary">${hasStockValue(product.store_2_stock) ? formatQuantity(product.store_2_stock) : ''}</td>` : ''}
-                    </tr>`;
-                }).join('')}</tbody>
-            </table>`;
+                <tbody class="divide-y divide-mz-border-light/40">${products.map((product) => searchResultRow(product, search.showStore2)).join('')}</tbody>
+            </table>
+            ${search.nextPage ? `<div class="border-t border-mz-border px-4 py-3 text-xs text-mz-text-muted">
+                <p data-search-status role="status"></p>
+                <button type="button" data-search-more class="rounded-md border border-mz-border px-3 py-2 font-semibold text-mz-accent-primary hover:bg-mz-accent-primary/5">Cargar más</button>
+            </div>` : ''}`;
 
         resultsBox.classList.remove('hidden');
+        resultsBox.scrollTop = 0;
+    };
+
+    const fetchSearchPage = async (term, page) => {
+        const params = new URLSearchParams({ q: term });
+        if (page) params.set('page', page);
+        const response = await fetch(`${config.routes.search}?${params}`, {
+            headers: { Accept: 'application/json' },
+        });
+
+        if (!response.ok) throw new Error('No se pudo buscar.');
+
+        return response.json();
     };
 
     const searchNow = async () => {
         const term = searchInput.value.trim();
+        closeSearch();
 
-        if (term === '') {
-            resultsBox.classList.add('hidden');
-            return [];
+        if (term === '') return [];
+
+        const search = currentSearch = { term };
+        try {
+            const data = await fetchSearchPage(term);
+            if (search !== currentSearch) return null;
+
+            search.nextPage = data.next_page;
+            const products = data.products ?? [];
+            renderResults(products, search);
+            return products;
+        } catch {
+            if (search === currentSearch) {
+                showError('No se pudo buscar productos. Revisa tu conexión e inténtalo de nuevo.');
+            }
+            return null;
         }
+    };
+
+    const loadMoreSearchResults = async (retry = false) => {
+        const search = currentSearch;
+        if (!search?.nextPage || search.loading || (search.failed && !retry)) return;
+
+        const status = resultsBox.querySelector('[data-search-status]');
+        const button = resultsBox.querySelector('[data-search-more]');
+        search.loading = true;
+        status.textContent = 'Cargando más productos…';
 
         try {
-            const response = await fetch(`${config.routes.search}?q=${encodeURIComponent(term)}`, {
-                headers: { Accept: 'application/json' },
-            });
+            const data = await fetchSearchPage(search.term, search.nextPage);
+            if (search !== currentSearch) return;
 
-            if (!response.ok) {
-                throw new Error('No se pudo buscar.');
+            const body = resultsBox.querySelector('tbody');
+            const newProducts = [];
+            for (const product of data.products ?? []) {
+                const id = Number(product.id);
+                if (!productCache.has(id)) {
+                    productCache.set(id, product);
+                    newProducts.push(product);
+                }
             }
 
-            const data = await response.json();
-            renderResults(data.products ?? []);
+            if (!search.showStore2 && newProducts.some((product) => hasStockValue(product.store_2_stock))) {
+                search.showStore2 = true;
+                resultsBox.querySelector('thead tr').insertAdjacentHTML('beforeend', store2Heading);
+                for (const row of body.rows) row.insertAdjacentHTML('beforeend', store2Cell(null));
+            }
 
-            return data.products ?? [];
-        } catch (error) {
-            showError('No se pudo buscar productos. Revisa tu conexión e inténtalo de nuevo.');
-            return [];
+            body.insertAdjacentHTML('beforeend', newProducts.map((product) => searchResultRow(product, search.showStore2)).join(''));
+            search.nextPage = data.next_page;
+            search.failed = false;
+            status.textContent = search.nextPage ? '' : 'No hay más resultados.';
+
+            if (document.activeElement === button && (newProducts.length || !search.nextPage)) {
+                const firstNewRow = newProducts.length && body.querySelector(`[data-product-id="${Number(newProducts[0].id)}"]`);
+                (firstNewRow || body.lastElementChild)?.focus();
+            }
+            button.hidden = !search.nextPage;
+        } catch {
+            if (search === currentSearch) {
+                search.failed = true;
+                status.textContent = 'No se pudieron cargar más productos. Usa «Cargar más» para reintentar.';
+            }
+        } finally {
+            search.loading = false;
         }
     };
 
@@ -910,7 +989,7 @@ if (configElement) {
         wholesaleToggle.disabled = !permissions.wholesale;
         pendingBanner.classList.add('hidden');
         searchInput.value = '';
-        resultsBox.classList.add('hidden');
+        closeSearch();
         clearError();
         renderCart();
         searchInput.focus();
@@ -1245,10 +1324,8 @@ if (configElement) {
     };
 
     searchInput?.addEventListener('input', () => {
-        // Si detectamos un input muy rápido (típico de escáner), no queremos usar el debounce largo
-        // Pero para mantener la lógica original, reduciremos el tiempo a 50ms para respuesta inmediata
-        clearTimeout(searchTimer);
-        searchTimer = setTimeout(searchNow, 50);
+        closeSearch();
+        if (searchInput.value.trim()) searchTimer = setTimeout(searchNow, 50);
     });
 
     searchInput?.addEventListener('keydown', async (event) => {
@@ -1256,18 +1333,25 @@ if (configElement) {
             event.preventDefault();
             
             // Forzar búsqueda inmediata al presionar Enter (escáner)
-            clearTimeout(searchTimer);
             const products = await searchNow();
 
-            if (products.length > 0) {
+            if (products?.length) {
                 addProduct(products[0]);
-            } else {
+            } else if (products) {
                 showError('Producto no encontrado.');
             }
         }
     });
 
+    resultsBox?.addEventListener('scroll', () => {
+        if (resultsBox.scrollHeight - resultsBox.scrollTop - resultsBox.clientHeight <= 120) {
+            return loadMoreSearchResults();
+        }
+    });
+
     resultsBox?.addEventListener('click', (event) => {
+        if (event.target.closest('[data-search-more]')) return loadMoreSearchResults(true);
+
         const row = event.target.closest('[data-product-id]');
 
         if (!row) {
@@ -1325,12 +1409,8 @@ if (configElement) {
     }, true));
 
     document.addEventListener('click', (event) => {
-        if (!resultsBox || resultsBox.classList.contains('hidden')) {
-            return;
-        }
-
-        if (!resultsBox.contains(event.target) && event.target !== searchInput) {
-            resultsBox.classList.add('hidden');
+        if ((currentSearch || searchTimer !== null) && event.target !== searchInput && !resultsBox.contains(event.target)) {
+            closeSearch();
         }
     });
 

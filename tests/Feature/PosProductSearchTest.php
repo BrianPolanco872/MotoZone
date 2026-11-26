@@ -8,6 +8,7 @@ use Database\Seeders\RolePermissionSeeder;
 use DOMDocument;
 use DOMElement;
 use DOMXPath;
+use Illuminate\Database\Eloquent\Factories\Sequence;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use PHPUnit\Framework\Attributes\TestWith;
@@ -31,7 +32,7 @@ class PosProductSearchTest extends TestCase
             'barcode' => '0001234567890',
             'barcode2' => 'A(02)+#',
         ]);
-        Product::factory()->create(['name' => 'Pieza A(02)+# extendida']);
+        Product::factory()->create(['name' => 'A(02)+# pieza extendida']);
         $employee = User::factory()->create()->assignRole('empleado');
         $employee->givePermissionTo('pos.access');
 
@@ -127,24 +128,64 @@ class PosProductSearchTest extends TestCase
         }
     }
 
-    public function test_pos_search_still_finds_products_by_name_and_brand(): void
+    public function test_pos_text_search_only_finds_active_names_starting_with_the_term(): void
     {
-        $product = Product::factory()->create([
-            'name' => 'Balata especial',
-            'brand' => 'Marca única',
-            'sku' => 'INTERNAL-SEARCH-02',
-            'barcode' => null,
-            'barcode2' => null,
-        ]);
+        $helmet = Product::factory()->create(['name' => 'CASCO INTEGRAL']);
+        $light = Product::factory()->create(['name' => 'FOCO STOP']);
+        Product::factory()->count(4)->sequence(
+            ['name' => 'Refacción para casco'],
+            ['name' => 'CASCADA DE 500 FOCOS', 'brand' => 'FOCO'],
+            ['name' => 'Mica universal', 'brand' => 'CASCO'],
+            ['name' => 'CASCO INACTIVO', 'is_active' => false],
+        )->create();
+        $employee = User::factory()->create()->assignRole('empleado');
+        $employee->givePermissionTo('pos.access');
+        $this->actingAs($employee);
+
+        $this->getJson(route('pos.products.search', ['q' => ' casCO ']))
+            ->assertOk()
+            ->assertJsonCount(1, 'products')
+            ->assertJsonPath('products.0.id', $helmet->id);
+
+        $this->getJson(route('pos.products.search', ['q' => 'foco']))
+            ->assertOk()
+            ->assertJsonCount(1, 'products')
+            ->assertJsonPath('products.0.id', $light->id);
+    }
+
+    public function test_pos_text_search_treats_like_wildcards_as_literal_characters(): void
+    {
+        $product = Product::factory()->create(['name' => 'Foco%_! LED']);
+        Product::factory()->create(['name' => 'FocoXX! LED']);
         $employee = User::factory()->create()->assignRole('empleado');
         $employee->givePermissionTo('pos.access');
 
-        foreach (['Balata especial', 'Marca única', 'Balata', 'única'] as $term) {
-            $this->actingAs($employee)
-                ->getJson(route('pos.products.search', ['q' => $term]))
-                ->assertOk()
-                ->assertJsonPath('products.0.id', $product->id);
-        }
+        $this->actingAs($employee)->getJson(route('pos.products.search', ['q' => 'foco%_!']))
+            ->assertOk()
+            ->assertJsonCount(1, 'products')
+            ->assertJsonPath('products.0.id', $product->id);
+    }
+
+    public function test_pos_text_search_pages_through_all_matches_in_stable_order(): void
+    {
+        $helmets = Product::factory()->count(13)->sequence(fn (Sequence $sequence): array => [
+            'name' => 'CASCO ABIERTO',
+            'slug' => 'casco-abierto-'.$sequence->index,
+        ])->create();
+        $firstHelmet = Product::factory()->create(['name' => 'CASCO A']);
+        $employee = User::factory()->create()->assignRole('empleado');
+        $employee->givePermissionTo('pos.access');
+        $this->actingAs($employee);
+
+        $firstPage = $this->getJson(route('pos.products.search', ['q' => 'cas']))
+            ->assertOk()
+            ->assertJsonPath('next_page', 2);
+        $lastPage = $this->getJson(route('pos.products.search', ['q' => 'cas', 'page' => 2]))
+            ->assertOk()
+            ->assertJsonPath('next_page', null);
+
+        $this->assertSame([$firstHelmet->id, ...$helmets->take(11)->modelKeys()], array_column($firstPage->json('products'), 'id'));
+        $this->assertSame($helmets->slice(11)->values()->modelKeys(), array_column($lastPage->json('products'), 'id'));
     }
 
     public function test_pos_search_exposes_bulk_precision_and_mode_without_costs_or_recipe(): void
