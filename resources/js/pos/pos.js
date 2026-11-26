@@ -143,10 +143,10 @@ if (configElement) {
                     <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
                 </div>
                 <div class="flex-1">
-                    <p class="font-semibold text-white">No se pudo completar la operación</p>
+                    <p class="font-semibold text-mz-text-primary">No se pudo completar la operación</p>
                     <p class="mt-0.5 text-xs text-mz-text-secondary">${escapeHtml(message)}</p>
                 </div>
-                <button type="button" onclick="this.closest('#pos-error').classList.add('hidden')" class="text-mz-text-muted hover:text-white p-1 rounded-md transition" aria-label="Cerrar"><svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>
+                <button type="button" onclick="this.closest('#pos-error').classList.add('hidden')" class="text-mz-text-muted hover:text-mz-text-primary p-1 rounded-md transition" aria-label="Cerrar"><svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>
             </div>
         `;
         errorBox.classList.remove('hidden');
@@ -234,10 +234,10 @@ if (configElement) {
 
         daySalesRows.innerHTML = daySales.map((sale) => `
             <tr data-day-sale="${sale.id}" class="cursor-pointer border-t border-mz-border-light/60 transition-colors ${sale.id === selectedDaySaleId ? 'bg-mz-accent-primary/20' : 'hover:bg-mz-bg-surface-2'}">
-                <td class="px-3 py-2 font-mono font-bold text-white">${escapeHtml(sale.code)}${sale.cancelled ? ' <span class="text-[9px] font-bold text-mz-error">CANCELADO</span>' : ''}</td>
+                <td class="px-3 py-2 font-mono font-bold text-mz-text-primary">${escapeHtml(sale.code)}${sale.cancelled ? ' <span class="text-[9px] font-bold text-mz-error">CANCELADO</span>' : ''}</td>
                 <td class="px-2 py-2 tabular-nums text-mz-text-secondary">${sale.item_count}</td>
                 <td class="px-2 py-2 font-mono text-mz-text-secondary">${escapeHtml(sale.time ?? '—')}</td>
-                <td class="px-3 py-2 text-right font-mono font-bold text-white">${formatMoney(sale.total)}</td>
+                <td class="px-3 py-2 text-right font-mono font-bold text-mz-text-primary">${formatMoney(sale.total)}</td>
             </tr>
         `).join('');
 
@@ -271,9 +271,9 @@ if (configElement) {
         daySalesItems.innerHTML = items.map((item) => {
             const available = Number(item.available_quantity) > 0;
             return `<tr data-day-item="${item.id}" class="cursor-pointer border-t border-mz-border-light/60 transition-colors ${item.id === selectedDayItemId ? 'bg-mz-warning/20' : 'hover:bg-mz-bg-surface-2'} ${available ? '' : 'opacity-50'}">
-                <td class="px-3 py-2 tabular-nums text-white">${formatQuantity(item.quantity)}</td>
+                <td class="px-3 py-2 tabular-nums text-mz-text-primary">${formatQuantity(item.quantity)}</td>
                 <td class="px-2 py-2 text-mz-text-secondary">${escapeHtml(item.description ?? '')}${item.sku ? ` <span class="font-mono text-[10px] text-mz-text-muted">${escapeHtml(item.sku)}</span>` : ''}${Number(item.returned_quantity) > 0 ? ` <span class="text-[10px] font-bold text-mz-success">Devuelto: ${formatQuantity(item.returned_quantity)}</span>` : ''}</td>
-                <td class="px-3 py-2 text-right font-mono text-white">${formatMoney(item.line_total)}</td>
+                <td class="px-3 py-2 text-right font-mono text-mz-text-primary">${formatMoney(item.line_total)}</td>
             </tr>`;
         }).join('');
 
@@ -1160,7 +1160,7 @@ if (configElement) {
             info.className = 'min-w-0';
 
             const folio = document.createElement('p');
-            folio.className = 'font-mono text-xs font-bold text-white';
+            folio.className = 'font-mono text-xs font-bold text-mz-text-primary';
             folio.textContent = sale.folio;
 
             const detail = document.createElement('p');
@@ -1171,7 +1171,7 @@ if (configElement) {
 
             const bringButton = document.createElement('button');
             bringButton.type = 'button';
-            bringButton.className = 'inline-flex items-center gap-1.5 rounded-lg bg-mz-accent-primary px-3 py-1.5 text-xs font-bold text-white transition-all hover:bg-mz-accent-hover active:scale-95';
+            bringButton.className = 'inline-flex items-center gap-1.5 rounded-lg bg-orange-700 px-3 py-1.5 text-xs font-bold text-white transition-all hover:bg-orange-800 active:scale-95';
             bringButton.textContent = 'Traer a mi panel';
             bringButton.addEventListener('click', () => bringPendingToPanel(sale.id));
 

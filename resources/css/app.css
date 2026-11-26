@@ -1,5 +1,53 @@
 @import 'tailwindcss';
 
+@custom-variant pos-day (&:where([data-pos-theme='light'] *));
+@custom-variant pos-night (&:where([data-pos-theme='dark'] *));
+
+[data-pos-theme] {
+    color-scheme: light;
+    --color-mz-bg-primary: #f1f5f9;
+    --color-mz-bg-surface: #ffffff;
+    --color-mz-bg-surface-2: #f1f5f9;
+    --color-mz-text-primary: #020617;
+    --color-mz-text-secondary: #334155;
+    --color-mz-text-muted: #475569;
+    --color-mz-border: #e2e8f0;
+    --color-mz-border-light: #cbd5e1;
+    --color-mz-accent-primary: #c2410c;
+    --color-mz-success: #047857;
+    --color-mz-error: #be123c;
+    --color-mz-warning: #92400e;
+}
+
+[data-pos-theme='dark'] {
+    color-scheme: dark;
+    --color-mz-bg-primary: #0b0f17;
+    --color-mz-bg-surface: #111827;
+    --color-mz-bg-surface-2: #1e293b;
+    --color-mz-text-primary: #ffffff;
+    --color-mz-text-secondary: #e2e8f0;
+    --color-mz-text-muted: #cbd5e1;
+    --color-mz-border: #263244;
+    --color-mz-border-light: #3b4a60;
+    --color-mz-accent-primary: #fb923c;
+    --color-mz-success: #6ee7b7;
+    --color-mz-error: #fda4af;
+    --color-mz-warning: #fcd34d;
+}
+
+[data-pos-theme] .pos-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(100 116 139 / 55%) transparent;
+}
+
+[data-pos-theme] main nav[role='navigation']:has(a[rel='prev'], a[rel='next']) {
+    & p { @apply text-mz-text-muted; }
+    & :is(a, span).border { @apply border-mz-border-light bg-mz-bg-surface text-mz-text-secondary; }
+    & a.border:hover { @apply bg-mz-bg-surface-2 text-mz-text-primary; }
+    & a.border:focus-visible { @apply ring-mz-accent-primary; }
+    & [aria-current='page'] > span.border { @apply bg-mz-accent-primary/10 font-bold text-mz-accent-primary; }
+}
+
 /* CMS theme is scoped so the public storefront and other admin screens stay unchanged. */
 .home-cms {
     --color-mz-bg-primary: #0b1326;
@@ -151,6 +199,10 @@
 
     .x-button-primary {
         @apply bg-mz-accent-primary text-white hover:bg-mz-accent-hover focus:ring-mz-accent-primary;
+    }
+
+    [data-pos-theme] :is(.x-button-primary, .mz-button-primary) {
+        @apply bg-orange-700 hover:bg-orange-800 focus:ring-orange-700;
     }
 
     .x-button-secondary {

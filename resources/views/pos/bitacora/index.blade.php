@@ -10,7 +10,7 @@
                 <h2 class="text-base font-bold text-mz-text-primary">Bitácora de cortes</h2>
                 <p class="mt-1 text-sm text-mz-text-muted">Consulta snapshots guardados por día y empleado.</p>
             </div>
-            <a href="{{ $pdfUrl }}" class="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-mz-accent-primary px-4 text-xs font-bold text-white shadow-md shadow-mz-accent-primary/20 transition hover:bg-mz-accent-hover active:scale-95">
+            <a href="{{ $pdfUrl }}" class="x-button x-button-primary h-10 rounded-xl px-4 text-xs font-bold shadow-md shadow-mz-accent-primary/20 active:scale-95">
                 <x-icon name="report" class="size-4" />
                 Descargar PDF consolidado
             </a>
@@ -33,11 +33,11 @@
                 </select>
             </div>
             <div class="flex items-center gap-2">
-                <button type="submit" class="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-mz-accent-primary px-5 text-xs font-bold text-white transition hover:bg-mz-accent-hover active:scale-95">
+                <button type="submit" class="x-button x-button-primary h-10 rounded-xl px-5 text-xs font-bold active:scale-95">
                     <x-icon name="search" class="size-4" />
                     Filtrar
                 </button>
-                <a href="{{ route('pos.bitacora.index') }}" class="inline-flex h-10 items-center justify-center rounded-xl border border-mz-border-light bg-mz-bg-surface-2 px-4 text-xs font-bold text-mz-text-secondary transition hover:text-white">
+                <a href="{{ route('pos.bitacora.index') }}" class="x-button x-button-secondary h-10 rounded-xl px-4 text-xs font-bold">
                     Limpiar
                 </a>
             </div>

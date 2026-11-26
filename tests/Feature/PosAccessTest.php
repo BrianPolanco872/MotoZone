@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Product;
 use App\Models\Sale;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
@@ -33,7 +34,7 @@ class PosAccessTest extends TestCase
         $response->assertOk();
         $response->assertViewIs('pos.index');
         $response->assertSee('Punto de venta');
-        $response->assertSee('La venta está vacía');
+        $response->assertSee('El ticket está vacío');
         $response->assertSee('Total');
         $response->assertSee('Cobrar');
         $response->assertDontSee('Devoluciones');
@@ -138,8 +139,9 @@ class PosAccessTest extends TestCase
         $this->assertInstanceOf(DOMElement::class, $viewport);
         $main = $xpath->query('//main')->item(0);
         $this->assertInstanceOf(DOMElement::class, $main);
-        $this->assertStringContainsString('min-h-[calc(100dvh-4rem-1px)]', $main->getAttribute('class'));
-        $this->assertStringContainsString('pb-2', $main->getAttribute('class'));
+        $this->assertStringContainsString('flex-1', $main->getAttribute('class'));
+        $this->assertSame(1, $xpath->query('//main/following-sibling::footer//button[@id="pos-charge"]')->length);
+        $this->assertSame(1, $xpath->query('//html[@data-pos-theme="light"]//header//button[@id="pos-theme-toggle"]')->length);
         $this->assertStringContainsString('flex-1', $viewport->getAttribute('class'));
         $this->assertStringContainsString('height: 0;', $viewport->getAttribute('style'));
         $this->assertStringContainsString('min-height: 388px', $viewport->getAttribute('style'));
@@ -169,9 +171,9 @@ class PosAccessTest extends TestCase
         }
     }
 
-    #[TestWith(['admin.profile.edit'])]
-    #[TestWith(['pos.sales.pending'])]
-    public function test_other_admin_and_pos_screens_keep_sidebar_and_desktop_margin(string $routeName): void
+    #[TestWith(['admin.profile.edit', true])]
+    #[TestWith(['pos.sales.pending', false])]
+    public function test_other_admin_and_pos_screens_keep_sidebar_and_desktop_margin(string $routeName, bool $usesPosTheme): void
     {
         $employee = User::factory()->create()->assignRole('empleado');
         $employee->givePermissionTo('pos.access');
@@ -183,9 +185,34 @@ class PosAccessTest extends TestCase
         $xpath = new DOMXPath($document);
         $this->assertSame(1, $xpath->query('//aside')->length);
         $this->assertSame(1, $xpath->query('//*[contains(concat(" ", normalize-space(@class), " "), " lg:pl-64 ")]')->length);
-        $main = $xpath->query('//main')->item(0);
-        $this->assertInstanceOf(DOMElement::class, $main);
-        $this->assertStringNotContainsString('min-h-[calc(100dvh-4rem-1px)]', $main->getAttribute('class'));
+        $this->assertSame((int) $usesPosTheme, $xpath->query('//html[@data-pos-theme="light"]//header//button[@id="pos-theme-toggle"]')->length);
+    }
+
+    #[TestWith(['pos.cuts.history'])]
+    #[TestWith(['pos.cash.index'])]
+    #[TestWith(['pos.abonos.index'])]
+    #[TestWith(['pos.tickets.edit'])]
+    #[TestWith(['pos.bitacora.index'])]
+    #[TestWith(['admin.users.index'])]
+    #[TestWith(['admin.users.create'])]
+    #[TestWith(['admin.users.edit', 'user'])]
+    #[TestWith(['admin.products.index'])]
+    #[TestWith(['admin.products.create'])]
+    #[TestWith(['admin.products.edit', 'product'])]
+    public function test_selected_modules_offer_the_shared_day_and_night_mode(string $routeName, ?string $parameter = null): void
+    {
+        $admin = User::factory()->create()->assignRole('admin');
+        $parameters = match ($parameter) {
+            'user' => ['user' => User::factory()->create()->assignRole('empleado')],
+            'product' => ['product' => Product::factory()->create()],
+            default => [],
+        };
+
+        $response = $this->actingAs($admin)->get(route($routeName, $parameters));
+
+        $response->assertOk()
+            ->assertSee('data-pos-theme="light"', false)
+            ->assertSee('id="pos-theme-toggle"', false);
     }
 
     public function test_user_without_pos_permission_is_forbidden(): void

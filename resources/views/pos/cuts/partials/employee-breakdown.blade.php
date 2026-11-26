@@ -35,10 +35,10 @@
                         <th scope="col" class="px-4 py-3 text-center">Estado del día</th>
                         <th scope="col" class="px-4 py-3 text-right">Tickets</th>
                         <th scope="col" class="px-4 py-3 text-right font-bold text-mz-text-primary">Ventas del vendedor</th>
-                        <th scope="col" class="px-4 py-3 text-right text-emerald-400">Efectivo cobrado</th>
-                        <th scope="col" class="px-4 py-3 text-right text-cyan-400">Ventas electrónicas</th>
-                        <th scope="col" class="px-4 py-3 text-right text-rose-400">Devoluciones pagadas</th>
-                        <th scope="col" class="px-4 py-3 text-right text-amber-400">Salidas</th>
+                        <th scope="col" class="px-4 py-3 text-right text-mz-success">Efectivo cobrado</th>
+                        <th scope="col" class="px-4 py-3 text-right text-cyan-400 pos-day:text-cyan-800">Ventas electrónicas</th>
+                        <th scope="col" class="px-4 py-3 text-right text-mz-error">Devoluciones pagadas</th>
+                        <th scope="col" class="px-4 py-3 text-right text-mz-warning">Salidas</th>
                         <th scope="col" class="px-4 py-3 text-right font-bold text-mz-accent-primary">En Gaveta</th>
                         <th scope="col" class="px-4 py-3 text-right">Corte</th>
                     </tr>
@@ -66,8 +66,8 @@
                             </td>
                             <td class="px-4 py-3.5 text-center">
                                 @if ($isOnline)
-                                    <span class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                        <span class="size-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                                    <span class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold bg-mz-success/10 text-mz-success border border-mz-success/20">
+                                        <span class="size-1.5 rounded-full bg-mz-success animate-ping"></span>
                                         En línea
                                     </span>
                                 @else
@@ -79,7 +79,7 @@
                             </td>
                             <td class="px-4 py-3.5 text-center">
                                 @if ($isClosed)
-                                    <span class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold bg-zinc-800 text-zinc-300 border border-zinc-700">
+                                    <span class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold bg-mz-bg-surface-2 text-mz-text-secondary border border-mz-border-light">
                                         <x-icon name="lock" class="size-3" />
                                         Cerró su día
                                     </span>
@@ -96,20 +96,20 @@
                             <td class="px-4 py-3.5 text-right font-bold text-mz-text-primary tabular-nums">
                                 {{ $money($row['sales']) }}
                             </td>
-                            <td class="px-4 py-3.5 text-right font-semibold text-emerald-400 tabular-nums">
+                            <td class="px-4 py-3.5 text-right font-semibold text-mz-success tabular-nums">
                                 {{ $money($row['cash']) }}
                             </td>
-                            <td class="px-4 py-3.5 text-right font-semibold text-cyan-400 tabular-nums">
+                            <td class="px-4 py-3.5 text-right font-semibold text-cyan-400 pos-day:text-cyan-800 tabular-nums">
                                 {{ $money($row['other_payments'] ?? 0) }}
                             </td>
-                            <td class="px-4 py-3.5 text-right font-medium text-rose-400 tabular-nums">
+                            <td class="px-4 py-3.5 text-right font-medium text-mz-error tabular-nums">
                                 @if((float)$row['refunds'] > 0)
                                     −{{ $money($row['refunds']) }}
                                 @else
                                     $0.00
                                 @endif
                             </td>
-                            <td class="px-4 py-3.5 text-right font-medium text-amber-400 tabular-nums">
+                            <td class="px-4 py-3.5 text-right font-medium text-mz-warning tabular-nums">
                                 @if((float)$row['cash_out'] > 0)
                                     −{{ $money($row['cash_out']) }}
                                 @else
@@ -125,7 +125,7 @@
                                         Pendiente
                                     </span>
                                 @else
-                                    <span class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                    <span class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold bg-mz-success/10 text-mz-success border border-mz-success/20">
                                         v{{ $row['latest_cut']->version }} · {{ $row['latest_cut']->generated_at?->format('H:i') }}
                                     </span>
                                 @endif
@@ -144,20 +144,20 @@
                         <td class="px-4 py-4 text-right tabular-nums text-base font-extrabold text-mz-text-primary">
                             {{ $money($total['sales'] ?? 0) }}
                         </td>
-                        <td class="px-4 py-4 text-right tabular-nums font-bold text-emerald-400">
+                        <td class="px-4 py-4 text-right tabular-nums font-bold text-mz-success">
                             {{ $money($total['cash'] ?? 0) }}
                         </td>
-                        <td class="px-4 py-4 text-right tabular-nums font-bold text-cyan-400">
+                        <td class="px-4 py-4 text-right tabular-nums font-bold text-cyan-400 pos-day:text-cyan-800">
                             {{ $money($total['other_payments'] ?? 0) }}
                         </td>
-                        <td class="px-4 py-4 text-right tabular-nums font-semibold text-rose-400">
+                        <td class="px-4 py-4 text-right tabular-nums font-semibold text-mz-error">
                             @if((float)($total['refunds'] ?? 0) > 0)
                                 −{{ $money($total['refunds']) }}
                             @else
                                 $0.00
                             @endif
                         </td>
-                        <td class="px-4 py-4 text-right tabular-nums font-semibold text-amber-400">
+                        <td class="px-4 py-4 text-right tabular-nums font-semibold text-mz-warning">
                             @if((float)($total['cash_out'] ?? 0) > 0)
                                 −{{ $money($total['cash_out']) }}
                             @else

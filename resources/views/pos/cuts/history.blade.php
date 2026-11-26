@@ -12,21 +12,21 @@
                     <x-icon name="report" class="size-5" />
                 </div>
                 <div>
-                    <h2 class="text-sm font-bold text-white">Historial de cortes globales</h2>
+                    <h2 class="text-sm font-bold text-mz-text-primary">Historial de cortes globales</h2>
                     <p class="text-xs text-mz-text-muted mt-0.5">Cada corte global guarda el total de todos los empleados de ese día para auditoría y arqueo de caja.</p>
                 </div>
             </div>
 
             <div class="flex flex-wrap items-center gap-2">
-                <a href="{{ route('pos.cuts.index') }}" class="inline-flex h-11 items-center gap-2 rounded-xl bg-mz-accent-primary hover:bg-mz-accent-hover text-white px-4 text-xs font-bold transition-all shadow-md shadow-mz-accent-primary/20 active:scale-95">
+                <a href="{{ route('pos.cuts.index') }}" class="x-button x-button-primary h-11 rounded-xl px-4 text-xs font-bold shadow-md shadow-mz-accent-primary/20 active:scale-95">
                     <x-icon name="report" class="size-4" />
                     Corte actual del día
                 </a>
-                <button type="button" class="inline-flex h-11 items-center gap-2 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 hover:bg-mz-bg-surface-2 px-4 text-xs font-bold text-mz-text-secondary hover:text-white transition-all shadow-xs active:scale-95" onclick="history.back()">
+                <button type="button" class="x-button x-button-secondary h-11 rounded-xl px-4 text-xs font-bold shadow-xs active:scale-95" onclick="history.back()">
                     <x-icon name="arrow-uturn-left" class="size-4" />
                     Regresar atrás
                 </button>
-                <button type="button" id="btn-delete-selected" class="inline-flex h-11 items-center gap-2 rounded-xl border border-red-500 bg-red-500/10 px-4 text-xs font-bold text-red-400 hover:bg-red-500 hover:text-white transition-all shadow-xs active:scale-95 hidden" onclick="deleteSelectedCuts()">
+                <button type="button" id="btn-delete-selected" class="hidden h-11 items-center gap-2 rounded-xl border border-mz-error/40 bg-mz-error/10 px-4 text-xs font-bold text-mz-error shadow-xs transition-colors hover:bg-mz-error/20 not-[.hidden]:inline-flex" onclick="deleteSelectedCuts()">
                     <x-icon name="trash" class="size-4" />
                     Eliminar seleccionados
                 </button>
@@ -41,11 +41,11 @@
             </div>
 
             <div class="flex items-center gap-2">
-                <button type="submit" class="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-mz-accent-primary hover:bg-mz-accent-hover text-white px-5 text-xs font-bold transition-all shadow-md shadow-mz-accent-primary/20 active:scale-95">
+                <button type="submit" class="x-button x-button-primary h-11 rounded-xl px-5 text-xs font-bold shadow-md shadow-mz-accent-primary/20 active:scale-95">
                     <x-icon name="search" class="size-4" />
                     Buscar
                 </button>
-                <a href="{{ route('pos.cuts.history') }}" class="inline-flex h-11 items-center justify-center rounded-xl border border-mz-border-light bg-mz-bg-surface-2 px-4 text-xs font-bold text-mz-text-secondary hover:text-white transition-all active:scale-95">
+                <a href="{{ route('pos.cuts.history') }}" class="x-button x-button-secondary h-11 rounded-xl px-4 text-xs font-bold active:scale-95">
                     Limpiar
                 </a>
             </div>
@@ -85,12 +85,12 @@
                             <td class="px-5 py-3.5 text-center">
                                 <input type="checkbox" class="cut-checkbox w-4 h-4 text-mz-accent-primary rounded border-mz-accent-primary focus:ring-mz-accent-primary" value="{{ $cut->id }}">
                             </td>
-                            <td class="whitespace-nowrap px-5 py-3.5 font-bold text-white text-xs font-mono">{{ $cut->cut_date->format('d/m/Y') }}</td>
+                            <td class="whitespace-nowrap px-5 py-3.5 font-bold text-mz-text-primary text-xs font-mono">{{ $cut->cut_date->format('d/m/Y') }}</td>
                             <td class="whitespace-nowrap px-5 py-3.5 text-center font-mono text-xs font-bold text-mz-accent-primary">v{{ $cut->version }}</td>
                             <td class="whitespace-nowrap px-5 py-3.5 text-xs text-mz-text-muted font-mono">{{ $cut->generated_at->format('d/m/Y H:i') }}</td>
                             <td class="px-5 py-3.5 text-xs text-mz-text-secondary">{{ $cut->generatedBy?->name ?? '—' }}</td>
-                            <td class="whitespace-nowrap px-5 py-3.5 text-right font-display text-sm font-bold tabular-nums text-white">${{ number_format((float) ($totals['totals']['sales'] ?? 0), 2) }}</td>
-                            <td class="whitespace-nowrap px-5 py-3.5 text-right font-display text-sm font-bold tabular-nums text-white">${{ number_format($cashBox, 2) }}</td>
+                            <td class="whitespace-nowrap px-5 py-3.5 text-right font-display text-sm font-bold tabular-nums text-mz-text-primary">${{ number_format((float) ($totals['totals']['sales'] ?? 0), 2) }}</td>
+                            <td class="whitespace-nowrap px-5 py-3.5 text-right font-display text-sm font-bold tabular-nums text-mz-text-primary">${{ number_format($cashBox, 2) }}</td>
                             <td class="whitespace-nowrap px-5 py-3.5 text-right font-display text-sm font-bold tabular-nums {{ $isRec ? 'text-mz-success' : 'text-mz-error' }}">
                                 ${{ number_format(abs($diff), 2) }}
                             </td>
@@ -107,7 +107,7 @@
                                     <button 
                                         type="button" 
                                         onclick="downloadPdf('{{ route('pos.cuts.pdf', ['id' => $cut->id]) }}')"
-                                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-zinc-200 bg-zinc-800 border border-zinc-700 hover:bg-zinc-700 hover:text-white transition-all duration-200">
+                                        class="x-button x-button-secondary rounded-lg px-3 py-1.5 text-xs font-semibold">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                         </svg>
@@ -116,7 +116,7 @@
                                     <button 
                                         type="button" 
                                         onclick="deleteCut('{{ route('pos.cuts.destroy', $cut->id) }}')"
-                                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-red-200 bg-red-900/20 border border-red-900/30 hover:bg-red-900/30 hover:text-red-400 transition-all duration-200">
+                                        class="inline-flex items-center gap-1.5 rounded-lg border border-mz-error/30 bg-mz-error/10 px-3 py-1.5 text-xs font-semibold text-mz-error transition-colors hover:bg-mz-error/20">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                         </svg>
@@ -132,7 +132,7 @@
                                     <x-icon name="report" class="size-7" />
                                 </div>
                                 <p class="mt-3 text-sm font-bold text-mz-text-primary">Todavía no hay versiones de corte guardadas</p>
-                                <a href="{{ route('pos.cuts.index') }}" class="mt-2 inline-flex items-center gap-1 text-xs font-bold text-mz-accent-primary hover:text-mz-accent-hover">
+                                <a href="{{ route('pos.cuts.index') }}" class="mt-2 inline-flex items-center gap-1 text-xs font-bold text-mz-accent-primary hover:underline">
                                     Generar el corte de hoy &rarr;
                                 </a>
                             </td>

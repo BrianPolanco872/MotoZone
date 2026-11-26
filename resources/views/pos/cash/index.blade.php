@@ -45,20 +45,20 @@
 
             {{-- Botones de acción rápida --}}
             <div class="flex flex-wrap items-center gap-2">
-                <a href="{{ route('pos.index') }}" class="inline-flex h-11 items-center gap-2 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 hover:bg-mz-bg-surface-2 px-4 text-xs font-bold text-mz-text-secondary hover:text-white transition-all shadow-xs active:scale-95">
+                <a href="{{ route('pos.index') }}" class="inline-flex h-11 items-center gap-2 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 hover:bg-mz-bg-surface-2 px-4 text-xs font-bold text-mz-text-secondary hover:text-mz-text-primary transition-all shadow-xs active:scale-95">
                     <x-icon name="arrow-uturn-left" class="size-4" />
                     Volver al POS
                 </a>
 
                 @if ($user->can('pos.cut.manage'))
-                    <a href="{{ route('pos.cuts.index') }}" class="inline-flex h-11 items-center gap-2 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 hover:bg-mz-bg-surface-2 px-4 text-xs font-bold text-mz-text-secondary hover:text-white transition-all shadow-xs active:scale-95">
+                    <a href="{{ route('pos.cuts.index') }}" class="inline-flex h-11 items-center gap-2 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 hover:bg-mz-bg-surface-2 px-4 text-xs font-bold text-mz-text-secondary hover:text-mz-text-primary transition-all shadow-xs active:scale-95">
                         <x-icon name="report" class="size-4 text-mz-accent-primary" />
                         Corte del día
                     </a>
                 @endif
 
                 <button type="button" data-panel-toggle="cash-filters" aria-controls="cash-filters" aria-expanded="{{ $filtersActive ? 'true' : 'false' }}"
-                        class="inline-flex h-11 items-center gap-2 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 hover:bg-mz-bg-surface-2 px-4 text-xs font-bold text-mz-text-secondary hover:text-white transition-all shadow-xs active:scale-95">
+                        class="inline-flex h-11 items-center gap-2 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 hover:bg-mz-bg-surface-2 px-4 text-xs font-bold text-mz-text-secondary hover:text-mz-text-primary transition-all shadow-xs active:scale-95">
                     <x-icon name="search" class="size-4" />
                     <span>Filtros</span>
                     @if ($filtersActive)
@@ -120,13 +120,13 @@
                 <input id="cash-search" type="search" name="search" value="{{ $filters['search'] }}" placeholder="Buscar por concepto o motivo..." class="mz-input mt-1.5 h-11 w-full rounded-xl text-sm font-semibold">
             </div>
 
-            <button type="submit" class="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-mz-accent-primary hover:bg-mz-accent-hover text-white px-5 text-xs font-bold transition-all shadow-md shadow-mz-accent-primary/20 active:scale-95">
+            <button type="submit" class="x-button x-button-primary h-11 rounded-xl px-5 text-xs font-bold shadow-md shadow-mz-accent-primary/20 active:scale-95">
                 <x-icon name="search" class="size-4" />
                 Filtrar
             </button>
 
             @if ($filtersActive)
-                <a href="{{ $filtersClearUrl }}" class="inline-flex h-11 items-center justify-center rounded-xl border border-mz-border-light bg-mz-bg-surface-2 px-4 text-xs font-bold text-mz-text-secondary hover:text-white transition-all active:scale-95">
+                <a href="{{ $filtersClearUrl }}" class="inline-flex h-11 items-center justify-center rounded-xl border border-mz-border-light bg-mz-bg-surface-2 px-4 text-xs font-bold text-mz-text-secondary hover:text-mz-text-primary transition-all active:scale-95">
                     Limpiar
                 </a>
             @endif
@@ -143,7 +143,7 @@
                 </div>
                 <div>
                     <div class="flex items-center gap-2">
-                        <h2 class="text-base font-extrabold text-white">Monitor de Cajeros y Ventas en Vivo</h2>
+                        <h2 class="text-base font-extrabold text-mz-text-primary">Monitor de Cajeros y Ventas en Vivo</h2>
                         <span class="inline-flex items-center gap-1 rounded-full bg-mz-success/15 border border-mz-success/30 px-2 py-0.2 text-[10px] font-bold text-mz-success">
                             <span class="relative flex size-1.5">
                                 <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-mz-success opacity-75"></span>
@@ -163,7 +163,7 @@
                     Actualizado {{ now()->format('H:i:s') }}
                 </span>
                 <button type="button" id="cut-board-refresh"
-                        class="inline-flex items-center gap-1.5 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 hover:bg-mz-bg-surface px-3 py-1.5 text-xs font-bold text-mz-text-secondary hover:text-white transition-all shadow-xs active:scale-95"
+                        class="inline-flex items-center gap-1.5 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 hover:bg-mz-bg-surface px-3 py-1.5 text-xs font-bold text-mz-text-secondary hover:text-mz-text-primary transition-all shadow-xs active:scale-95"
                         title="Actualizar datos ahora">
                     <x-icon name="refresh" class="size-3.5 text-mz-accent-primary" />
                     <span>Actualizar</span>
@@ -187,7 +187,7 @@
                 <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                     <div class="flex items-center gap-2">
                         <x-icon name="receipt" class="size-4 text-mz-accent-primary" />
-                        <h2 class="text-sm font-bold text-white">Historial de movimientos
+                        <h2 class="text-sm font-bold text-mz-text-primary">Historial de movimientos
                             <span class="ml-1 text-xs text-mz-text-muted font-normal">{{ $showArchived ? '(solo archivados)' : 'del día' }}</span>
                         </h2>
                     </div>
@@ -235,13 +235,13 @@
                         Solo archivados
                     </label>
 
-                    <button type="submit" class="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-mz-accent-primary hover:bg-mz-accent-hover text-white px-4 text-xs font-bold transition-all shadow-md shadow-mz-accent-primary/20 active:scale-95">
+                    <button type="submit" class="x-button x-button-primary h-10 rounded-xl px-4 text-xs font-bold shadow-md shadow-mz-accent-primary/20 active:scale-95">
                         <x-icon name="search" class="size-4" />
                         Aplicar
                     </button>
 
                     @if ($historyFiltersActive)
-                        <a href="{{ $historyClearUrl }}" class="inline-flex h-10 items-center justify-center rounded-xl border border-mz-border-light bg-mz-bg-surface-2 px-4 text-xs font-bold text-mz-text-secondary hover:text-white transition-all active:scale-95">
+                        <a href="{{ $historyClearUrl }}" class="inline-flex h-10 items-center justify-center rounded-xl border border-mz-border-light bg-mz-bg-surface-2 px-4 text-xs font-bold text-mz-text-secondary hover:text-mz-text-primary transition-all active:scale-95">
                             Limpiar
                         </a>
                     @endif
@@ -280,7 +280,7 @@
                                 <span class="mt-1 block text-[11px] text-mz-text-muted">{{ $movement->categoryLabel() }}</span>
                             </td>
                             <td class="px-4 py-3.5 text-sm text-mz-text-secondary">
-                                <span class="font-medium text-white">{{ $movement->concept ?: '—' }}</span>
+                                <span class="font-medium text-mz-text-primary">{{ $movement->concept ?: '—' }}</span>
                             </td>
                             @if ($canSeeAny)
                                 <td class="whitespace-nowrap px-4 py-3.5 text-sm text-mz-text-secondary font-medium">{{ $movement->user?->name }}</td>
@@ -370,11 +370,11 @@
                         <x-icon name="trash" class="size-5" />
                     </div>
                     <div>
-                        <h2 class="text-base font-bold text-white">Eliminar movimiento</h2>
+                        <h2 class="text-base font-bold text-mz-text-primary">Eliminar movimiento</h2>
                         <p class="text-xs text-mz-text-muted">Esta acción quedará registrada en auditoría</p>
                     </div>
                 </div>
-                <button type="button" class="rounded-xl p-1.5 text-mz-text-muted hover:bg-mz-bg-surface-2 hover:text-white transition-colors" aria-label="Cerrar" onclick="document.getElementById('delete-confirm-dialog').close()">
+                <button type="button" class="rounded-xl p-1.5 text-mz-text-muted hover:bg-mz-bg-surface-2 hover:text-mz-text-primary transition-colors" aria-label="Cerrar" onclick="document.getElementById('delete-confirm-dialog').close()">
                     <x-icon name="x" class="size-5" />
                 </button>
             </div>
@@ -385,16 +385,16 @@
                 <div>
                     <label for="delete-reason" class="block text-xs font-bold uppercase tracking-wider text-mz-text-muted">Motivo de eliminación</label>
                     <textarea id="delete-reason" name="deletion_reason" required rows="3"
-                              class="block w-full rounded-xl border border-mz-border-light bg-mz-bg-primary/90 p-3 text-sm text-white placeholder-mz-text-muted focus:border-mz-accent-primary focus:bg-mz-bg-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/20 transition-all mt-1.5"
+                              class="block w-full rounded-xl border border-mz-border-light bg-mz-bg-primary/90 p-3 text-sm text-mz-text-primary placeholder-mz-text-muted focus:border-mz-accent-primary focus:bg-mz-bg-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/20 transition-all mt-1.5"
                               placeholder="Ej. error en captura de monto, duplicado, ticket cancelado..."></textarea>
                 </div>
             </div>
 
             <div class="flex flex-col-reverse gap-2 border-t border-mz-border-light/70 bg-mz-bg-surface-2/30 px-6 py-4 sm:flex-row sm:justify-end">
-                <button type="button" class="inline-flex items-center justify-center rounded-xl border border-mz-border-light px-4 py-2 text-xs font-bold text-mz-text-secondary hover:bg-mz-bg-surface-2 hover:text-white transition-all active:scale-95" onclick="document.getElementById('delete-confirm-dialog').close()">
+                <button type="button" class="inline-flex items-center justify-center rounded-xl border border-mz-border-light px-4 py-2 text-xs font-bold text-mz-text-secondary hover:bg-mz-bg-surface-2 hover:text-mz-text-primary transition-all active:scale-95" onclick="document.getElementById('delete-confirm-dialog').close()">
                     Cancelar
                 </button>
-                <button type="submit" class="inline-flex items-center justify-center gap-2 rounded-xl bg-mz-error hover:bg-mz-error/90 text-white px-5 py-2 text-xs font-bold shadow-md shadow-mz-error/20 transition-all active:scale-95">
+                <button type="submit" class="inline-flex items-center justify-center gap-2 rounded-xl bg-rose-700 px-5 py-2 text-xs font-bold text-white shadow-md shadow-mz-error/20 transition-colors hover:bg-rose-800 active:scale-95">
                     <x-icon name="trash" class="size-4" />
                     Confirmar eliminación
                 </button>

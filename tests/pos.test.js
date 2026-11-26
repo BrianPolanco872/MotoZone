@@ -8,6 +8,53 @@ import numeral from 'numeral';
 const source = readFileSync(new URL('../resources/js/pos/pos.js', import.meta.url), 'utf8')
     .replace("import numeral from 'numeral';", '');
 
+test('the POS starts each login in day mode and remembers manual changes during the session', () => {
+    const layout = readFileSync(new URL('../resources/views/layouts/admin.blade.php', import.meta.url), 'utf8');
+    const script = layout.match(/<script id="pos-theme-script">([\s\S]*?)<\/script>/)[1];
+    const login = readFileSync(new URL('../resources/views/auth/login.blade.php', import.meta.url), 'utf8');
+    const resetScript = login.match(/<script id="pos-theme-reset">([\s\S]*?)<\/script>/)[1];
+    const saved = new Map();
+    const loadTheme = (sessionStorage) => {
+        const toggle = Object.assign(new EventTarget(), {
+            setAttribute(name, value) { this[name] = value; },
+        });
+        const root = { dataset: { posTheme: 'light' } };
+        const document = Object.assign(new EventTarget(), {
+            documentElement: root,
+            getElementById: () => toggle,
+        });
+        vm.runInNewContext(script, { document, sessionStorage, localStorage: { getItem: () => 'dark' } });
+        document.dispatchEvent(new Event('DOMContentLoaded'));
+        return { root, toggle };
+    };
+    const storage = {
+        getItem: (key) => saved.get(key),
+        setItem: (key, value) => saved.set(key, value),
+        removeItem: (key) => saved.delete(key),
+    };
+
+    const day = loadTheme(storage);
+    assert.equal(day.root.dataset.posTheme, 'light');
+    assert.equal(day.toggle['aria-pressed'], 'false');
+    day.toggle.dispatchEvent(new Event('click'));
+    assert.equal(day.root.dataset.posTheme, 'dark');
+    assert.equal(day.toggle['aria-pressed'], 'true');
+
+    const night = loadTheme(storage);
+    assert.equal(night.root.dataset.posTheme, 'dark');
+    assert.equal(night.toggle['aria-pressed'], 'true');
+    night.toggle.dispatchEvent(new Event('click'));
+    assert.equal(loadTheme(storage).root.dataset.posTheme, 'light');
+
+    night.toggle.dispatchEvent(new Event('click'));
+    vm.runInNewContext(resetScript, { sessionStorage: storage });
+    assert.equal(loadTheme(storage).root.dataset.posTheme, 'light');
+
+    const blocked = loadTheme(undefined);
+    blocked.toggle.dispatchEvent(new Event('click'));
+    assert.equal(blocked.root.dataset.posTheme, 'dark');
+});
+
 async function pos({ pending = null, ticket = null, lastSale = null, daySales = [], canPrint = true, popupBlocked = false, confirm = true,
     products = [{ id: 7, name: 'Aceite', price: 100, wholesale_price: 80, tax_rate: 0, track_inventory: false, sale_mode: 'unit' }] } = {}) {
     const elements = new Map();

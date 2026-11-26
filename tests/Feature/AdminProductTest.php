@@ -1036,20 +1036,15 @@ class AdminProductTest extends TestCase
         $this->assertDatabaseCount('stock_movements', 0);
     }
 
-    public function test_product_list_offers_mass_price_update_but_not_inventory_cleanup(): void
+    public function test_product_list_offers_csv_import_without_a_bulk_price_or_inventory_cleanup_form(): void
     {
-        $response = $this->actingAs($this->admin())->get(route('admin.products.index'))
+        $this->actingAs($this->admin())->get(route('admin.products.index'))
             ->assertOk()
+            ->assertSeeText('Importar productos CSV')
+            ->assertDontSeeText('Herramientas de inventario y precios')
+            ->assertDontSee(route('admin.products.massUpdate'))
             ->assertDontSeeText('Limpiar inventario')
             ->assertDontSee(route('admin.products.clearInventory'));
-
-        $document = new DOMDocument;
-        $document->loadHTML('<?xml encoding="UTF-8">'.$response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
-        $xpath = new DOMXPath($document);
-        $button = $xpath->query('//form[@action="'.route('admin.products.massUpdate').'"]//button[@type="submit"]')->item(0);
-
-        $this->assertInstanceOf(DOMElement::class, $button);
-        $this->assertSame('Aplicar a todos', trim($button->textContent));
     }
 
     public function test_stock_history_migration_upgrades_an_existing_movement_without_changing_its_data(): void
@@ -1281,7 +1276,7 @@ class AdminProductTest extends TestCase
             ->assertSee('Selecciona un archivo CSV para importar.');
         $document = new DOMDocument;
         $document->loadHTML('<?xml encoding="UTF-8">'.$response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
-        $input = (new DOMXPath($document))->query('//input[@name="import_file"]')->item(0);
+        $input = (new DOMXPath($document))->query('//details[@open]//input[@name="import_file"]')->item(0);
 
         $this->assertInstanceOf(DOMElement::class, $input);
         $this->assertTrue($input->hasAttribute('required'));

@@ -256,7 +256,7 @@
                 <tr class="border-b border-mz-border-light">
                     <td class="py-3">Pagos de clientes (total)</td>
                     <td class="py-3 text-right">
-                        <a href="#" class="text-mz-accent-primary underline hover:text-mz-accent-hover cursor-pointer"
+                         <a href="#" class="text-mz-accent-primary underline hover:text-mz-text-primary cursor-pointer"
                            onclick="event.preventDefault(); openCustomerPaymentsModal('{{ $date->toDateString() }}', {{ $employee?->id ?? 'null' }});">
                             ${{ number_format((float) ($totals['customer_payments'] ?? 0), 2) }}
                         </a>
@@ -277,7 +277,7 @@
                 <tr class="font-bold text-mz-text-primary border-t border-mz-border">
                     <td class="py-3">Pagos a proveedores / salidas</td>
                     <td class="py-3 text-right">
-                        <a href="#" class="text-mz-accent-primary underline hover:text-mz-accent-hover cursor-pointer"
+                         <a href="#" class="text-mz-accent-primary underline hover:text-mz-text-primary cursor-pointer"
                            onclick="event.preventDefault(); openSupplierPaymentsModal('{{ $date->toDateString() }}', {{ $employee?->id ?? 'null' }});">
                             ${{ number_format((float) ($co['total'] ?? 0), 2) }}
                         </a>

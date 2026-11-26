@@ -27,64 +27,34 @@
         </div>
     </div>
 
-    {{-- Panel de herramientas avanzadas --}}
-    <section class="mt-4 mz-card mz-card-padded overflow-hidden">
-        <div class="border-b border-mz-border-light px-4 py-3">
-            <h2 class="text-sm font-semibold text-mz-text-primary">Herramientas de inventario y precios</h2>
-            <p class="text-xs text-mz-text-muted">Actualización masiva, importación de datos y gestión global de existencias.</p>
-        </div>
+    <details class="mt-4 mz-card px-4 py-3" @if ($errors->has('import_file')) open @endif>
+        <summary class="cursor-pointer text-sm font-semibold text-mz-text-primary">Importar productos CSV</summary>
 
-        <div class="p-4 sm:p-5 space-y-4">
-            {{-- Formulario de Precios Masivos --}}
-            <form action="{{ route('admin.products.massUpdate') }}" method="POST" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto_auto] lg:items-end">
-                @csrf
-                <div>
-                    <label for="mass-tax-rate" class="block text-xs font-semibold uppercase tracking-[0.12em] text-mz-text-muted">IVA global (%)</label>
-                    <input id="mass-tax-rate" name="tax_rate" type="number" step="0.01" min="0" max="100" value="16" class="mz-input mt-1.5 h-10 w-full">
-                </div>
-                <div>
-                    <label for="mass-margin" class="block text-xs font-semibold uppercase tracking-[0.12em] text-mz-text-muted">Ganancia global (%)</label>
-                    <input id="mass-margin" name="margin_percentage" type="number" step="0.01" min="0" value="30" class="mz-input mt-1.5 h-10 w-full">
-                </div>
-                <div>
-                    <button type="submit" class="x-button x-button-primary size-sm w-full">
-                        <x-icon name="refresh-cw" class="size-4" />
-                        Aplicar a todos
-                    </button>
-                </div>
-            </form>
-
-            <hr class="border-mz-border-light">
-
-            {{-- Importación CSV --}}
-            <form action="{{ route('admin.products.import') }}" method="POST" enctype="multipart/form-data" class="flex flex-col gap-3 lg:flex-row lg:items-end">
-                @csrf
-                <div class="flex-1">
-                    <label for="import_file" class="block text-xs font-semibold uppercase tracking-[0.12em] text-mz-text-muted">Importar productos CSV</label>
-                    <div class="mt-1.5 flex items-center gap-2">
-                        <input id="import_file" type="file" name="import_file" accept=".csv,.txt" required aria-describedby="import-help{{ $errors->has('import_file') ? ' import-errors' : '' }}" aria-invalid="{{ $errors->has('import_file') ? 'true' : 'false' }}" class="block w-full text-sm text-mz-text-secondary file:mr-3 file:h-10 file:rounded-md file:border-0 file:bg-mz-bg-surface-2 file:px-3 file:text-sm file:font-medium file:text-mz-text-secondary hover:file:bg-mz-bg-surface-2">
-                    </div>
-                    <p id="import-help" class="mt-1 text-xs text-mz-text-muted">CSV UTF-8 o TXT separado por comas o punto y coma. Para productos nuevos: codigo (o sku), nombre y precio_venta. Opcionales: marca, descripcion, stock (existencias), min_stock (mínimo de alerta), codigo_barras, codigo_barras_2, costo, precio_mayoreo e iva. El código original se conserva como SKU y se guarda como código de barras principal si no indicas codigo_barras. El segundo código solo se guarda si tú lo proporcionas. Al reimportar, solo se completan códigos principales vacíos: no se modifican precios, existencias, segundo código ni otros datos. Si ya hay código principal, el producto se omite. Haz un respaldo antes de reparar mediante reimportación. Puedes completar marca y descripción después. Usa punto decimal, sin símbolos de moneda.</p>
-                    @if ($errors->has('import_file'))
-                        <x-alert variant="error" id="import-errors" class="mt-2">
-                            <p>No se importó ningún producto. Corrige el archivo y vuelve a seleccionarlo.</p>
-                            <ul>
-                                @foreach ($errors->get('import_file') as $message)
-                                    <li>{{ $message }}</li>
-                                @endforeach
-                            </ul>
-                        </x-alert>
-                    @endif
-                </div>
-                <div>
-                    <button type="submit" class="x-button x-button-primary size-sm">
-                        <x-icon name="upload" class="size-4" />
-                        Importar archivo
-                    </button>
-                </div>
-            </form>
-        </div>
-    </section>
+        <form action="{{ route('admin.products.import') }}" method="POST" enctype="multipart/form-data" class="mt-4 flex flex-col gap-3 lg:flex-row lg:items-end">
+            @csrf
+            <div class="flex-1">
+                <label for="import_file" class="block text-xs font-semibold uppercase tracking-[0.12em] text-mz-text-muted">Archivo CSV o TXT</label>
+                <input id="import_file" type="file" name="import_file" accept=".csv,.txt" required aria-describedby="import-help{{ $errors->has('import_file') ? ' import-errors' : '' }}" aria-invalid="{{ $errors->has('import_file') ? 'true' : 'false' }}" class="mt-1.5 block w-full text-sm text-mz-text-secondary file:mr-3 file:h-10 file:rounded-md file:border-0 file:bg-mz-bg-surface-2 file:px-3 file:text-sm file:font-medium file:text-mz-text-secondary hover:file:bg-mz-bg-surface-2">
+                <p id="import-help" class="mt-1 text-xs text-mz-text-muted">CSV UTF-8 o TXT separado por comas o punto y coma. Para productos nuevos: codigo (o sku), nombre y precio_venta. Opcionales: marca, descripcion, stock (existencias), min_stock (mínimo de alerta), codigo_barras, codigo_barras_2, costo, precio_mayoreo e iva. El código original se conserva como SKU y se guarda como código de barras principal si no indicas codigo_barras. El segundo código solo se guarda si tú lo proporcionas. Al reimportar, solo se completan códigos principales vacíos: no se modifican precios, existencias, segundo código ni otros datos. Si ya hay código principal, el producto se omite. Haz un respaldo antes de reparar mediante reimportación. Puedes completar marca y descripción después. Usa punto decimal, sin símbolos de moneda.</p>
+                @if ($errors->has('import_file'))
+                    <x-alert variant="error" id="import-errors" class="mt-2">
+                        <p>No se importó ningún producto. Corrige el archivo y vuelve a seleccionarlo.</p>
+                        <ul>
+                            @foreach ($errors->get('import_file') as $message)
+                                <li>{{ $message }}</li>
+                            @endforeach
+                        </ul>
+                    </x-alert>
+                @endif
+            </div>
+            <div>
+                <button type="submit" class="x-button x-button-primary size-sm">
+                    <x-icon name="upload" class="size-4" />
+                    Importar archivo
+                </button>
+            </div>
+        </form>
+    </details>
 
     {{-- Filtros --}}
     <form action="{{ route('admin.products.index') }}" method="GET" class="mt-4 mz-card mz-card-padded overflow-hidden">
@@ -201,7 +171,7 @@
                         <tr>
                             <td colspan="6" class="px-4 py-14 text-center">
                                 <p class="text-sm font-medium text-mz-text-secondary">Sin productos con esos filtros</p>
-                                <a href="{{ route('admin.products.index') }}" class="mt-2 inline-block text-xs font-medium text-mz-accent-primary hover:text-mz-accent-hover">Limpiar filtros</a>
+                                <a href="{{ route('admin.products.index') }}" class="mt-2 inline-block text-xs font-medium text-mz-accent-primary hover:underline">Limpiar filtros</a>
                             </td>
                         </tr>
                     @endforelse

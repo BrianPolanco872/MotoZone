@@ -47,7 +47,7 @@
                 <div class="rounded-xl border border-mz-border-light/60 bg-mz-bg-surface p-4 shadow-sm flex items-center justify-between">
                     <div>
                         <p class="text-[11px] font-bold uppercase tracking-wider text-mz-text-muted">Ventas Consolidadas</p>
-                        <p class="mt-1 font-display text-2xl font-black tabular-nums text-white">{{ $money($sumSales) }}</p>
+                        <p class="mt-1 font-display text-2xl font-black tabular-nums text-mz-text-primary">{{ $money($sumSales) }}</p>
                         <p class="text-[11px] text-mz-text-muted mt-0.5">{{ $sumTickets }} ticket{{ $sumTickets === 1 ? '' : 's' }} cobrado{{ $sumTickets === 1 ? '' : 's' }}</p>
                     </div>
                     <div class="flex size-10 items-center justify-center rounded-xl bg-mz-accent-primary/10 text-mz-accent-primary border border-mz-accent-primary/20">
@@ -92,7 +92,7 @@
                                 {{ $onlineCount }} en línea
                             </span>
                             @if ($closedCount > 0)
-                                <span class="inline-flex items-center gap-1 rounded-full bg-purple-500/15 border border-purple-500/30 px-2 py-0.5 text-xs font-bold text-purple-300">
+                                <span class="inline-flex items-center gap-1 rounded-full bg-purple-500/15 border border-purple-500/30 px-2 py-0.5 text-xs font-bold text-purple-800 pos-night:text-purple-300">
                                     <x-icon name="check" class="size-3" />
                                     {{ $closedCount }} cerró día
                                 </span>
@@ -145,7 +145,7 @@
                                     {{ strtoupper(mb_substr($row['name'] ?? '?', 0, 2)) }}
                                 </span>
                                 <div class="min-w-0">
-                                    <p class="truncate text-sm font-bold text-white group-hover:text-mz-accent-primary transition-colors">
+                                    <p class="truncate text-sm font-bold text-mz-text-primary group-hover:text-mz-accent-primary transition-colors">
                                         {{ $row['name'] }}
                                         @if ($isSelf)
                                             <span class="ml-1 rounded bg-mz-accent-primary/15 px-1.5 py-0.2 text-[10px] font-semibold text-mz-accent-primary border border-mz-accent-primary/20">Tú</span>
@@ -181,23 +181,23 @@
                         <td class="whitespace-nowrap px-4 py-3.5">
                             @if ($isClosed)
                                 <div>
-                                    <span class="inline-flex items-center gap-1.5 rounded-full bg-purple-500/15 border border-purple-500/30 px-3 py-1 text-xs font-extrabold text-purple-300">
+                                    <span class="inline-flex items-center gap-1.5 rounded-full bg-purple-500/15 border border-purple-500/30 px-3 py-1 text-xs font-extrabold text-purple-800 pos-night:text-purple-300">
                                         <x-icon name="lock" class="size-3.5" />
                                         Cerró su día
                                     </span>
                                     @if (! empty($row['closed_at']) || $latestCut?->closed_at)
-                                        <span class="mt-1 block text-[11px] text-purple-300/80 font-mono">
+                                        <span class="mt-1 block text-[11px] text-mz-text-muted font-mono">
                                             A las {{ \Carbon\Carbon::parse($row['closed_at'] ?? $latestCut->closed_at)->format('H:i') }}
                                         </span>
                                     @endif
                                 </div>
                             @elseif ($latestCut)
                                 <div>
-                                    <span class="inline-flex items-center gap-1 rounded-full bg-blue-500/15 border border-blue-500/30 px-3 py-1 text-xs font-bold text-blue-300">
+                                    <span class="inline-flex items-center gap-1 rounded-full bg-blue-500/15 border border-blue-500/30 px-3 py-1 text-xs font-bold text-blue-800 pos-night:text-blue-300">
                                         <x-icon name="clock" class="size-3.5" />
                                         Corte v{{ $latestCut->version }} (Abierto)
                                     </span>
-                                    <span class="mt-1 block text-[10px] text-blue-300/80">Turno sigue activo</span>
+                                    <span class="mt-1 block text-[10px] text-mz-text-muted">Turno sigue activo</span>
                                 </div>
                             @else
                                 <span class="inline-flex items-center gap-1.5 rounded-full bg-mz-warning/15 border border-mz-warning/30 px-3 py-1 text-xs font-bold text-mz-warning">
@@ -208,12 +208,12 @@
                         </td>
 
                         {{-- Tickets --}}
-                        <td class="whitespace-nowrap px-4 py-3.5 text-center font-display text-base font-bold tabular-nums text-white">
+                        <td class="whitespace-nowrap px-4 py-3.5 text-center font-display text-base font-bold tabular-nums text-mz-text-primary">
                             {{ (int) $row['tickets'] }}
                         </td>
 
                         {{-- Ventas Totales --}}
-                        <td class="whitespace-nowrap px-4 py-3.5 text-right font-display text-base font-extrabold tabular-nums text-white">
+                        <td class="whitespace-nowrap px-4 py-3.5 text-right font-display text-base font-extrabold tabular-nums text-mz-text-primary">
                             {{ $money($row['sales']) }}
                         </td>
 
@@ -251,7 +251,7 @@
                                 <a href="{{ $canSeeAny
                                         ? route('pos.cuts.index', ['date' => $date, 'employee' => $row['id']])
                                         : route('pos.cuts.mine') }}"
-                                   class="inline-flex items-center gap-1.5 rounded-lg border border-mz-border-light bg-mz-bg-surface-2/80 hover:bg-mz-bg-surface px-3 py-1.5 text-xs font-bold text-mz-text-secondary hover:text-white transition-all shadow-xs active:scale-95">
+                                   class="inline-flex items-center gap-1.5 rounded-lg border border-mz-border-light bg-mz-bg-surface-2/80 hover:bg-mz-bg-surface px-3 py-1.5 text-xs font-bold text-mz-text-secondary hover:text-mz-text-primary transition-all shadow-xs active:scale-95">
                                     <x-icon name="report" class="size-3.5 text-mz-accent-primary" />
                                     Ver corte
                                 </a>
@@ -264,26 +264,26 @@
             {{-- FILA DE TOTALES CONSOLIDADOS (Todos sumados) --}}
             @if ($canSeeAny)
                 <tfoot class="border-t-2 border-mz-accent-primary/40 bg-gradient-to-r from-mz-bg-surface via-mz-bg-surface-2/60 to-mz-bg-surface">
-                    <tr class="text-xs font-bold text-white">
+                    <tr class="text-xs font-bold text-mz-text-primary">
                         <td class="px-5 py-4" colspan="3">
                             <div class="flex items-center gap-2">
                                 <span class="flex size-7 items-center justify-center rounded-lg bg-mz-accent-primary/20 text-mz-accent-primary">
                                     <x-icon name="chart" class="size-4" />
                                 </span>
                                 <div>
-                                    <span class="text-sm font-black uppercase tracking-wider text-white">TOTAL CONSOLIDADO DEL NEGOCIO</span>
+                                    <span class="text-sm font-black uppercase tracking-wider">TOTAL CONSOLIDADO DEL NEGOCIO</span>
                                     <span class="block text-[11px] text-mz-text-muted font-normal">Suma de todos los cajeros activos y cerrados de hoy</span>
                                 </div>
                             </div>
                         </td>
-                        <td class="px-4 py-4 text-center font-display text-base font-black tabular-nums text-white">{{ $sumTickets }}</td>
-                        <td class="px-4 py-4 text-right font-display text-lg font-black tabular-nums text-white">{{ $money($sumSales) }}</td>
+                        <td class="px-4 py-4 text-center font-display text-base font-black tabular-nums">{{ $sumTickets }}</td>
+                        <td class="px-4 py-4 text-right font-display text-lg font-black tabular-nums">{{ $money($sumSales) }}</td>
                         <td class="px-4 py-4 text-right font-display text-base font-bold tabular-nums text-mz-success">{{ $money($sumShouldHave) }}</td>
                         <td class="px-4 py-4 text-right font-display text-base font-semibold tabular-nums text-mz-text-muted">{{ $money($sumOtherPayments) }}</td>
                         <td class="px-4 py-4 text-right text-[11px] text-mz-text-muted font-medium">Arqueo global</td>
                         @if ($canViewCut)
                             <td class="px-4 py-4 text-right">
-                                <a href="{{ route('pos.cuts.index', ['date' => $date]) }}" class="inline-flex items-center gap-1 rounded-lg bg-mz-accent-primary hover:bg-mz-accent-hover text-white px-3 py-1.5 text-xs font-bold shadow-md shadow-mz-accent-primary/20 transition-all active:scale-95">
+                                <a href="{{ route('pos.cuts.index', ['date' => $date]) }}" class="x-button x-button-primary rounded-lg px-3 py-1.5 text-xs font-bold shadow-md shadow-mz-accent-primary/20 active:scale-95">
                                     Corte global
                                 </a>
                             </td>

@@ -19,11 +19,15 @@
 
     <style>
         @include('pos.tickets.receipt-styles')
-        .ticket-settings-tab[aria-selected="true"] { color: #f97316; border-color: #f97316; background: rgb(249 115 22 / 8%); }
+        .ticket-settings-tab[aria-selected="true"] {
+            color: var(--color-mz-accent-primary);
+            border-color: currentColor;
+            background: color-mix(in srgb, currentColor 8%, transparent);
+        }
         [data-ticket-settings] [hidden] { display: none !important; }
         #ticket-print-root { display: none; }
         @media print {
-            html, body.ticket-example-print { height: auto; margin: 0; padding: 0; background: white; }
+            html[data-pos-theme], body.ticket-example-print { height: auto; margin: 0; padding: 0; background: white; color-scheme: light; }
             body.ticket-example-print > :not(#ticket-print-root) { display: none !important; }
             #ticket-print-root { display: block; }
         }

@@ -156,7 +156,7 @@
                     @empty
                         <div class="px-5 py-10 text-center">
                             <p class="text-sm font-medium text-mz-text-secondary">Aún no hay empleados registrados</p>
-                            <a href="{{ route('admin.users.index') }}" class="mt-2 inline-block text-xs font-medium text-mz-accent-primary hover:text-mz-accent-hover">Agregar el primer empleado</a>
+                            <a href="{{ route('admin.users.index') }}" class="mt-2 inline-block text-xs font-medium text-mz-accent-primary hover:underline">Agregar el primer empleado</a>
                         </div>
                     @endforelse
                 </div>

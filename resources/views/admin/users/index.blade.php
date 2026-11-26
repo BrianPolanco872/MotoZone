@@ -134,7 +134,7 @@
                         <tr class="align-top">
                             <td class="px-5 py-3">
                                 <div class="flex items-center gap-3">
-                                    <span class="flex size-9 shrink-0 items-center justify-center rounded-full bg-mz-accent-primary text-xs font-semibold text-white">
+                                    <span class="flex size-9 shrink-0 items-center justify-center rounded-full bg-orange-700 text-xs font-semibold text-white">
                                         {{ strtoupper(str($user->name)->explode(' ')->filter()->take(2)->map(fn ($part) => mb_substr($part, 0, 1))->implode('')) }}
                                     </span>
                                     <div class="min-w-0">
@@ -153,7 +153,7 @@
                                     <span @class([
                                         'inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset',
                                         'bg-mz-accent-primary/10 text-mz-accent-primary ring-mz-accent-primary/20' => $role->name === 'admin',
-                                        'bg-sky-500/10 text-sky-400 ring-sky-500/20' => $role->name !== 'admin',
+                                        'bg-sky-500/10 text-sky-800 ring-sky-500/20 pos-night:text-sky-300' => $role->name !== 'admin',
                                     ])>{{ ucfirst($role->name) }}</span>
                                 @empty
                                     <span class="text-xs text-mz-text-muted">Sin rol</span>

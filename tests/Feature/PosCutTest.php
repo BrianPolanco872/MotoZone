@@ -139,6 +139,7 @@ class PosCutTest extends TestCase
         $response->assertOk();
         $response->assertSee('$350.00'); // Ventas totales
         $response->assertSee('$500.00'); // Dinero inicial
+        $response->assertSee('data-pos-theme="light"', false)->assertSee('id="pos-theme-toggle"', false);
     }
 
     public function test_cut_can_be_generated_and_persisted(): void
@@ -176,6 +177,7 @@ class PosCutTest extends TestCase
         $response->assertOk();
         $response->assertSee('Mi corte');
         $response->assertSee('$100.00');
+        $response->assertSee('data-pos-theme="light"', false)->assertSee('id="pos-theme-toggle"', false);
     }
 
     public function test_product_with_cost_is_reflected_in_cut_profit(): void
@@ -480,6 +482,7 @@ class PosCutTest extends TestCase
         $response = $this->actingAs($employee)->get(route('pos.cuts.print'));
 
         $response->assertOk()->assertSee('Histórico')->assertSee('<td class="num">7</td>', false)->assertSee('$700.00');
+        $response->assertDontSee('data-pos-theme=', false);
         $this->assertSame(7, $response->viewData('totals')['departments'][0]['quantity']);
     }
 

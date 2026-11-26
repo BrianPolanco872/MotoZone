@@ -4,6 +4,13 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Iniciar sesión · {{ config('app.name') }}</title>
+    <script id="pos-theme-reset">
+        try {
+            sessionStorage.removeItem('motozone.pos.theme');
+        } catch {
+            // Si el almacenamiento no está disponible, el panel arranca en modo Día.
+        }
+    </script>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="flex min-h-full items-center justify-center bg-ink-950 px-4 py-12 font-sans antialiased">

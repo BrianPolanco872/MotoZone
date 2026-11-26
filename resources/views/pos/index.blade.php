@@ -15,18 +15,18 @@
 
     {{-- Banner de Iniciar Día si falta registrar fondo de caja --}}
     @if ($showStartDay)
-        <div class="mt-4 rounded-2xl border border-mz-accent-primary/40 bg-gradient-to-r from-mz-accent-primary/15 via-mz-bg-surface to-mz-bg-surface p-4 sm:p-5 shadow-xl shadow-black/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div class="mb-4 flex flex-col justify-between gap-4 rounded-xl border border-amber-300 bg-linear-to-r from-amber-50 via-orange-50/60 to-mz-bg-surface p-4 shadow-sm sm:flex-row sm:items-center pos-night:border-amber-900/70 pos-night:from-[#231811] pos-night:via-[#1c1613] pos-night:to-[#171311]">
             <div class="flex items-center gap-3.5">
-                <div class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-mz-accent-primary/20 text-mz-accent-primary border border-mz-accent-primary/30">
+                <div class="flex size-10 shrink-0 items-center justify-center rounded-lg border border-amber-500/30 bg-amber-500/15 text-mz-warning">
                     <x-icon name="banknotes" class="size-6" />
                 </div>
                 <div>
-                    <h3 class="text-sm font-bold text-white">Fondo de caja inicial pendiente</h3>
-                    <p class="text-xs text-mz-text-muted mt-0.5">Para iniciar tu turno y cobrar tickets, registra el efectivo disponible con el que abre la caja.</p>
+                    <h3 class="text-sm font-bold text-mz-text-primary">Fondo de caja inicial pendiente</h3>
+                    <p class="mt-0.5 text-xs text-mz-text-secondary">Para iniciar tu turno y cobrar tickets, registra el efectivo disponible con el que abre la caja.</p>
                 </div>
             </div>
             <button type="button"
-                    class="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-mz-accent-primary to-mz-accent-hover hover:brightness-110 text-white px-5 py-2.5 text-xs font-extrabold shadow-lg shadow-mz-accent-primary/25 transition-all transform active:scale-95 whitespace-nowrap"
+                    class="inline-flex items-center justify-center gap-2 rounded-lg bg-orange-700 px-4 py-2.5 text-xs font-bold whitespace-nowrap text-white shadow-sm shadow-orange-500/25 transition-colors hover:bg-orange-800"
                     onclick="document.getElementById('start-day-dialog').showModal()">
                 <x-icon name="banknotes" class="size-4" />
                 Iniciar turno y caja
@@ -35,7 +35,7 @@
     @endif
 
     @if (! $permissions['sell'])
-        <div class="mt-4">
+        <div class="mb-4">
             <x-alert variant="warning">
                 <p class="font-semibold">Tu cuenta puede abrir el punto de venta, pero no cobrar.</p>
                 <p class="mt-1 text-xs">Pide al administrador el permiso <strong>«Cobrar y registrar ventas»</strong>.</p>
@@ -44,27 +44,27 @@
     @endif
 
     {{-- Contenedor dinámico de error --}}
-    <div id="pos-error" class="mt-4 hidden rounded-2xl border border-mz-error/30 bg-gradient-to-r from-mz-error/15 via-mz-bg-surface to-mz-bg-surface px-5 py-4 text-sm text-mz-error shadow-xl shadow-black/20" role="alert"></div>
+    <div id="pos-error" class="mb-4 hidden rounded-xl border border-mz-error/30 bg-mz-error/10 px-5 py-4 text-sm text-mz-error" role="alert"></div>
 
     {{-- Botón para reabrir corte cuando se cerró --}}
-    <button id="pos-reopen-day" class="mt-3 inline-flex items-center gap-2 rounded-xl border border-mz-warning/40 bg-mz-warning/10 px-4 py-2.5 text-xs font-bold text-mz-warning hover:bg-mz-warning/20 transition-all shadow-sm {{ ($permissions['own_day_closed'] ?? false) ? '' : 'hidden' }}" type="button">
+    <button id="pos-reopen-day" class="mb-4 inline-flex items-center gap-2 self-start rounded-xl border border-mz-warning/40 bg-mz-warning/10 px-4 py-2.5 text-xs font-bold text-mz-warning hover:bg-mz-warning/20 transition-all shadow-sm {{ ($permissions['own_day_closed'] ?? false) ? '' : 'hidden' }}" type="button">
         <x-icon name="refresh" class="size-4 shrink-0" />
         Reabrir mi corte del día
     </button>
 
-    {{-- Búsqueda, detalle del carrito y liquidación a ancho completo --}}
-    <div class="mt-4 flex min-h-0 flex-1 flex-col">
-        <div class="min-w-0 flex min-h-0 flex-1 flex-col gap-4">
+    {{-- Búsqueda y detalle del carrito --}}
+    <div class="flex min-h-0 flex-1 flex-col">
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
             <!-- Barra de Búsqueda y Escáner -->
-            <section class="relative z-30 rounded-2xl border border-mz-border bg-mz-bg-surface p-4 sm:p-5 shadow-xl shadow-black/20">
+            <section class="relative z-30 rounded-xl border border-mz-border bg-mz-bg-surface p-4 shadow-sm">
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
                     <div class="flex-1 min-w-0">
                         <div class="flex items-center justify-between mb-1.5">
-                            <label for="pos-search" class="block text-xs font-bold uppercase tracking-[0.1em] text-mz-text-muted flex items-center gap-1.5">
+                            <label for="pos-search" class="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-mz-text-primary">
                                 <x-icon name="search" class="size-3.5 text-mz-accent-primary" />
                                 Escanear o buscar producto
                             </label>
-                            <span class="text-[11px] text-mz-text-muted hidden sm:inline">Pistola lectora o teclado</span>
+                            <span class="hidden text-[11px] font-semibold text-mz-text-secondary lg:inline">Pistola lectora o teclado</span>
                         </div>
                         <div class="relative">
                             <div class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-mz-accent-primary">
@@ -74,7 +74,7 @@
                             </div>
                             <input id="pos-search" type="search" autocomplete="off"
                                    placeholder="Escanea código de barras 1 o 2, o busca por nombre o marca..."
-                                   class="block w-full rounded-xl border border-mz-border-light bg-mz-bg-primary/90 pl-11 pr-24 py-3 text-sm text-mz-text-primary placeholder-mz-text-muted focus:border-mz-accent-primary focus:bg-mz-bg-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/25 transition-all shadow-inner">
+                                   class="block w-full rounded-lg border border-mz-border-light bg-mz-bg-primary/70 py-2.5 pr-4 pl-11 text-sm text-mz-text-primary placeholder-mz-text-muted focus:border-mz-accent-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/25 transition-colors sm:pr-24">
                             <div class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-1">
                                 <kbd class="rounded bg-mz-bg-surface-2 px-2 py-0.5 text-[10px] font-mono text-mz-text-muted border border-mz-border-light">Enter ↵</kbd>
                             </div>
@@ -82,14 +82,14 @@
                     </div>
 
                     <div class="flex items-center gap-2">
-                        <label class="inline-flex h-11 cursor-pointer select-none items-center gap-2 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 px-3.5 text-xs font-semibold text-mz-text-secondary hover:border-mz-accent-primary/40 transition-all">
-                            <input id="pos-wholesale" type="checkbox" @disabled(! $permissions['wholesale']) class="size-4 rounded border-mz-border-light text-mz-accent-primary focus:ring-mz-accent-primary bg-mz-bg-surface">
+                        <label class="inline-flex h-10 cursor-pointer select-none items-center gap-2 rounded-lg border border-mz-border-light bg-mz-bg-surface px-3 text-xs font-bold text-mz-text-primary transition-colors hover:bg-mz-bg-surface-2 pos-night:bg-mz-bg-surface-2 pos-night:hover:bg-mz-border-light">
+                            <input id="pos-wholesale" type="checkbox" @disabled(! $permissions['wholesale']) class="size-4 accent-orange-700">
                             <span>Mayoreo</span>
                         </label>
 
                         <button type="button"
                                 onclick="document.getElementById('custom-product-dialog').showModal()"
-                                class="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 hover:bg-mz-bg-surface-2 px-3.5 text-xs font-bold text-mz-text-primary hover:text-white hover:border-mz-accent-primary/40 transition-all whitespace-nowrap active:scale-95">
+                                class="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-mz-border-light bg-mz-bg-surface px-3 text-xs font-bold whitespace-nowrap text-mz-text-primary transition-colors hover:bg-mz-bg-surface-2 pos-night:bg-mz-bg-surface-2 pos-night:hover:bg-mz-border-light">
                             <x-icon name="plus" class="size-3.5 text-mz-accent-primary" />
                             <span>Artículo libre</span>
                         </button>
@@ -97,7 +97,7 @@
                 </div>
 
                 {{-- Resultados desplegables de búsqueda --}}
-                <div id="pos-results" class="pos-scrollbar absolute inset-x-0 top-full mt-2 hidden max-h-[50dvh] overflow-auto rounded-xl border border-mz-border-light bg-mz-bg-surface shadow-2xl shadow-black/80"></div>
+                <div id="pos-results" class="pos-scrollbar absolute inset-x-0 top-full mt-2 hidden max-h-[50dvh] overflow-auto rounded-xl border border-mz-border-light bg-mz-bg-surface shadow-xl pos-night:shadow-black/60"></div>
             </section>
 
             {{-- Banner venta pendiente --}}
@@ -108,11 +108,11 @@
                             <x-icon name="pause" class="size-4" />
                         </div>
                         <div>
-                            <p class="font-bold text-white text-sm">Cobrando ticket pendiente</p>
-                            <p class="text-xs text-mz-warning/90 mt-0.5">Los precios y cantidades ya están guardados para esta venta.</p>
+                            <p class="text-sm font-bold text-mz-text-primary">Cobrando ticket pendiente</p>
+                            <p class="mt-0.5 text-xs text-mz-warning">Los precios y cantidades ya están guardados para esta venta.</p>
                         </div>
                     </div>
-                    <button type="button" id="pos-new-sale" class="inline-flex items-center gap-1.5 rounded-xl border border-mz-border-light bg-mz-bg-surface-2 px-3.5 py-2 text-xs font-bold text-white hover:bg-mz-bg-surface hover:border-mz-accent-primary/40 transition-all active:scale-95">
+                    <button type="button" id="pos-new-sale" class="inline-flex items-center gap-1.5 rounded-xl border border-mz-border-light bg-mz-bg-surface-2 px-3.5 py-2 text-xs font-bold text-mz-text-primary hover:bg-mz-bg-surface hover:border-mz-accent-primary/40 transition-all active:scale-95">
                         <x-icon name="plus" class="size-3.5" />
                         Nueva venta
                     </button>
@@ -120,50 +120,50 @@
             </div>
 
             <!-- Tabla de Detalle del Carrito -->
-            <section class="rounded-2xl border border-mz-border bg-mz-bg-surface shadow-xl shadow-black/20 overflow-hidden flex min-h-0 flex-1 flex-col">
-                <div class="flex items-center justify-between border-b border-mz-border px-5 py-3.5 bg-mz-bg-surface-2/20">
+            <section class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-mz-border bg-mz-bg-surface shadow-sm">
+                <div class="flex flex-wrap items-center justify-between gap-3 border-b border-mz-border px-4 py-3">
                     <div class="flex items-center gap-2.5">
                         <div class="flex size-7 items-center justify-center rounded-lg bg-mz-accent-primary/10 text-mz-accent-primary border border-mz-accent-primary/20">
                             <x-icon name="cart" class="size-4" />
                         </div>
                         <div>
-                            <h2 class="text-sm font-bold text-mz-text-primary leading-none">Detalle de la venta</h2>
+                            <h2 class="text-xs font-bold tracking-wider text-mz-text-primary uppercase">Detalle de la venta</h2>
                             <p class="text-[11px] text-mz-text-muted mt-0.5">Artículos agregados al ticket actual</p>
                         </div>
                     </div>
-                    <div class="flex items-center gap-2">
+                    <div class="flex flex-wrap items-center gap-2">
                         @if ($permissions['cash'])
                             <button type="button" data-cash-open="in"
-                                    class="inline-flex items-center gap-1.5 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/70 px-3 py-2 text-xs font-semibold text-mz-text-secondary transition-all hover:border-mz-success/50 hover:bg-mz-success/10 hover:text-mz-success shadow-xs active:scale-95">
+                                    class="inline-flex items-center gap-1.5 rounded-md border border-mz-success/30 bg-mz-success/10 px-3 py-1.5 text-xs font-bold text-mz-success transition-colors hover:bg-mz-success/20">
                                 <x-icon name="arrow-down" class="size-3.5 text-mz-success" />
                                 <span>Entrada</span>
-                                <kbd class="hidden md:inline rounded bg-black/40 px-1.5 py-0.2 text-[10px] font-mono text-mz-text-muted">F7</kbd>
+                                <kbd class="hidden rounded bg-mz-success/15 px-1 py-0.5 font-mono text-[10px] md:inline">F7</kbd>
                             </button>
                             <button type="button" data-cash-open="out"
-                                    class="inline-flex items-center gap-1.5 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/70 px-3 py-2 text-xs font-semibold text-mz-text-secondary transition-all hover:border-mz-error/50 hover:bg-mz-error/10 hover:text-mz-error shadow-xs active:scale-95">
+                                    class="inline-flex items-center gap-1.5 rounded-md border border-mz-error/30 bg-mz-error/10 px-3 py-1.5 text-xs font-bold text-mz-error transition-colors hover:bg-mz-error/20">
                                 <x-icon name="arrow-up" class="size-3.5 text-mz-error" />
                                 <span>Salida</span>
-                                <kbd class="hidden md:inline rounded bg-black/40 px-1.5 py-0.2 text-[10px] font-mono text-mz-text-muted">F8</kbd>
+                                <kbd class="hidden rounded bg-mz-error/15 px-1 py-0.5 font-mono text-[10px] md:inline">F8</kbd>
                             </button>
                         @endif
-                        <span id="pos-items-count" class="rounded-full bg-mz-accent-primary/10 border border-mz-accent-primary/25 px-3 py-1 text-xs font-bold text-mz-accent-primary tabular-nums">0 renglones</span>
+                        <span id="pos-items-count" class="rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 font-mono text-xs font-bold text-mz-warning">0 renglones</span>
                     </div>
                 </div>
 
                 <div class="pos-scrollbar min-h-0 flex-1" style="height: 0; min-height: 388px; overflow: auto;">
                     <table id="pos-cart-table" class="min-w-full divide-y divide-mz-border text-sm">
-                        <thead class="sticky top-0 z-10 bg-mz-bg-surface-2" style="height: 48px; white-space: nowrap;">
-                            <tr class="text-left text-xs uppercase tracking-wider text-mz-text-muted">
-                                <th scope="col" class="px-4 py-3 font-semibold">Foto</th>
-                                <th scope="col" class="px-4 py-3 font-semibold">Código</th>
-                                <th scope="col" class="px-4 py-3 font-semibold">Producto</th>
-                                <th scope="col" class="px-4 py-3 font-semibold">Categoría</th>
-                                <th scope="col" class="px-4 py-3 text-right font-semibold">Precio unitario</th>
-                                <th scope="col" class="px-4 py-3 text-center font-semibold">Cantidad</th>
-                                <th scope="col" class="px-4 py-3 text-right font-semibold">Importe</th>
-                                <th scope="col" class="px-4 py-3 text-right font-semibold">Existencia en tienda</th>
-                                <th scope="col" class="px-4 py-3 text-right font-semibold">Existencia en bodega</th>
-                                <th id="pos-cart-store2-heading" scope="col" class="px-4 py-3 text-right font-semibold" hidden>Existencia Tienda 2</th>
+                        <thead class="sticky top-0 z-10 h-12 bg-mz-bg-surface-2 pos-night:bg-slate-900">
+                            <tr class="text-left text-[11px] tracking-wide text-mz-text-primary uppercase [&>th]:font-extrabold">
+                                <th scope="col" class="px-4 py-3">Foto</th>
+                                <th scope="col" class="px-4 py-3">Código</th>
+                                <th scope="col" class="px-4 py-3">Producto</th>
+                                <th scope="col" class="px-4 py-3">Categoría</th>
+                                <th scope="col" class="px-4 py-3 text-right">Precio unitario</th>
+                                <th scope="col" class="px-4 py-3 text-center">Cantidad</th>
+                                <th scope="col" class="px-4 py-3 text-right">Importe</th>
+                                <th scope="col" class="px-4 py-3 text-right">Existencia en tienda</th>
+                                <th scope="col" class="px-4 py-3 text-right">Existencia en bodega</th>
+                                <th id="pos-cart-store2-heading" scope="col" class="px-4 py-3 text-right" hidden>Existencia Tienda 2</th>
                                 <th scope="col" class="px-4 py-3 text-center"><span class="sr-only">Quitar</span></th>
                             </tr>
                         </thead>
@@ -173,8 +173,8 @@
                         <tbody id="pos-empty">
                             <tr>
                                 <td id="pos-empty-cell" colspan="10" class="px-5 py-6 text-center h-full" style="vertical-align: middle; box-sizing: border-box;">
-                                    <div class="mx-auto flex size-16 items-center justify-center rounded-2xl bg-mz-bg-surface-2/80 border border-mz-border-light text-mz-accent-primary shadow-inner">
-                                        <x-icon name="cart" class="size-8 text-mz-accent-primary/80" />
+                                    <div class="mx-auto flex size-16 items-center justify-center rounded-2xl bg-orange-500/10 text-mz-accent-primary ring-8 ring-orange-500/5">
+                                        <x-icon name="cart" class="size-8" />
                                     </div>
                                     <p class="mt-4 text-base font-bold text-mz-text-primary">El ticket está vacío</p>
                                     <p class="mt-1 text-xs text-mz-text-muted max-w-sm mx-auto">Escanea el código de barras con la lectora o busca un producto en la barra superior para comenzar a cobrar.</p>
@@ -189,74 +189,12 @@
                     </table>
                 </div>
             </section>
-
-            <!-- Totales Financieros y Liquidación -->
-            <section class="rounded-2xl border border-mz-border bg-mz-bg-surface p-2 shadow-xl shadow-black/20 shrink-0">
-                <!-- Indicador de última venta realizada -->
-                <div id="last-sale-indicator" class="hidden items-center justify-between mb-2 rounded-xl border border-mz-success/30 bg-mz-success/10 px-3 py-2 text-xs text-mz-success shadow-sm">
-                    <div class="flex items-center gap-2.5">
-                        <div class="flex size-6 items-center justify-center rounded-full bg-mz-success text-white">
-                            <x-icon name="check" class="size-4" />
-                        </div>
-                        <span>Última venta cobrada: Folio <span id="last-sale-folio" class="font-bold text-white font-mono"></span></span>
-                    </div>
-                    @if ($permissions['tickets_own'])
-                        <span class="text-xs text-mz-text-muted hidden sm:inline">Listo para imprimir ticket</span>
-                    @endif
-                    <div class="mt-2 flex w-full flex-wrap gap-x-4 gap-y-1 border-t border-mz-success/20 pt-2 font-semibold text-mz-text-secondary">
-                        <span>Pago con: <span id="last-sale-paid" class="font-mono text-white">—</span></span>
-                        <span>Cambio: <span id="last-sale-change" class="font-mono text-white">—</span></span>
-                    </div>
-                </div>
-
-                <div class="flex flex-wrap items-center justify-between gap-2">
-                    <!-- Total compacto -->
-                    <div class="relative overflow-hidden rounded-xl border border-mz-accent-primary/40 bg-gradient-to-br from-mz-accent-primary/20 via-mz-accent-primary/10 to-mz-bg-surface px-3 py-1.5 shadow-lg shadow-mz-accent-primary/10 flex items-center justify-between gap-3 min-w-64">
-                        <div class="flex items-center gap-2">
-                            <span class="text-[10px] font-black uppercase tracking-widest text-mz-accent-primary">TOTAL A COBRAR</span>
-                            <span class="rounded-full bg-mz-accent-primary/20 border border-mz-accent-primary/30 px-2 py-0.5 font-mono text-[10px] font-bold text-mz-accent-primary">{{ $currency }}</span>
-                        </div>
-                        <p id="pos-total" class="font-display text-lg sm:text-xl font-black tabular-nums text-white tracking-tight leading-none">$0.00</p>
-                    </div>
-
-                    <!-- Botonera de Cobro y Acciones -->
-                    <div class="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
-                        <button type="button" id="pos-clear" class="inline-flex items-center justify-center gap-2 rounded-xl border border-transparent px-3 py-2 text-xs font-semibold text-mz-text-muted hover:border-mz-error/40 hover:bg-mz-error/10 hover:text-mz-error transition-all active:scale-95">
-                            <x-icon name="trash" class="size-4" />
-                            Eliminar venta
-                        </button>
-                        <div class="flex items-center gap-1.5">
-                            <button type="button" id="pos-pending" @disabled(! $permissions['sell']) class="inline-flex items-center justify-center gap-2 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 hover:bg-mz-bg-surface-2 px-4 py-2 text-xs font-bold text-mz-text-secondary hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed active:scale-95">
-                                <x-icon name="pause" class="size-4 text-mz-warning" />
-                                <span>Dejar pendiente</span>
-                                <kbd class="hidden md:inline rounded bg-black/40 px-1.5 py-0.2 text-[10px] font-mono text-mz-text-muted">F6</kbd>
-                            </button>
-                            <button type="button" id="pos-pending-list" aria-label="Ver tickets pendientes" title="Ver tickets pendientes" class="inline-flex size-9 shrink-0 items-center justify-center rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 text-mz-text-secondary transition-all hover:border-mz-warning/50 hover:text-mz-warning active:scale-95">
-                                <x-icon name="report" class="size-4" />
-                                <span id="pos-pending-count" class="hidden -ml-1 rounded-full bg-mz-warning px-1.5 text-[10px] font-bold text-mz-bg-primary">0</span>
-                            </button>
-                        </div>
-                        <button type="button" id="pos-print-ticket" disabled class="inline-flex items-center justify-center gap-2 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 hover:bg-mz-bg-surface-2 px-4 py-2 text-xs font-bold text-mz-text-secondary hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed active:scale-95">
-                            <x-icon name="printer" class="size-4 text-mz-accent-primary" />
-                            Reimprimir último ticket
-                        </button>
-                        <button type="button" id="pos-day-sales" class="inline-flex items-center justify-center gap-2 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 hover:bg-mz-bg-surface-2 px-4 py-2 text-xs font-bold text-mz-text-secondary hover:text-white transition-all active:scale-95">
-                            <x-icon name="report" class="size-4 text-mz-accent-primary" />
-                            Ventas del día y devoluciones
-                        </button>
-                        <button type="button" id="pos-charge" @disabled(! $permissions['sell']) class="inline-flex items-center justify-center gap-2.5 rounded-xl bg-gradient-to-r from-mz-accent-primary to-mz-accent-hover hover:brightness-110 px-6 py-2.5 text-sm font-extrabold text-white shadow-xl shadow-mz-accent-primary/25 transition-all transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
-                            <x-icon name="banknotes" class="size-5" />
-                            <span>Cobrar venta</span>
-                        </button>
-                    </div>
-                </div>
-            </section>
         </div>
     </div>
 
     <dialog id="product-image-dialog" aria-labelledby="product-image-title" class="w-[calc(100%-2rem)] max-w-5xl max-h-[95dvh] overflow-auto rounded-2xl border border-mz-border-light bg-mz-bg-surface p-0 shadow-2xl shadow-black/95 backdrop:bg-black/75" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); box-sizing: border-box;">
         <div class="flex items-center justify-between gap-3 border-b border-mz-border-light bg-mz-bg-surface-2/40 px-5 py-4">
-            <h2 id="product-image-title" class="min-w-0 break-words text-base font-bold text-white">Imagen del producto</h2>
+            <h2 id="product-image-title" class="min-w-0 break-words text-base font-bold text-mz-text-primary">Imagen del producto</h2>
             <button type="button" id="product-image-close" data-close-dialog="product-image-dialog" aria-label="Cerrar imagen" class="inline-flex size-9 shrink-0 items-center justify-center rounded-xl border border-mz-border-light text-mz-text-secondary transition-colors hover:border-mz-error/50 hover:bg-mz-error/10 hover:text-mz-error" title="Cerrar imagen">
                 <x-icon name="x" class="size-5" />
             </button>
@@ -276,11 +214,11 @@
                     <x-icon name="banknotes" class="size-5" />
                 </div>
                 <div>
-                    <h2 class="text-base font-bold text-white">Cobrar venta</h2>
+                    <h2 class="text-base font-bold text-mz-text-primary">Cobrar venta</h2>
                     <p class="text-xs text-mz-text-muted">Selecciona método de pago e ingresa el importe</p>
                 </div>
             </div>
-            <button type="button" data-close-dialog="payment-dialog" class="rounded-xl p-1.5 text-mz-text-muted hover:bg-mz-bg-surface-2 hover:text-white transition-colors" aria-label="Cerrar">
+            <button type="button" data-close-dialog="payment-dialog" class="rounded-xl p-1.5 text-mz-text-muted hover:bg-mz-bg-surface-2 hover:text-mz-text-primary transition-colors" aria-label="Cerrar">
                 <x-icon name="x" class="size-5" />
             </button>
         </div>
@@ -300,7 +238,7 @@
             <!-- Total a cobrar -->
             <div class="rounded-2xl border border-mz-accent-primary/40 bg-gradient-to-br from-mz-accent-primary/20 via-mz-accent-primary/10 to-transparent p-4 text-center shadow-inner">
                 <p class="text-xs font-bold uppercase tracking-widest text-mz-accent-primary">Total a liquidar</p>
-                <p id="payment-total" class="mt-1 font-display text-4xl font-black tabular-nums text-white">$0.00</p>
+                <p id="payment-total" class="mt-1 font-display text-4xl font-black tabular-nums text-mz-text-primary">$0.00</p>
             </div>
 
             <!-- Pago con / Monto recibido -->
@@ -309,28 +247,28 @@
                 <div class="relative">
                     <span class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-bold text-mz-text-muted">$</span>
                     <input id="payment-amount" type="number" step="0.01" min="0" inputmode="decimal"
-                           class="block w-full rounded-xl border border-mz-border-light bg-mz-bg-primary/90 pl-9 pr-4 py-3 text-right text-3xl font-extrabold tabular-nums text-white placeholder-mz-text-muted focus:border-mz-accent-primary focus:bg-mz-bg-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/25 transition-all shadow-inner"
+                           class="block w-full rounded-xl border border-mz-border-light bg-mz-bg-primary/90 pl-9 pr-4 py-3 text-right text-3xl font-extrabold tabular-nums text-mz-text-primary placeholder-mz-text-muted focus:border-mz-accent-primary focus:bg-mz-bg-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/25 transition-all shadow-inner"
                            placeholder="0.00">
                 </div>
 
                 <!-- Botones rápidos de denominaciones -->
                 <div class="flex flex-wrap gap-1.5 pt-1">
-                    <button type="button" data-amount-exact class="inline-flex items-center rounded-lg border border-mz-accent-primary/40 bg-mz-accent-primary/15 hover:bg-mz-accent-primary hover:text-white px-3 py-1.5 text-xs font-bold text-mz-accent-primary transition-all active:scale-95">
+                    <button type="button" data-amount-exact class="inline-flex items-center rounded-lg border border-mz-accent-primary/40 bg-mz-accent-primary/10 hover:bg-orange-700 hover:text-white px-3 py-1.5 text-xs font-bold text-mz-accent-primary transition-all active:scale-95">
                         Exacto
                     </button>
-                    <button type="button" data-amount="50" class="inline-flex items-center rounded-lg border border-mz-border-light bg-mz-bg-surface-2 hover:border-mz-accent-primary/50 hover:bg-mz-bg-surface hover:text-white px-3 py-1.5 text-xs font-mono font-semibold text-mz-text-secondary transition-all active:scale-95">
+                    <button type="button" data-amount="50" class="inline-flex items-center rounded-lg border border-mz-border-light bg-mz-bg-surface-2 hover:border-mz-accent-primary/50 hover:bg-mz-bg-surface hover:text-mz-text-primary px-3 py-1.5 text-xs font-mono font-semibold text-mz-text-secondary transition-all active:scale-95">
                         $50
                     </button>
-                    <button type="button" data-amount="100" class="inline-flex items-center rounded-lg border border-mz-border-light bg-mz-bg-surface-2 hover:border-mz-accent-primary/50 hover:bg-mz-bg-surface hover:text-white px-3 py-1.5 text-xs font-mono font-semibold text-mz-text-secondary transition-all active:scale-95">
+                    <button type="button" data-amount="100" class="inline-flex items-center rounded-lg border border-mz-border-light bg-mz-bg-surface-2 hover:border-mz-accent-primary/50 hover:bg-mz-bg-surface hover:text-mz-text-primary px-3 py-1.5 text-xs font-mono font-semibold text-mz-text-secondary transition-all active:scale-95">
                         $100
                     </button>
-                    <button type="button" data-amount="200" class="inline-flex items-center rounded-lg border border-mz-border-light bg-mz-bg-surface-2 hover:border-mz-accent-primary/50 hover:bg-mz-bg-surface hover:text-white px-3 py-1.5 text-xs font-mono font-semibold text-mz-text-secondary transition-all active:scale-95">
+                    <button type="button" data-amount="200" class="inline-flex items-center rounded-lg border border-mz-border-light bg-mz-bg-surface-2 hover:border-mz-accent-primary/50 hover:bg-mz-bg-surface hover:text-mz-text-primary px-3 py-1.5 text-xs font-mono font-semibold text-mz-text-secondary transition-all active:scale-95">
                         $200
                     </button>
-                    <button type="button" data-amount="500" class="inline-flex items-center rounded-lg border border-mz-border-light bg-mz-bg-surface-2 hover:border-mz-accent-primary/50 hover:bg-mz-bg-surface hover:text-white px-3 py-1.5 text-xs font-mono font-semibold text-mz-text-secondary transition-all active:scale-95">
+                    <button type="button" data-amount="500" class="inline-flex items-center rounded-lg border border-mz-border-light bg-mz-bg-surface-2 hover:border-mz-accent-primary/50 hover:bg-mz-bg-surface hover:text-mz-text-primary px-3 py-1.5 text-xs font-mono font-semibold text-mz-text-secondary transition-all active:scale-95">
                         $500
                     </button>
-                    <button type="button" data-amount="1000" class="inline-flex items-center rounded-lg border border-mz-border-light bg-mz-bg-surface-2 hover:border-mz-accent-primary/50 hover:bg-mz-bg-surface hover:text-white px-3 py-1.5 text-xs font-mono font-semibold text-mz-text-secondary transition-all active:scale-95">
+                    <button type="button" data-amount="1000" class="inline-flex items-center rounded-lg border border-mz-border-light bg-mz-bg-surface-2 hover:border-mz-accent-primary/50 hover:bg-mz-bg-surface hover:text-mz-text-primary px-3 py-1.5 text-xs font-mono font-semibold text-mz-text-secondary transition-all active:scale-95">
                         $1,000
                     </button>
                 </div>
@@ -350,10 +288,10 @@
 
         <!-- Footer del Modal -->
         <div class="flex flex-col-reverse gap-2 border-t border-mz-border-light/70 bg-mz-bg-surface-2/30 px-6 py-4 sm:flex-row sm:justify-end">
-            <button type="button" data-close-dialog="payment-dialog" class="inline-flex items-center justify-center rounded-xl border border-mz-border-light px-4 py-2.5 text-xs font-bold text-mz-text-secondary hover:bg-mz-bg-surface-2 hover:text-white transition-all active:scale-95">
+            <button type="button" data-close-dialog="payment-dialog" class="inline-flex items-center justify-center rounded-xl border border-mz-border-light px-4 py-2.5 text-xs font-bold text-mz-text-secondary hover:bg-mz-bg-surface-2 hover:text-mz-text-primary transition-all active:scale-95">
                 Cancelar
             </button>
-            <button type="button" id="payment-confirm" class="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-mz-success to-emerald-600 hover:brightness-110 px-6 py-2.5 text-xs font-extrabold text-white shadow-lg shadow-mz-success/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed active:scale-95">
+            <button type="button" id="payment-confirm" class="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 px-6 py-2.5 text-xs font-extrabold text-white shadow-lg shadow-emerald-600/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed active:scale-95">
                 <x-icon name="check" class="size-4" />
                 Confirmar cobro
             </button>
@@ -374,11 +312,11 @@
                             <x-icon name="banknotes" class="size-5" />
                         </div>
                         <div>
-                            <h2 id="cash-title" class="text-base font-bold text-white">Entrada de efectivo</h2>
+                            <h2 id="cash-title" class="text-base font-bold text-mz-text-primary">Entrada de efectivo</h2>
                             <p class="text-xs text-mz-text-muted">Quedará registrado con tu usuario y la fecha actual.</p>
                         </div>
                     </div>
-                    <button type="button" data-close-dialog="cash-dialog" class="rounded-xl p-1.5 text-mz-text-muted hover:bg-mz-bg-surface-2 hover:text-white transition-colors" aria-label="Cerrar">
+                    <button type="button" data-close-dialog="cash-dialog" class="rounded-xl p-1.5 text-mz-text-muted hover:bg-mz-bg-surface-2 hover:text-mz-text-primary transition-colors" aria-label="Cerrar">
                         <x-icon name="x" class="size-5" />
                     </button>
                 </div>
@@ -389,7 +327,7 @@
                         <div class="relative mt-1.5">
                             <span class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-lg font-bold text-mz-text-muted">$</span>
                             <input id="cash-amount" name="amount" type="text" inputmode="decimal" step="0.01" min="0.01" required
-                                   class="block w-full rounded-xl border border-mz-border-light bg-mz-bg-primary/90 pl-8 pr-4 py-2.5 text-right text-xl font-bold tabular-nums text-white placeholder-mz-text-muted focus:border-mz-accent-primary focus:bg-mz-bg-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/25 transition-all"
+                                   class="block w-full rounded-xl border border-mz-border-light bg-mz-bg-primary/90 pl-8 pr-4 py-2.5 text-right text-xl font-bold tabular-nums text-mz-text-primary placeholder-mz-text-muted focus:border-mz-accent-primary focus:bg-mz-bg-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/25 transition-all"
                                    placeholder="0.00">
                         </div>
                     </div>
@@ -397,7 +335,7 @@
                     <div>
                         <label for="cash-concept" class="block text-xs font-bold uppercase tracking-wider text-mz-text-muted">Concepto / Motivo</label>
                         <textarea id="cash-concept" name="concept" rows="3" maxlength="255" required
-                                  class="block w-full rounded-xl border border-mz-border-light bg-mz-bg-primary/90 px-3.5 py-2.5 text-sm text-white placeholder-mz-text-muted focus:border-mz-accent-primary focus:bg-mz-bg-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/25 transition-all"
+                                  class="block w-full rounded-xl border border-mz-border-light bg-mz-bg-primary/90 px-3.5 py-2.5 text-sm text-mz-text-primary placeholder-mz-text-muted focus:border-mz-accent-primary focus:bg-mz-bg-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/25 transition-all"
                                   placeholder="Describe brevemente la razón del movimiento de efectivo..."></textarea>
                     </div>
 
@@ -405,10 +343,10 @@
                 </div>
 
                 <div class="flex flex-col-reverse gap-2 border-t border-mz-border-light/70 bg-mz-bg-surface-2/30 px-6 py-4 sm:flex-row sm:justify-end">
-                    <button type="button" data-close-dialog="cash-dialog" class="inline-flex items-center justify-center rounded-xl border border-mz-border-light px-4 py-2.5 text-xs font-bold text-mz-text-secondary hover:bg-mz-bg-surface-2 hover:text-white transition-all active:scale-95">
+                    <button type="button" data-close-dialog="cash-dialog" class="inline-flex items-center justify-center rounded-xl border border-mz-border-light px-4 py-2.5 text-xs font-bold text-mz-text-secondary hover:bg-mz-bg-surface-2 hover:text-mz-text-primary transition-all active:scale-95">
                         Cancelar
                     </button>
-                    <button type="submit" class="inline-flex items-center justify-center gap-2 rounded-xl bg-mz-accent-primary hover:bg-mz-accent-hover text-white px-5 py-2.5 text-xs font-bold shadow-md shadow-mz-accent-primary/20 transition-all active:scale-95">
+                    <button type="submit" class="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-700 hover:bg-orange-800 text-white px-5 py-2.5 text-xs font-bold shadow-md shadow-mz-accent-primary/20 transition-all active:scale-95">
                         <x-icon name="check" class="size-4" />
                         Guardar movimiento
                     </button>
@@ -432,11 +370,11 @@
                             <x-icon name="banknotes" class="size-5" />
                         </div>
                         <div>
-                            <h2 class="text-base font-bold text-white">Iniciar día y turno</h2>
+                            <h2 class="text-base font-bold text-mz-text-primary">Iniciar día y turno</h2>
                             <p class="text-xs text-mz-text-muted">Apertura con fondo de caja inicial</p>
                         </div>
                     </div>
-                    <button type="button" class="rounded-xl p-1.5 text-mz-text-muted hover:bg-mz-bg-surface-2 hover:text-white transition-colors" onclick="document.getElementById('start-day-dialog').close()" aria-label="Cerrar">
+                    <button type="button" class="rounded-xl p-1.5 text-mz-text-muted hover:bg-mz-bg-surface-2 hover:text-mz-text-primary transition-colors" onclick="document.getElementById('start-day-dialog').close()" aria-label="Cerrar">
                         <x-icon name="x" class="size-5" />
                     </button>
                 </div>
@@ -447,7 +385,7 @@
                         <div class="relative mt-1.5">
                             <span class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-xl font-bold text-mz-text-muted">$</span>
                             <input id="start-day-amount" name="amount" type="text" inputmode="decimal" step="0.01" min="0.01" required
-                                   class="block w-full rounded-xl border border-mz-border-light bg-mz-bg-primary/90 pl-8 pr-4 py-3 text-right text-2xl font-bold tabular-nums text-white placeholder-mz-text-muted focus:border-mz-accent-primary focus:bg-mz-bg-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/25 transition-all shadow-inner"
+                                   class="block w-full rounded-xl border border-mz-border-light bg-mz-bg-primary/90 pl-8 pr-4 py-3 text-right text-2xl font-bold tabular-nums text-mz-text-primary placeholder-mz-text-muted focus:border-mz-accent-primary focus:bg-mz-bg-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/25 transition-all shadow-inner"
                                    placeholder="0.00">
                         </div>
                         <p class="mt-1.5 text-xs text-mz-text-muted">Ingresa las monedas y billetes disponibles en tu gaveta al comenzar.</p>
@@ -457,10 +395,10 @@
                 </div>
 
                 <div class="flex flex-col-reverse gap-2 border-t border-mz-border-light/70 bg-mz-bg-surface-2/30 px-6 py-4 sm:flex-row sm:justify-end">
-                    <button type="button" class="inline-flex items-center justify-center rounded-xl border border-mz-border-light px-4 py-2.5 text-xs font-bold text-mz-text-secondary hover:bg-mz-bg-surface-2 hover:text-white transition-all active:scale-95" onclick="document.getElementById('start-day-dialog').close()">
+                    <button type="button" class="inline-flex items-center justify-center rounded-xl border border-mz-border-light px-4 py-2.5 text-xs font-bold text-mz-text-secondary hover:bg-mz-bg-surface-2 hover:text-mz-text-primary transition-all active:scale-95" onclick="document.getElementById('start-day-dialog').close()">
                         Cancelar
                     </button>
-                    <button type="submit" class="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-mz-accent-primary to-mz-accent-hover hover:brightness-110 text-white px-5 py-2.5 text-xs font-bold shadow-md shadow-mz-accent-primary/20 transition-all active:scale-95">
+                    <button type="submit" class="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-700 hover:bg-orange-800 text-white px-5 py-2.5 text-xs font-bold shadow-md shadow-mz-accent-primary/20 transition-all active:scale-95">
                         <x-icon name="check" class="size-4" />
                         Guardar e iniciar día
                     </button>
@@ -479,11 +417,11 @@
                         <x-icon name="tag" class="size-4.5" />
                     </span>
                     <div>
-                        <h2 id="bulk-title" class="text-base font-bold text-white tracking-tight">¿Cantidad del Producto?</h2>
+                        <h2 id="bulk-title" class="text-base font-bold text-mz-text-primary tracking-tight">¿Cantidad del Producto?</h2>
                         <p class="text-[11px] text-mz-text-muted">Modalidad: A granel</p>
                     </div>
                 </div>
-                <button type="button" id="bulk-close-btn" class="rounded-xl p-1.5 text-mz-text-muted transition-colors hover:bg-mz-bg-surface-2 hover:text-white" aria-label="Cerrar (Esc)">
+                <button type="button" id="bulk-close-btn" class="rounded-xl p-1.5 text-mz-text-muted transition-colors hover:bg-mz-bg-surface-2 hover:text-mz-text-primary" aria-label="Cerrar (Esc)">
                     <x-icon name="x" class="size-5" />
                 </button>
             </div>
@@ -492,13 +430,13 @@
             <div class="space-y-4 p-6">
                 <!-- Tarjeta del Producto y Precio Unitario -->
                 <div class="rounded-xl border border-mz-border-light/70 bg-mz-bg-primary/70 p-3.5 space-y-1.5">
-                    <p id="bulk-name" class="font-bold text-sm text-white leading-snug break-words"></p>
+                    <p id="bulk-name" class="font-bold text-sm text-mz-text-primary leading-snug break-words"></p>
                     <div class="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-mz-border-light/40">
                         <span class="text-xs font-semibold text-mz-accent-primary font-mono">
-                            Precio Unitario = <strong id="bulk-price" class="text-white font-bold font-mono">$0.00</strong>
+                            Precio Unitario = <strong id="bulk-price" class="text-mz-text-primary font-bold font-mono">$0.00</strong>
                         </span>
                         <span id="bulk-stock-info" class="text-[11px] text-mz-text-muted">
-                            Existencia: <strong id="bulk-available-stock" class="text-slate-300 font-mono">0</strong>
+                            Existencia: <strong id="bulk-available-stock" class="text-mz-text-secondary font-mono">0</strong>
                         </span>
                     </div>
                 </div>
@@ -511,7 +449,7 @@
                     </label>
                     <div class="relative">
                         <input id="bulk-quantity" type="number" inputmode="decimal" step="0.001" min="0.001" max="9999" value="1.00"
-                               class="block w-full rounded-xl border border-mz-border-light bg-mz-bg-primary px-3.5 py-2.5 text-right text-xl font-bold tabular-nums font-mono text-white placeholder-mz-text-muted focus:border-mz-accent-primary focus:bg-mz-bg-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/25 transition-all shadow-inner"
+                               class="block w-full rounded-xl border border-mz-border-light bg-mz-bg-primary px-3.5 py-2.5 text-right text-xl font-bold tabular-nums font-mono text-mz-text-primary placeholder-mz-text-muted focus:border-mz-accent-primary focus:bg-mz-bg-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/25 transition-all shadow-inner"
                                placeholder="1.00">
                         <span class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold uppercase tracking-wider text-mz-text-muted">
                             Cant.
@@ -528,7 +466,7 @@
                     <div class="relative">
                         <span class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-lg font-bold text-mz-accent-primary">$</span>
                         <input id="bulk-amount" type="number" inputmode="decimal" step="0.01" min="0.01" max="999999"
-                               class="block w-full rounded-xl border border-mz-border-light bg-mz-bg-primary pl-8 pr-3.5 py-2.5 text-right text-xl font-bold tabular-nums font-mono text-white placeholder-mz-text-muted focus:border-mz-accent-primary focus:bg-mz-bg-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/25 transition-all shadow-inner"
+                               class="block w-full rounded-xl border border-mz-border-light bg-mz-bg-primary pl-8 pr-3.5 py-2.5 text-right text-xl font-bold tabular-nums font-mono text-mz-text-primary placeholder-mz-text-muted focus:border-mz-accent-primary focus:bg-mz-bg-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/25 transition-all shadow-inner"
                                placeholder="0.00">
                     </div>
                 </div>
@@ -539,10 +477,10 @@
 
             <!-- Acciones / Botones -->
             <div class="flex flex-col-reverse gap-2.5 border-t border-mz-border-light/70 bg-mz-bg-surface-2/30 px-6 py-4 sm:flex-row sm:justify-end">
-                <button type="button" id="bulk-cancel" class="inline-flex items-center justify-center rounded-xl border border-mz-border-light px-4 py-2.5 text-xs font-bold text-mz-text-secondary hover:bg-mz-bg-surface-2 hover:text-white transition-all active:scale-95">
+                <button type="button" id="bulk-cancel" class="inline-flex items-center justify-center rounded-xl border border-mz-border-light px-4 py-2.5 text-xs font-bold text-mz-text-secondary hover:bg-mz-bg-surface-2 hover:text-mz-text-primary transition-all active:scale-95">
                     Cancelar (Esc)
                 </button>
-                <button type="button" id="bulk-accept" class="inline-flex items-center justify-center gap-2 rounded-xl bg-mz-accent-primary hover:bg-mz-accent-hover text-white px-5 py-2.5 text-xs font-bold shadow-md shadow-mz-accent-primary/20 transition-all active:scale-95">
+                <button type="button" id="bulk-accept" class="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-700 hover:bg-orange-800 text-white px-5 py-2.5 text-xs font-bold shadow-md shadow-mz-accent-primary/20 transition-all active:scale-95">
                     <x-icon name="check" class="size-4" />
                     <span>Aceptar (Enter)</span>
                 </button>
@@ -561,11 +499,11 @@
                         <x-icon name="plus" class="size-5" />
                     </div>
                     <div>
-                        <h2 class="text-base font-bold text-white">Artículo libre</h2>
+                        <h2 class="text-base font-bold text-mz-text-primary">Artículo libre</h2>
                         <p class="text-xs text-mz-text-muted">Cobro directo que no descuenta inventario</p>
                     </div>
                 </div>
-                <button type="button" class="rounded-xl p-1.5 text-mz-text-muted hover:bg-mz-bg-surface-2 hover:text-white transition-colors" onclick="document.getElementById('custom-product-dialog').close()" aria-label="Cerrar">
+                <button type="button" class="rounded-xl p-1.5 text-mz-text-muted hover:bg-mz-bg-surface-2 hover:text-mz-text-primary transition-colors" onclick="document.getElementById('custom-product-dialog').close()" aria-label="Cerrar">
                     <x-icon name="x" class="size-5" />
                 </button>
             </div>
@@ -574,7 +512,7 @@
                 <div>
                     <label for="custom-product-name" class="block text-xs font-bold uppercase tracking-wider text-mz-text-muted">Nombre o descripción</label>
                     <input id="custom-product-name" name="name" type="text" maxlength="255" required
-                           class="block w-full rounded-xl border border-mz-border-light bg-mz-bg-primary/90 px-3.5 py-2.5 text-sm text-white placeholder-mz-text-muted focus:border-mz-accent-primary focus:bg-mz-bg-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/25 transition-all mt-1.5"
+                           class="block w-full rounded-xl border border-mz-border-light bg-mz-bg-primary/90 px-3.5 py-2.5 text-sm text-mz-text-primary placeholder-mz-text-muted focus:border-mz-accent-primary focus:bg-mz-bg-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/25 transition-all mt-1.5"
                            placeholder="Ej. Servicio de ajuste, accesorio genérico...">
                 </div>
 
@@ -584,7 +522,7 @@
                         <div class="relative mt-1.5">
                             <span class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold text-mz-text-muted">$</span>
                             <input id="custom-product-price" name="price" type="text" inputmode="decimal" step="0.01" min="0.01" required
-                                   class="block w-full rounded-xl border border-mz-border-light bg-mz-bg-primary/90 pl-7 pr-3 py-2.5 text-right text-base font-bold tabular-nums text-white placeholder-mz-text-muted focus:border-mz-accent-primary focus:bg-mz-bg-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/25 transition-all"
+                                   class="block w-full rounded-xl border border-mz-border-light bg-mz-bg-primary/90 pl-7 pr-3 py-2.5 text-right text-base font-bold tabular-nums text-mz-text-primary placeholder-mz-text-muted focus:border-mz-accent-primary focus:bg-mz-bg-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/25 transition-all"
                                    placeholder="0.00">
                         </div>
                     </div>
@@ -592,7 +530,7 @@
                     <div>
                         <label for="custom-product-quantity" class="block text-xs font-bold uppercase tracking-wider text-mz-text-muted">Cantidad</label>
                         <input id="custom-product-quantity" name="quantity" type="number" step="1" min="1" max="9999" value="1" required
-                               class="block w-full rounded-xl border border-mz-border-light bg-mz-bg-primary/90 px-3 py-2.5 text-center text-base font-bold tabular-nums text-white focus:border-mz-accent-primary focus:bg-mz-bg-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/25 transition-all mt-1.5">
+                               class="block w-full rounded-xl border border-mz-border-light bg-mz-bg-primary/90 px-3 py-2.5 text-center text-base font-bold tabular-nums text-mz-text-primary focus:border-mz-accent-primary focus:bg-mz-bg-primary focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/25 transition-all mt-1.5">
                     </div>
                 </div>
 
@@ -600,10 +538,10 @@
             </div>
 
             <div class="flex flex-col-reverse gap-2 border-t border-mz-border-light/70 bg-mz-bg-surface-2/30 px-6 py-4 sm:flex-row sm:justify-end">
-                <button type="button" class="inline-flex items-center justify-center rounded-xl border border-mz-border-light px-4 py-2.5 text-xs font-bold text-mz-text-secondary hover:bg-mz-bg-surface-2 hover:text-white transition-all active:scale-95" onclick="document.getElementById('custom-product-dialog').close()">
+                <button type="button" class="inline-flex items-center justify-center rounded-xl border border-mz-border-light px-4 py-2.5 text-xs font-bold text-mz-text-secondary hover:bg-mz-bg-surface-2 hover:text-mz-text-primary transition-all active:scale-95" onclick="document.getElementById('custom-product-dialog').close()">
                     Cancelar
                 </button>
-                <button type="submit" class="inline-flex items-center justify-center gap-2 rounded-xl bg-mz-accent-primary hover:bg-mz-accent-hover text-white px-5 py-2.5 text-xs font-bold shadow-md shadow-mz-accent-primary/20 transition-all active:scale-95">
+                <button type="submit" class="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-700 hover:bg-orange-800 text-white px-5 py-2.5 text-xs font-bold shadow-md shadow-mz-accent-primary/20 transition-all active:scale-95">
                     <x-icon name="plus" class="size-4" />
                     Agregar al ticket
                 </button>
@@ -619,11 +557,11 @@
                     <x-icon name="pause" class="size-5" />
                 </div>
                 <div>
-                    <h2 id="pending-sales-title" class="text-base font-bold text-white">Tickets pendientes</h2>
+                    <h2 id="pending-sales-title" class="text-base font-bold text-mz-text-primary">Tickets pendientes</h2>
                     <p class="text-xs text-mz-text-muted">Cotizaciones guardadas sin cobrar</p>
                 </div>
             </div>
-            <button type="button" data-close-dialog="pending-sales-dialog" class="rounded-xl p-1.5 text-mz-text-muted hover:bg-mz-bg-surface-2 hover:text-white transition-colors" aria-label="Cerrar">
+            <button type="button" data-close-dialog="pending-sales-dialog" class="rounded-xl p-1.5 text-mz-text-muted hover:bg-mz-bg-surface-2 hover:text-mz-text-primary transition-colors" aria-label="Cerrar">
                 <x-icon name="x" class="size-5" />
             </button>
         </div>
@@ -641,11 +579,11 @@
                     <x-icon name="report" class="size-5" />
                 </div>
                 <div>
-                    <h2 id="day-sales-title" class="text-base font-bold text-white">Ventas del día y devoluciones</h2>
+                    <h2 id="day-sales-title" class="text-base font-bold text-mz-text-primary">Ventas del día y devoluciones</h2>
                     <p class="text-xs text-mz-text-muted">Consulta ventas, devuelve artículos e imprime copias</p>
                 </div>
             </div>
-            <button type="button" data-close-dialog="day-sales-dialog" class="rounded-xl p-1.5 text-mz-text-muted hover:bg-mz-bg-surface-2 hover:text-white transition-colors" aria-label="Cerrar">
+            <button type="button" data-close-dialog="day-sales-dialog" class="rounded-xl p-1.5 text-mz-text-muted hover:bg-mz-bg-surface-2 hover:text-mz-text-primary transition-colors" aria-label="Cerrar">
                 <x-icon name="x" class="size-5" />
             </button>
         </div>
@@ -675,7 +613,7 @@
                         <label for="day-sales-date" class="text-xs font-bold text-mz-text-secondary">Del día:</label>
                         <input id="day-sales-date" type="date" class="mz-input mt-1 h-10 w-full text-sm">
                     </div>
-                    <button type="button" id="day-sales-today" class="h-10 rounded-xl border border-mz-accent-primary/40 bg-mz-accent-primary/15 px-3 text-xs font-bold text-mz-accent-primary transition-all hover:bg-mz-accent-primary hover:text-white active:scale-95">Hoy</button>
+                    <button type="button" id="day-sales-today" class="h-10 rounded-xl border border-mz-accent-primary/40 bg-mz-accent-primary/10 px-3 text-xs font-bold text-mz-accent-primary transition-all hover:bg-orange-700 hover:text-white active:scale-95">Hoy</button>
                 </div>
             </section>
 
@@ -683,15 +621,15 @@
                 <div class="grid grid-cols-3 gap-2 rounded-xl border border-mz-border-light bg-mz-bg-primary/60 p-3 text-xs">
                     <div class="min-w-0">
                         <p class="text-[10px] font-bold uppercase tracking-wider text-mz-text-muted">Código</p>
-                        <p id="day-sales-detail-code" class="truncate font-mono font-bold text-white">—</p>
+                        <p id="day-sales-detail-code" class="truncate font-mono font-bold text-mz-text-primary">—</p>
                     </div>
                     <div class="min-w-0">
                         <p class="text-[10px] font-bold uppercase tracking-wider text-mz-text-muted">Cajero</p>
-                        <p id="day-sales-detail-cashier" class="truncate font-semibold text-white">—</p>
+                        <p id="day-sales-detail-cashier" class="truncate font-semibold text-mz-text-primary">—</p>
                     </div>
                     <div class="min-w-0">
                         <p class="text-[10px] font-bold uppercase tracking-wider text-mz-text-muted">Cliente</p>
-                        <p id="day-sales-detail-client" class="truncate font-semibold text-white">—</p>
+                        <p id="day-sales-detail-client" class="truncate font-semibold text-mz-text-primary">—</p>
                     </div>
                 </div>
 
@@ -718,17 +656,17 @@
                 <div class="grid grid-cols-2 gap-2">
                     <div class="rounded-xl border border-mz-accent-primary/40 bg-mz-accent-primary/10 p-3">
                         <p class="text-[10px] font-bold uppercase tracking-widest text-mz-accent-primary">Total:</p>
-                        <p id="day-sales-total" class="font-display text-2xl font-black tabular-nums text-white">$0.00</p>
+                        <p id="day-sales-total" class="font-display text-2xl font-black tabular-nums text-mz-text-primary">$0.00</p>
                     </div>
                     <div class="rounded-xl border border-mz-border-light bg-mz-bg-primary/60 p-3">
                         <p class="text-[10px] font-bold uppercase tracking-widest text-mz-text-muted">Pago Con:</p>
-                        <p id="day-sales-paid" class="font-display text-2xl font-black tabular-nums text-white">$0.00</p>
+                        <p id="day-sales-paid" class="font-display text-2xl font-black tabular-nums text-mz-text-primary">$0.00</p>
                     </div>
                 </div>
 
                 <div class="flex flex-wrap gap-2">
-                    <button type="button" id="day-sales-cancel" disabled class="inline-flex flex-1 items-center justify-center rounded-xl border border-mz-error/40 bg-mz-error/10 px-4 py-2.5 text-xs font-bold text-mz-error transition-all hover:bg-mz-error hover:text-white disabled:cursor-not-allowed disabled:opacity-40 active:scale-95">Cancelar Venta</button>
-                    <button type="button" id="day-sales-print" disabled class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 px-4 py-2.5 text-xs font-bold text-mz-text-secondary transition-all hover:text-white disabled:cursor-not-allowed disabled:opacity-40 active:scale-95">
+                    <button type="button" id="day-sales-cancel" disabled class="inline-flex flex-1 items-center justify-center rounded-xl border border-mz-error/40 bg-mz-error/10 px-4 py-2.5 text-xs font-bold text-mz-error transition-all hover:bg-mz-error hover:text-mz-bg-primary disabled:cursor-not-allowed disabled:opacity-40 active:scale-95">Cancelar Venta</button>
+                    <button type="button" id="day-sales-print" disabled class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/80 px-4 py-2.5 text-xs font-bold text-mz-text-secondary transition-all hover:text-mz-text-primary disabled:cursor-not-allowed disabled:opacity-40 active:scale-95">
                         <x-icon name="printer" class="size-4 text-mz-accent-primary" />
                         Imprimir copia
                     </button>
@@ -767,4 +705,66 @@
             'storeEnabled' => (bool) ($settings['enabled'] ?? true),
         ], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) !!}
     </script>
+@endsection
+
+@section('pos-checkout')
+    <footer class="bottom-0 z-20 border-t border-mz-border bg-mz-bg-surface shadow-[0_-2px_12px_rgb(15_23_42/0.08)] lg:[@media(min-height:42rem)]:sticky">
+        <div class="mx-auto max-w-[1920px] space-y-2 px-4 py-3 sm:px-6">
+            <div id="last-sale-indicator" class="hidden rounded-lg border border-mz-success/30 bg-mz-success/10 px-3 py-2 text-xs">
+                <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+                    <div class="flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold text-mz-text-primary">
+                        <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-700 text-white">
+                            <x-icon name="check" class="size-3.5" />
+                        </span>
+                        <span>Última venta cobrada: Folio <span id="last-sale-folio" class="font-mono font-bold underline"></span></span>
+                        @if ($permissions['tickets_own'])
+                            <span class="hidden text-mz-success sm:inline">· Listo para imprimir ticket</span>
+                        @endif
+                    </div>
+                    <div class="flex flex-wrap gap-x-3 gap-y-1 font-semibold text-mz-text-primary">
+                        <span>Pago con: <span id="last-sale-paid" class="font-mono text-mz-success">—</span></span>
+                        <span>Cambio: <span id="last-sale-change" class="font-mono">—</span></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <div class="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-mz-border-light bg-mz-bg-surface-2 px-3 py-2 text-mz-text-primary pos-night:bg-slate-900">
+                    <span class="text-[10px] font-black tracking-wider uppercase">Total a cobrar</span>
+                    <span class="rounded bg-mz-border px-1.5 py-0.5 font-mono text-[10px] font-bold">{{ $currency }}</span>
+                    <p id="pos-total" class="font-mono text-xl leading-none font-black tracking-tight tabular-nums">$0.00</p>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-2 [&_svg]:shrink-0">
+                    <button type="button" id="pos-clear" class="x-button x-button-secondary size-sm text-xs hover:border-mz-error/40 hover:bg-mz-error/10 hover:text-mz-error">
+                        <x-icon name="trash" class="size-4" />
+                        Eliminar venta
+                    </button>
+                    <div class="flex items-center gap-1.5">
+                        <button type="button" id="pos-pending" @disabled(! $permissions['sell']) class="x-button x-button-secondary size-sm text-xs">
+                            <x-icon name="pause" class="size-4" />
+                            <span>Dejar pendiente</span>
+                            <kbd class="hidden rounded bg-mz-bg-surface-2 px-1 py-0.5 font-mono text-[10px] md:inline">F6</kbd>
+                        </button>
+                        <button type="button" id="pos-pending-list" aria-label="Ver tickets pendientes" title="Ver tickets pendientes" class="x-button x-button-secondary h-9 min-w-9 px-2">
+                            <x-icon name="report" class="size-4" />
+                            <span id="pos-pending-count" class="hidden -ml-1 rounded-full bg-mz-warning px-1.5 text-[10px] font-bold text-mz-bg-primary">0</span>
+                        </button>
+                    </div>
+                    <button type="button" id="pos-print-ticket" disabled class="x-button x-button-secondary size-sm text-xs">
+                        <x-icon name="printer" class="size-4" />
+                        Reimprimir último ticket
+                    </button>
+                    <button type="button" id="pos-day-sales" class="x-button x-button-secondary size-sm text-xs">
+                        <x-icon name="report" class="size-4" />
+                        Ventas del día y devoluciones
+                    </button>
+                    <button type="button" id="pos-charge" @disabled(! $permissions['sell']) class="x-button size-sm rounded-lg bg-orange-700 text-sm font-extrabold text-white shadow-sm shadow-orange-500/25 hover:bg-orange-800 focus:ring-orange-700">
+                        <x-icon name="banknotes" class="size-5" />
+                        <span>Cobrar venta</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </footer>
 @endsection
