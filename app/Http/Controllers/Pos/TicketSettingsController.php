@@ -19,16 +19,26 @@ class TicketSettingsController extends Controller
     public function update(UpdateTicketSettingsRequest $request, TicketSettings $tickets): RedirectResponse
     {
         $data = $request->safe()->only(['business', 'ticket']);
+        $current = $tickets->current()['ticket'];
         $data['business'] = array_map(fn ($value): string => $value ?? '', $data['business']);
         $data['ticket']['width_mm'] = (int) $data['ticket']['width_mm'];
+        $data['ticket']['print_mode'] ??= $current['print_mode'];
+
+        foreach (['lines_above', 'lines_below'] as $key) {
+            $data['ticket'][$key] = (int) ($data['ticket'][$key] ?? $current[$key]);
+        }
 
         foreach (['show_logo', 'show_tax_id', 'show_sku', 'show_cashier', 'show_tax', 'show_qr'] as $key) {
             $data['ticket'][$key] = $request->boolean('ticket.'.$key);
         }
 
+        foreach (['uppercase', 'show_unit_price', 'full_description'] as $key) {
+            $data['ticket'][$key] = isset($data['ticket'][$key]) ? $request->boolean('ticket.'.$key) : $current[$key];
+        }
+
         $data['ticket']['footer'] ??= '';
         $data['ticket']['policy'] ??= '';
-        $data['ticket']['qr_image_url'] = $tickets->current()['ticket']['qr_image_url'];
+        $data['ticket']['qr_image_url'] = $current['qr_image_url'];
 
         if ($request->hasFile('qr_image')) {
             $data['ticket']['qr_image_url'] = 'data:image/png;base64,'.base64_encode($request->file('qr_image')->get());

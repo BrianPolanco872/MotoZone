@@ -485,9 +485,18 @@ if (configElement) {
     const addProduct = (product, quantity = 1, confirmedBulk = false) => {
         clearError();
 
+        const rejectAddition = (message) => {
+            if (confirmedBulk && bulkError) {
+                bulkError.textContent = message;
+                bulkError.classList.remove('hidden');
+            } else {
+                showError(message);
+            }
+            return false;
+        };
+
         if (pendingSaleId !== null) {
-            showError('Termina o cancela la venta pendiente antes de agregar otros productos.');
-            return;
+            return rejectAddition('Termina o cancela la venta pendiente antes de agregar otros productos.');
         }
 
         if (isBulkProduct(product) && !confirmedBulk) {
@@ -500,8 +509,9 @@ if (configElement) {
         const nextQuantity = (Math.round((existing?.quantity ?? 0) * 1000) + Math.round(quantity * 1000)) / 1000;
 
         if (!validQuantity(quantity, product.sale_mode) || !validQuantity(nextQuantity, product.sale_mode)) {
-            showError('La cantidad debe ser positiva, hasta 9999; solo granel permite hasta 3 decimales.');
-            return false;
+            return rejectAddition(confirmedBulk
+                ? 'La cantidad acumulada no puede superar 9999.'
+                : 'La cantidad debe ser positiva, hasta 9999; solo granel permite hasta 3 decimales.');
         }
 
         if (existing) {
@@ -535,7 +545,7 @@ if (configElement) {
         renderCart();
         searchInput.value = '';
         closeSearch();
-        searchInput.focus();
+        if (!confirmedBulk) searchInput.focus();
         return true;
     };
 
@@ -639,14 +649,10 @@ if (configElement) {
             return;
         }
 
-        const productToAdd = bulkProduct;
-        closeBulkModal();
-
-        if (!addProduct(productToAdd, qty, true)) {
-            if (bulkError) {
-                bulkError.textContent = 'No se pudo agregar. Revisa la cantidad y la existencia disponible.';
-                bulkError.classList.remove('hidden');
-            }
+        if (addProduct(bulkProduct, qty, true)) {
+            closeBulkModal();
+        } else {
+            bulkQuantity?.focus();
         }
     };
 

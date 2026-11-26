@@ -33,12 +33,12 @@
             text-decoration: none;
             cursor: pointer;
         }
-        .toolbar button.primary {
+        .toolbar .primary {
             background: #F97316;
             border-color: #F97316;
             color: #fff;
         }
-        .toolbar button.primary:hover {
+        .toolbar .primary:hover {
             background: #EA580C;
         }
         @include('pos.tickets.receipt-styles')
@@ -50,7 +50,11 @@
 </head>
 <body id="sale-ticket">
     <div class="toolbar">
-        <button type="button" class="primary" onclick="window.print()">Imprimir</button>
+        @if ($settings['ticket']['print_mode'] === 'text')
+            <a class="primary" href="{{ route('pos.sales.ticket', ['sale' => $sale, 'print' => 1]) }}">Imprimir</a>
+        @else
+            <button type="button" class="primary" onclick="window.print()">Imprimir</button>
+        @endif
         <a href="{{ route('pos.index') }}">Nueva venta</a>
     </div>
 

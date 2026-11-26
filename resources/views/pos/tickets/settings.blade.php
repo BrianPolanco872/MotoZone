@@ -7,18 +7,20 @@
     @php
         $savedSettings = ['business' => $settings['business'], 'ticket' => $settings['ticket']];
         $paperWidth = (int) old('ticket.width_mm', $settings['ticket']['width_mm']) === 80 ? 80 : 58;
+        $printMode = old('ticket.print_mode', $settings['ticket']['print_mode']) === 'graphic' ? 'graphic' : 'text';
         $options = [
-            'show_logo' => ['Isotipo MotoZone', 'Incluye el distintivo MZ en el encabezado.'],
+            'show_logo' => ['Isotipo MotoZone', 'Incluye el distintivo MZ en el encabezado. En modo Texto solo se ve en pantalla.'],
             'show_tax_id' => ['RFC del negocio', 'Muestra la identificación fiscal registrada.'],
             'show_sku' => ['Código SKU', 'Identifica cada producto en el detalle.'],
             'show_cashier' => ['Nombre del cajero', 'Indica quién atendió la venta.'],
             'show_tax' => ['Desglose de IVA', 'Muestra el impuesto incluido en el total.'],
-            'show_qr' => ['Código QR', 'Incluye tu imagen real de soporte o facturación.'],
+            'show_qr' => ['Código QR', 'Incluye tu imagen real de soporte o facturación. En modo Texto solo se ve en pantalla.'],
         ];
     @endphp
 
     <style>
         @include('pos.tickets.receipt-styles')
+        @include('pos.tickets.text-styles')
         .ticket-settings-tab[aria-selected="true"] {
             color: var(--color-mz-accent-primary);
             border-color: currentColor;
@@ -27,9 +29,11 @@
         [data-ticket-settings] [hidden] { display: none !important; }
         #ticket-print-root { display: none; }
         @media print {
+            @page ticket-text { size: auto; margin: 0; }
             html[data-pos-theme], body.ticket-example-print { height: auto; margin: 0; padding: 0; background: white; color-scheme: light; }
             body.ticket-example-print > :not(#ticket-print-root) { display: none !important; }
             #ticket-print-root { display: block; }
+            #ticket-print-root.ticket-text { page: ticket-text; margin: 0; }
         }
     </style>
 
@@ -76,6 +80,29 @@
                             @endforeach
                         </select>
                         <p class="mt-2 text-xs leading-relaxed text-mz-text-muted">Selecciona también este tamaño en el controlador de tu impresora. Imprime a escala 100 %, sin encabezados ni pies del navegador.</p>
+                        <div class="mt-6">
+                            <label for="ticket-print-mode" class="mb-2 block text-sm font-medium">Modo de impresión</label>
+                            <select id="ticket-print-mode" name="ticket[print_mode]" class="mz-select" aria-describedby="ticket-print-mode-help">
+                                <option value="text" @selected($printMode === 'text')>Texto</option>
+                                <option value="graphic" @selected($printMode === 'graphic')>Gráfico</option>
+                            </select>
+                            <p id="ticket-print-mode-help" class="mt-2 text-xs text-mz-text-muted">Texto imprime sin imágenes (32 columnas en 58 mm, 42 en 80 mm). Gráfico conserva el diseño anterior.</p>
+                        </div>
+                        <fieldset data-ticket-text-controls @if ($printMode === 'graphic') hidden disabled @endif class="mt-5 space-y-4">
+                            <legend class="sr-only">Opciones del modo Texto</legend>
+                            @foreach (['uppercase' => 'Mayúsculas', 'show_unit_price' => 'Mostrar precio unitario', 'full_description' => 'Descripción completa'] as $key => $label)
+                                <label class="flex items-center justify-between gap-4 text-sm">
+                                    {{ $label }}
+                                    <input type="hidden" name="ticket[{{ $key }}]" value="0">
+                                    <input type="checkbox" name="ticket[{{ $key }}]" value="1" @checked(old('ticket.'.$key, $settings['ticket'][$key])) class="size-5 accent-orange-500">
+                                </label>
+                            @endforeach
+                            <div class="grid grid-cols-2 gap-3">
+                                @foreach (['lines_above' => 'Renglones arriba', 'lines_below' => 'Renglones abajo'] as $key => $label)
+                                    <x-input :id="'ticket-'.$key" :name="'ticket['.$key.']'" type="number" min="0" max="20" step="1" :label="$label" :value="old('ticket.'.$key, $settings['ticket'][$key])" :error="$errors->first('ticket.'.$key)" required />
+                                @endforeach
+                            </div>
+                        </fieldset>
                         <div class="mt-6 divide-y divide-mz-border border-t border-mz-border">
                             @foreach (['Corte automático del papel', 'Apertura del cajón de dinero'] as $label)
                                 <label class="flex items-center justify-between gap-4 py-4 text-sm text-mz-text-muted"><span>{{ $label }}<span class="mt-1 block text-xs">No disponible desde esta página</span></span><input type="checkbox" disabled class="size-5 accent-orange-500" /></label>
@@ -116,6 +143,11 @@
 
                 <section id="ticket-panel-preview" role="tabpanel" aria-labelledby="ticket-tab-preview" tabindex="0" data-ticket-panel="preview" data-ticket-preview hidden class="rounded-xl border border-mz-border bg-mz-bg-surface p-4 sm:p-5">
                     <div class="mb-5 flex items-center justify-between gap-2"><h3 class="text-sm font-semibold">Vista previa</h3><span class="rounded bg-mz-accent-primary/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-widest text-mz-accent-primary">Borrador</span></div>
+                    <div data-ticket-text-panel @if ($printMode === 'graphic') hidden @endif class="mb-4 overflow-x-auto">
+                        <pre data-ticket-text-preview data-paper-width="{{ $paperWidth }}" class="ticket-text" aria-label="Ticket de ejemplo en texto"></pre>
+                    </div>
+                    <details data-ticket-graphic-preview @if ($printMode === 'graphic') open @endif>
+                        <summary @if ($printMode === 'graphic') hidden @endif class="mb-2 cursor-pointer text-xs text-mz-text-muted">Ver diseño gráfico (solo en pantalla en modo Texto)</summary>
                     <article id="ticket-paper" aria-label="Ticket de ejemplo" class="ticket-sheet" style="--ticket-width: {{ $paperWidth }}mm">
                         <div class="center receipt-heading">
                             <div data-ticket-visible="show_logo" class="receipt-logo">MZ</div>
@@ -164,6 +196,7 @@
                             </div>
                         </div>
                     </article>
+                    </details>
                     <div class="mt-5 space-y-3"><p class="text-center text-xs text-mz-text-muted">Ejemplo · <span data-ticket-width-label>{{ $paperWidth }}</span> mm · No es un comprobante de venta</p><x-button variant="secondary" data-ticket-print class="w-full"><x-icon name="printer" class="size-4" /> Probar impresión</x-button><p class="text-center text-xs leading-relaxed text-mz-text-muted">Para descargar, elige «Guardar como PDF» en el diálogo de impresión.</p></div>
                 </section>
             </div>
@@ -175,21 +208,4 @@
         </form>
     </div>
 
-    <script>
-        window.addEventListener('beforeprint', () => {
-            if (document.getElementById('ticket-print-root')) {
-                return;
-            }
-
-            const printRoot = document.getElementById('ticket-paper').cloneNode(true);
-            printRoot.id = 'ticket-print-root';
-            document.body.append(printRoot);
-            document.body.classList.add('ticket-example-print');
-        });
-
-        window.addEventListener('afterprint', () => {
-            document.getElementById('ticket-print-root')?.remove();
-            document.body.classList.remove('ticket-example-print');
-        });
-    </script>
 @endsection

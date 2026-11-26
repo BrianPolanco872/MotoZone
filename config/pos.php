@@ -15,6 +15,12 @@ return [
 
     'ticket' => [
         'width_mm' => 80,
+        'print_mode' => 'text',
+        'uppercase' => false,
+        'lines_above' => 0,
+        'lines_below' => 5,
+        'show_unit_price' => false,
+        'full_description' => false,
         'footer' => 'Gracias por su compra.',
         'policy' => '',
         'show_logo' => false,

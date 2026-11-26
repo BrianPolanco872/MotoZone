@@ -93,8 +93,78 @@ class TicketSettingsTest extends TestCase
 
         $this->actingAs($admin)->get(route('pos.tickets.edit'))->assertOk()
             ->assertSee('value="58" selected', false)
+            ->assertSee('value="text" selected', false)
             ->assertSee('style="--ticket-width: 58mm"', false)
             ->assertSee('data-ticket-width-label>58</span>', false);
+    }
+
+    public function test_legacy_settings_default_to_text_and_updates_keep_new_preferences(): void
+    {
+        Storage::disk('local')->put('pos/ticket-settings.json', json_encode($this->payload(), JSON_THROW_ON_ERROR));
+        $admin = User::factory()->create()->assignRole('admin');
+        $this->actingAs($admin)->get(route('pos.tickets.edit'))->assertOk()
+            ->assertSee('Modo de impresión')->assertSee('value="text" selected', false);
+        $preferences = [
+            'print_mode' => 'graphic', 'uppercase' => true, 'lines_above' => 2,
+            'lines_below' => 7, 'show_unit_price' => true, 'full_description' => true,
+        ];
+
+        $this->put(route('pos.tickets.update'), $this->payload(array_map(
+            fn (mixed $value): string => (string) $value, $preferences,
+        )))->assertRedirect(route('pos.tickets.edit'))->assertSessionHasNoErrors();
+        $this->put(route('pos.tickets.update'), $this->payload(['footer' => 'Actualizado']))
+            ->assertSessionHasNoErrors();
+
+        $saved = json_decode(Storage::disk('local')->get('pos/ticket-settings.json'), true, 512, JSON_THROW_ON_ERROR)['ticket'];
+        foreach ($preferences as $key => $value) {
+            $this->assertSame($value, $saved[$key], $key);
+        }
+        $this->assertSame('Actualizado', $saved['footer']);
+        $this->get(route('pos.tickets.edit'))->assertOk()->assertSee('value="graphic" selected', false);
+    }
+
+    #[TestWith([58])]
+    #[TestWith([80])]
+    public function test_text_print_has_one_pre_with_sale_snapshots_and_no_graphics(int $width): void
+    {
+        $admin = User::factory()->create(['name' => 'Cajero Ñ'])->assignRole('admin');
+        $sale = $this->sale($admin, 'Aceite <especial>');
+        $sale->update(['folio' => 'V-000050', 'paid_at' => '2026-11-26 14:38:00']);
+        $sale->items()->firstOrFail()->update([
+            'sale_mode' => Product::MODE_BULK, 'quantity' => 1.5, 'returned_quantity' => 0.125, 'line_total' => 147.99,
+        ]);
+        $settings = $this->payload(['width_mm' => $width, 'show_cashier' => true, 'show_qr' => true, 'footer' => '<img src=x onerror=alert(2)>']);
+        $settings['ticket']['qr_image_url'] = 'data:image/png;base64,test';
+        app(TicketSettings::class)->save($settings);
+
+        $response = $this->get(route('pos.sales.ticket', ['sale' => $sale, 'print' => 1]))->assertOk()
+            ->assertViewIs('pos.tickets.text-print')
+            ->assertSee('@page { size: auto; margin: 0; }', false)
+            ->assertSee('data-paper-width="'.$width.'"', false)
+            ->assertDontSee('data:image/png;base64,', false)
+            ->assertDontSee('<img', false);
+        $document = new DOMDocument;
+        $document->loadHTML($response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+        $this->assertSame(1, $document->getElementsByTagName('pre')->length);
+        $receipt = json_decode($document->getElementById('ticket')->getAttribute('data-receipt'), true, 512, JSON_THROW_ON_ERROR);
+        $this->assertSame('<img src=x onerror=alert(2)>', $receipt['ticket']['footer']);
+        $this->assertArrayNotHasKey('qr_image_url', $receipt['ticket']);
+        $this->assertSame('Taller Norte', $receipt['business']['name']);
+        $this->assertSame('V-000050', $receipt['sale']['folio']);
+        $this->assertSame('26/11/2026', $receipt['sale']['date']);
+        $this->assertSame('14:38', $receipt['sale']['time']);
+        $this->assertSame('Cajero Ñ', $receipt['sale']['cashier']);
+        $this->assertSame('Tarjeta', $receipt['sale']['payment_method']);
+        $this->assertSame(['148.00', '148.00', '0.00'], [$receipt['sale']['total'], $receipt['sale']['amount_paid'], $receipt['sale']['change_amount']]);
+        $this->assertSame([
+            'name' => 'Aceite <especial>',
+            'quantity' => '1.5',
+            'unit_price' => '148.00',
+            'line_total' => '147.99',
+            'sku' => 'SKU-OCULTO',
+            'sale_mode' => Product::MODE_BULK,
+            'returned_quantity' => '0.125',
+        ], $receipt['sale']['items'][0]);
     }
 
     public function test_saved_settings_reach_both_pos_printing_paths_without_changing_sale_totals(): void
@@ -147,6 +217,11 @@ class TicketSettingsTest extends TestCase
         $this->get(route('pos.tickets.edit'))->assertOk()
             ->assertSee('data-ticket-qr hidden alt="Código QR"', false)
             ->assertDontSee('Facturación / Soporte');
+
+        $this->put(route('pos.tickets.update'), $this->payload(['print_mode' => 'graphic', 'show_qr' => true]))->assertSessionHasNoErrors();
+        $this->get(route('pos.sales.ticket', ['sale' => $sale, 'print' => 1]))->assertOk()
+            ->assertSee('class="receipt-logo">MZ', false)->assertSee('class="receipt-qr"', false)
+            ->assertDontSee('data-ticket-print-document', false);
 
         $this->put(route('pos.tickets.update'), $this->payload(['show_qr' => true]))->assertSessionHasNoErrors();
         $this->assertStringStartsWith('data:image/png;base64,', app(TicketSettings::class)->current()['ticket']['qr_image_url']);
@@ -251,15 +326,16 @@ class TicketSettingsTest extends TestCase
         $sale = $this->sale($admin, trim($productName), 123456.78);
         $this->put(route('pos.tickets.update'), $this->payload(['width_mm' => $width, 'policy' => '']))->assertSessionHasNoErrors();
 
-        $this->get(route('pos.sales.ticket', $sale))->assertOk()
+        $graphic = $this->get(route('pos.sales.ticket', $sale))->assertOk()
             ->assertSee('--ticket-width: '.$width.'mm', false)
             ->assertSee('width: calc(var(--ticket-width, 58mm) - 10mm)', false)
             ->assertSee('max-width: 100%', false)->assertSee('size: auto', false)
-            ->assertDontSee('mm auto', false)->assertDontSee('width: auto; max-width: none', false)
+            ->assertDontSee('width: auto; max-width: none', false)
             ->assertSeeInOrder(['Cant.', 'Producto', 'Importe', trim($productName), '$123,456.78', 'por unidad', '$123,456.78', 'N.º de artículos: 1', 'Total', 'Pago con', 'Cambio', 'Método de pago: Tarjeta', 'Vuelve pronto.'])
             ->assertSee('class="unit-amount">$123,456.78</span>', false)
             ->assertDontSee('Subtotal')->assertDontSee($sale->folio)
             ->assertSee('$123,456.78')->assertDontSee('Conserve este ticket');
+        $this->assertDoesNotMatchRegularExpression('/\bsize:\s*\d+mm\s+auto\b/', $graphic->getContent());
 
         $response = $this->getJson(route('pos.sales.ticketData', $sale))->assertOk()
             ->assertJsonPath('settings.ticket.width_mm', $width)
@@ -269,9 +345,9 @@ class TicketSettingsTest extends TestCase
         $this->assertStringContainsString('$123,456.78', $response->json('ticket_html'));
         $this->assertSame('123456.78', $sale->refresh()->total);
 
-        $this->get(route('pos.index'))->assertOk()
-            ->assertDontSee('id="ticket-print-container"', false)->assertDontSee('mm auto', false);
-        $this->get(route('pos.tickets.edit'))->assertOk()
+        $pos = $this->get(route('pos.index'))->assertOk()->assertDontSee('id="ticket-print-container"', false);
+        $this->assertDoesNotMatchRegularExpression('/\bsize:\s*\d+mm\s+auto\b/', $pos->getContent());
+        $preview = $this->get(route('pos.tickets.edit'))->assertOk()
             ->assertSee('--ticket-width: '.$width.'mm', false)
             ->assertSee('value="'.$width.'" selected', false)
             ->assertSee('data-ticket-width-label>'.$width.'</span>', false)
@@ -280,7 +356,8 @@ class TicketSettingsTest extends TestCase
             ->assertSeeInOrder(['Cant.', 'Producto', 'Importe', 'Aceite', '$148.00', 'por unidad', '$148.00', 'N.º de artículos: 1', 'Total', 'Pago con', 'Cambio', 'Método de pago: Efectivo'])
             ->assertSee('class="unit-amount">$148.00</span>', false)
             ->assertDontSee('Subtotal')->assertDontSee('V-000019')
-            ->assertSee('margin: 0 auto', false)->assertSee('size: auto', false)->assertDontSee('mm auto', false);
+            ->assertSee('margin: 0 auto', false)->assertSee('size: auto', false);
+        $this->assertDoesNotMatchRegularExpression('/\bsize:\s*\d+mm\s+auto\b/', $preview->getContent());
     }
 
     public function test_default_receipt_has_no_returns_policy_and_keeps_the_thank_you_message(): void
@@ -338,6 +415,10 @@ class TicketSettingsTest extends TestCase
     #[TestWith(['show_cashier', 'invalid'])]
     #[TestWith(['show_qr', true])]
     #[TestWith(['show_tax_id', true, ''])]
+    #[TestWith(['print_mode', 'unsupported'])]
+    #[TestWith(['lines_above', -1])]
+    #[TestWith(['lines_below', 21])]
+    #[TestWith(['show_unit_price', 'invalid'])]
     public function test_invalid_settings_do_not_overwrite_saved_configuration(string $key, mixed $value, ?string $taxId = null): void
     {
         $admin = User::factory()->create()->assignRole('admin');

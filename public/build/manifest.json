@@ -61,9 +61,18 @@
     "isEntry": true
   },
   "resources/js/app.js": {
-    "file": "assets/app-yT84wR8r.js",
+    "file": "assets/app-DtdxukVl.js",
     "name": "app",
     "src": "resources/js/app.js",
+    "isEntry": true,
+    "imports": [
+      "resources/js/ticket-text.js"
+    ]
+  },
+  "resources/js/ticket-text.js": {
+    "file": "assets/ticket-text-3OPAW2UN.js",
+    "name": "ticket-text",
+    "src": "resources/js/ticket-text.js",
     "isEntry": true
   }
 }

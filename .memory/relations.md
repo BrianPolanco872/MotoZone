@@ -327,3 +327,11 @@ plan-pos-busqueda-prefijo-01 -> se_apoya_en -> plan-busqueda-codigo-exacto-pos-p
 plan-pos-busqueda-prefijo-01 -> se_apoya_en -> feature-pos-vista-amplia-existencias-01
 plan-pos-busqueda-prefijo-01 -> implementado_por -> fix-pos-busqueda-prefijo-01
 fix-pos-busqueda-prefijo-01 -> implementa_feature -> feature-pos-busqueda-prefijo-01
+feature-tickets-texto-termico-01 -> implemented_by_plan -> plan-tickets-texto-termico-01
+plan-tickets-texto-termico-01 -> implementa_feature -> feature-tickets-texto-termico-01
+plan-tickets-texto-termico-01 -> se_apoya_en -> plan-tickets-adaptacion-impresion-03
+plan-tickets-texto-termico-01 -> se_apoya_en -> plan-tickets-sin-subtotal-ni-folio-01
+plan-tickets-texto-termico-01 -> implementado_por -> fix-tickets-texto-termico-01
+fix-tickets-texto-termico-01 -> implementa_feature -> feature-tickets-texto-termico-01
+plan-pos-granel-limite-acumulado-01 -> se_apoya_en -> fix-pos-vista-amplia-existencias-07
+plan-pos-granel-limite-acumulado-01 -> implementado_por -> fix-pos-granel-limite-acumulado-01

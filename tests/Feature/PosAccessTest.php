@@ -10,6 +10,7 @@ use DOMDocument;
 use DOMElement;
 use DOMXPath;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\TestWith;
 use Tests\TestCase;
 
@@ -97,8 +98,11 @@ class PosAccessTest extends TestCase
             ->assertDontSee('V-OTHER');
     }
 
-    public function test_ticket_auto_printing_is_opt_in_and_keeps_the_manual_button(): void
+    #[TestWith(['text'])]
+    #[TestWith(['graphic'])]
+    public function test_ticket_auto_printing_is_opt_in_and_keeps_the_manual_button(string $mode): void
     {
+        Storage::fake('local')->put('pos/ticket-settings.json', json_encode(['ticket' => ['print_mode' => $mode]], JSON_THROW_ON_ERROR));
         $employee = User::factory()->create()->assignRole('empleado');
         $employee->givePermissionTo(['pos.access', 'pos.tickets.print.own']);
         $sale = Sale::query()->create([
@@ -107,16 +111,25 @@ class PosAccessTest extends TestCase
             'paid_at' => now(),
         ]);
 
-        $this->actingAs($employee)->get(route('pos.sales.ticket', $sale))->assertOk()
-            ->assertDontSee("window.addEventListener('load'", false);
-
-        $this->get(route('pos.sales.ticket', ['sale' => $sale, 'print' => 1]))->assertOk()
-            ->assertSee("window.addEventListener('load'", false)
+        $printUrl = route('pos.sales.ticket', ['sale' => $sale, 'print' => 1]);
+        $screen = $this->actingAs($employee)->get(route('pos.sales.ticket', $sale))->assertOk()
+            ->assertViewIs('pos.tickets.ticket')->assertDontSee("window.addEventListener('load'", false);
+        $printed = $this->get($printUrl)->assertOk()
             ->assertSee('onclick="window.print()"', false);
+
+        if ($mode === 'text') {
+            $screen->assertSee('href="'.$printUrl.'"', false)->assertDontSee('onclick="window.print()"', false);
+            $printed->assertViewIs('pos.tickets.text-print')
+                ->assertSee('data-ticket-print-document', false)->assertDontSee('class="ticket ticket-sheet"', false);
+        } else {
+            $screen->assertSee('onclick="window.print()"', false);
+            $printed->assertViewIs('pos.tickets.ticket')
+                ->assertSee("window.addEventListener('load'", false)->assertSee('class="ticket ticket-sheet"', false);
+        }
 
         $other = User::factory()->create()->assignRole('empleado');
         $other->givePermissionTo(['pos.access', 'pos.tickets.print.own']);
-        $this->actingAs($other)->get(route('pos.sales.ticket', ['sale' => $sale, 'print' => 1]))->assertForbidden();
+        $this->actingAs($other)->get($printUrl)->assertForbidden();
     }
 
     public function test_pos_uses_full_width_and_keeps_authorized_navigation_in_desktop_menu(): void

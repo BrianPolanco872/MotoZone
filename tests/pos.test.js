@@ -587,11 +587,16 @@ test('bulk edits retain fractions and invalid quantities never truncate or clamp
     await ui.bulk(0.001);
     await ui.editQuantity('0.125');
     assert.equal(ui.get('pos-total').textContent, '$1.76');
-    for (const invalid of ['0.0001', '0', '10000', '2.751']) {
+    for (const invalid of ['0.0001', '0', '10000']) {
         const input = await ui.editQuantity(invalid);
         assert.equal(input.value, '0.125');
         assert.equal(ui.get('pos-total').textContent, '$1.76');
     }
+    const aboveStock = await ui.editQuantity('2.751');
+    assert.equal(aboveStock.value, '2.751');
+    assert.equal(ui.get('pos-total').textContent, '$38.79');
+    await ui.editQuantity('0.125');
+
     await ui.scan();
     await ui.bulk(2.75);
     assert.equal(ui.get('bulk-dialog').open, false);
@@ -601,13 +606,19 @@ test('bulk edits retain fractions and invalid quantities never truncate or clamp
 });
 
 test('bulk readding checks the accumulated 9999 limit', async () => {
-    const product = { ...bulkProduct, available_stock: 9999, stock: 9999 };
+    const product = { ...bulkProduct, available_stock: 10000, stock: 10000 };
     const ui = await pos({ products: [product] });
     await ui.scan();
     await ui.bulk(9998.999);
+    const rowBeforeRejection = ui.get('pos-cart-body').children[0].innerHTML;
     await ui.scan();
     await ui.bulk(0.002);
     assert.equal(ui.get('bulk-dialog').open, true);
+    assert.equal(ui.get('bulk-quantity').value, '0.002');
+    assert.equal(ui.get('bulk-error').classList.contains('hidden'), false);
+    assert.match(ui.get('bulk-error').textContent, /cantidad acumulada.*9999/);
+    assert.equal(ui.get('pos-error').classList.contains('hidden'), true);
+    assert.equal(ui.get('pos-cart-body').children[0].innerHTML, rowBeforeRejection);
     await ui.bulk(0.001);
     assert.equal(ui.get('bulk-dialog').open, false);
     await ui.get('pos-pending').click();

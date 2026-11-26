@@ -15,6 +15,7 @@ use App\Services\AuditLogService;
 use App\Services\ReturnService;
 use App\Services\SaleService;
 use App\Services\TicketSettings;
+use App\Support\Quantity;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -348,10 +349,43 @@ class SaleController extends Controller
         $this->authorizeTicket($request->user(), $sale);
 
         $sale->load('items', 'user');
+        $settings = $tickets->current();
+
+        if ($settings['ticket']['print_mode'] === 'text' && $request->query('print') === '1') {
+            $date = $sale->paid_at ?? $sale->created_at;
+            $method = $sale->payment_method ?? 'cash';
+
+            return view('pos.tickets.text-print', [
+                'receipt' => [
+                    'business' => $settings['business'],
+                    'ticket' => array_diff_key($settings['ticket'], array_flip(['show_logo', 'show_qr', 'qr_image_url'])),
+                    'sale' => [
+                        'folio' => $sale->folio,
+                        'date' => $date->format('d/m/Y'),
+                        'time' => $date->format('H:i'),
+                        'cashier' => $sale->user?->name,
+                        'payment_method' => config('pos.payment_methods.'.$method.'.label', ucfirst($method)),
+                        'total' => $sale->total,
+                        'tax_total' => $sale->tax_total,
+                        'amount_paid' => $sale->amount_paid,
+                        'change_amount' => $sale->change_amount,
+                        'items' => $sale->items->map(fn (SaleItem $item): array => [
+                            'name' => $item->product_name,
+                            'quantity' => Quantity::format($item->quantity),
+                            'unit_price' => $item->unit_price,
+                            'line_total' => $item->line_total,
+                            'sku' => $item->sku ?: $item->barcode,
+                            'sale_mode' => $item->saleMode(),
+                            'returned_quantity' => Quantity::format($item->returned_quantity),
+                        ])->all(),
+                    ],
+                ],
+            ]);
+        }
 
         return view('pos.tickets.ticket', [
             'sale' => $sale,
-            'settings' => $tickets->current(),
+            'settings' => $settings,
         ]);
     }
 
