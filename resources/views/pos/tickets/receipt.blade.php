@@ -34,11 +34,11 @@
                     <td class="num quantity">{{ \App\Support\Quantity::format($item->quantity) }}</td>
                     <td class="description">
                         <span class="item-name">{{ $item->product_name }}</span>
-                        <span class="muted item-detail">
-                            @if ($settings['ticket']['show_sku'])
-                                {{ $item->sku ?: $item->barcode }} ·
-                            @endif
-                            ${{ number_format((float) $item->unit_price, 2) }} {{ $item->saleMode() === \App\Models\Product::MODE_KIT ? 'por paquete' : 'por unidad' }}
+                        @if ($settings['ticket']['show_sku'] && ($item->sku || $item->barcode))
+                            <span class="muted item-sku">{{ $item->sku ?: $item->barcode }}</span>
+                        @endif
+                        <span class="muted item-price">
+                            <span class="unit-amount">${{ number_format((float) $item->unit_price, 2) }}</span> {{ $item->saleMode() === \App\Models\Product::MODE_KIT ? 'por paquete' : 'por unidad' }}
                             @if ($item->isBulk()) · A granel @endif
                         </span>
                     </td>
@@ -73,8 +73,10 @@
             <p class="muted receipt-footer">{{ $settings['ticket']['policy'] }}</p>
         @endif
         @if ($settings['ticket']['show_qr'] && $settings['ticket']['qr_image_url'])
-            <img src="{{ $settings['ticket']['qr_image_url'] }}" alt="Código QR de facturación o soporte" class="receipt-qr">
-            <p class="muted">Facturación / Soporte</p>
+            <div class="receipt-qr-block">
+                <img src="{{ $settings['ticket']['qr_image_url'] }}" alt="Código QR de facturación o soporte" class="receipt-qr">
+                <p class="muted">Facturación / Soporte</p>
+            </div>
         @endif
     </div>
 </div>

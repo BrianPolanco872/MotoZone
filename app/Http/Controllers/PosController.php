@@ -18,6 +18,17 @@ class PosController extends Controller
     public function index(TicketSettings $tickets): View
     {
         $user = auth()->user();
+        $canPrintOwnTickets = $user?->can('pos.tickets.print.own') || $user?->can('pos.tickets.print.any');
+        $lastSale = $canPrintOwnTickets
+            ? Sale::query()
+                ->paid()
+                ->where('user_id', $user->id)
+                ->whereNotNull('paid_at')
+                ->orderByDesc('paid_at')
+                ->orderByDesc('id')
+                ->first(['id', 'folio', 'amount_paid', 'change_amount'])
+                ?->toArray()
+            : null;
 
         $hasInitialCash = CashMovement::query()
             ->where('user_id', $user?->id)
@@ -28,6 +39,7 @@ class PosController extends Controller
 
         return view('pos.index', [
             'settings' => $tickets->current(),
+            'lastSale' => $lastSale,
             'permissions' => [
                 'sell' => $user?->can('pos.sell') ?? false,
                 'price_edit' => $user?->can('pos.price.edit') ?? false,
@@ -41,6 +53,7 @@ class PosController extends Controller
                 'sales_day_any' => $user?->can('pos.sales.day.any') ?? false,
                 'cut' => $user?->can('pos.cut.manage') ?? false,
                 'cut_own' => $user?->can('pos.cut.own') ?? false,
+                'tickets_own' => $canPrintOwnTickets,
                 'tickets_any' => $user?->can('pos.tickets.print.any') ?? false,
                 'products_view' => $user?->can('pos.products.view') ?? false,
                 'products_edit' => $user?->can('pos.products.edit') ?? false,

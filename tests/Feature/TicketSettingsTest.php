@@ -243,10 +243,11 @@ class TicketSettingsTest extends TestCase
 
         $this->get(route('pos.sales.ticket', $sale))->assertOk()
             ->assertSee('--ticket-width: '.$width.'mm', false)
-            ->assertSee('width: calc(var(--ticket-width, 80mm) - 10mm)', false)
+            ->assertSee('width: calc(var(--ticket-width, 58mm) - 10mm)', false)
             ->assertSee('max-width: 100%', false)->assertSee('size: auto', false)
             ->assertDontSee('mm auto', false)->assertDontSee('width: auto; max-width: none', false)
-            ->assertSeeInOrder(['Cant.', 'Producto', 'Importe', trim($productName), 'N.º de artículos: 1', 'Total', 'Pago con', 'Cambio', 'Método de pago: Tarjeta', 'Vuelve pronto.'])
+            ->assertSeeInOrder(['Cant.', 'Producto', 'Importe', trim($productName), '$123,456.78', 'por unidad', '$123,456.78', 'N.º de artículos: 1', 'Total', 'Pago con', 'Cambio', 'Método de pago: Tarjeta', 'Vuelve pronto.'])
+            ->assertSee('class="unit-amount">$123,456.78</span>', false)
             ->assertDontSee('Subtotal')->assertDontSee($sale->folio)
             ->assertSee('$123,456.78')->assertDontSee('Conserve este ticket');
 
@@ -264,8 +265,10 @@ class TicketSettingsTest extends TestCase
             ->assertSee('--ticket-width: '.$width.'mm', false)
             ->assertSee('value="'.$width.'" selected', false)
             ->assertSee('data-ticket-width-label>'.$width.'</span>', false)
-            ->assertSee('width: calc(var(--ticket-width, 80mm) - 10mm)', false)
-            ->assertSeeInOrder(['Cant.', 'Producto', 'Importe', 'N.º de artículos: 1', 'Total', 'Pago con', 'Cambio', 'Método de pago: Efectivo'])
+            ->assertSee('width: calc(var(--ticket-width, 58mm) - 10mm)', false)
+            ->assertSee('body.ticket-example-print > :not(#ticket-print-root)', false)
+            ->assertSeeInOrder(['Cant.', 'Producto', 'Importe', 'Aceite', '$148.00', 'por unidad', '$148.00', 'N.º de artículos: 1', 'Total', 'Pago con', 'Cambio', 'Método de pago: Efectivo'])
+            ->assertSee('class="unit-amount">$148.00</span>', false)
             ->assertDontSee('Subtotal')->assertDontSee('V-000019')
             ->assertSee('margin: 0 auto', false)->assertSee('size: auto', false)->assertDontSee('mm auto', false);
     }

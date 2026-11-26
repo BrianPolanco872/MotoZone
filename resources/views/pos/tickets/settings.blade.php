@@ -20,12 +20,12 @@
     <style>
         @include('pos.tickets.receipt-styles')
         .ticket-settings-tab[aria-selected="true"] { color: #f97316; border-color: #f97316; background: rgb(249 115 22 / 8%); }
-        #ticket-paper [hidden], [data-ticket-settings] [hidden] { display: none !important; }
+        [data-ticket-settings] [hidden] { display: none !important; }
+        #ticket-print-root { display: none; }
         @media print {
-            html, body { background: white !important; height: auto !important; color: black !important; }
-            body > div, body > div > div, main, [data-ticket-settings], #ticket-settings-form, [data-ticket-workspace], [data-ticket-preview] { display: block !important; padding: 0 !important; margin: 0 !important; min-height: 0 !important; border: 0 !important; background: white !important; }
-            body > div > aside, header, main > :not([data-ticket-settings]), [data-ticket-settings] > :not(form), #ticket-settings-form > :not([data-ticket-workspace]), [data-ticket-workspace] > :not([data-ticket-preview]), [data-ticket-preview] > :not(#ticket-paper) { display: none !important; }
-            [data-ticket-preview][hidden] { display: block !important; }
+            html, body.ticket-example-print { height: auto; margin: 0; padding: 0; background: white; }
+            body.ticket-example-print > :not(#ticket-print-root) { display: none !important; }
+            #ticket-print-root { display: block; }
         }
     </style>
 
@@ -128,7 +128,17 @@
                         <hr class="divider">
                         <table class="items">
                             <thead><tr><th scope="col" class="num quantity">Cant.</th><th scope="col" class="description">Producto</th><th scope="col" class="num">Importe</th></tr></thead>
-                            <tbody><tr><td class="num quantity">1</td><td class="description"><span class="item-name">Aceite</span><span class="muted item-detail"><span data-ticket-visible="show_sku">ACE-001 · </span>$148.00 por unidad</span></td><td class="num">$148.00</td></tr></tbody>
+                            <tbody>
+                                <tr>
+                                    <td class="num quantity">1</td>
+                                    <td class="description">
+                                        <span class="item-name">Aceite</span>
+                                        <span data-ticket-visible="show_sku" class="muted item-sku">ACE-001</span>
+                                        <span class="muted item-price"><span class="unit-amount">$148.00</span> por unidad</span>
+                                    </td>
+                                    <td class="num">$148.00</td>
+                                </tr>
+                            </tbody>
                         </table>
                         <hr class="divider">
                         <div class="receipt-summary">
@@ -145,7 +155,7 @@
                             <p class="muted">Método de pago: Efectivo</p>
                             <p data-ticket-text="ticket.footer" class="receipt-footer"></p>
                             <p data-ticket-text="ticket.policy" class="muted receipt-footer"></p>
-                            <div data-ticket-visible="show_qr" hidden>
+                            <div data-ticket-visible="show_qr" class="receipt-qr-block" hidden>
                                 <img data-ticket-qr hidden alt="Código QR de soporte o facturación" class="receipt-qr">
                                 <p class="muted">Facturación / Soporte</p>
                             </div>
@@ -161,4 +171,22 @@
             </div>
         </form>
     </div>
+
+    <script>
+        window.addEventListener('beforeprint', () => {
+            if (document.getElementById('ticket-print-root')) {
+                return;
+            }
+
+            const printRoot = document.getElementById('ticket-paper').cloneNode(true);
+            printRoot.id = 'ticket-print-root';
+            document.body.append(printRoot);
+            document.body.classList.add('ticket-example-print');
+        });
+
+        window.addEventListener('afterprint', () => {
+            document.getElementById('ticket-print-root')?.remove();
+            document.body.classList.remove('ticket-example-print');
+        });
+    </script>
 @endsection

@@ -130,9 +130,7 @@ if (configElement) {
     let productCache = new Map();
     let searchTimer = null;
     let submitting = false;
-    let lastSaleId = null;
-    let lastSaleFolio = null;
-    let lastSaleData = null;
+    let lastSale = config.lastSale ?? null;
 
     const showError = (message) => {
         if (!errorBox) {
@@ -157,91 +155,46 @@ if (configElement) {
 
     const clearError = () => errorBox?.classList.add('hidden');
 
-    const renderLastSalePayment = () => {
+    const renderLastSale = () => {
+        const indicator = document.getElementById('last-sale-indicator');
+        const folio = document.getElementById('last-sale-folio');
+        const printButton = document.getElementById('pos-print-ticket');
         const paid = document.getElementById('last-sale-paid');
         const change = document.getElementById('last-sale-change');
-        const sale = lastSaleData?.sale;
 
+        indicator?.classList.toggle('hidden', ! lastSale);
+        if (folio) {
+            folio.textContent = lastSale?.folio ?? '';
+        }
+        if (printButton) {
+            printButton.disabled = ! lastSale?.id || ! permissions.tickets_own || ! config.routes.ticket;
+        }
         if (paid) {
-            paid.textContent = sale ? formatMoney(sale.amount_paid) : '—';
+            paid.textContent = lastSale?.amount_paid == null ? '—' : formatMoney(lastSale.amount_paid);
         }
-
         if (change) {
-            change.textContent = sale ? formatMoney(sale.change_amount) : '—';
+            change.textContent = lastSale?.change_amount == null ? '—' : formatMoney(lastSale.change_amount);
         }
     };
-
-    const showLastSaleIndicator = (id, folio) => {
-        lastSaleId = id;
-        lastSaleFolio = folio;
-        renderLastSalePayment();
-
-        const indicator = document.getElementById('last-sale-indicator');
-        const folioEl = document.getElementById('last-sale-folio');
-        const printBtn = document.getElementById('pos-print-ticket');
-
-        if (indicator && folioEl && printBtn) {
-            folioEl.textContent = folio;
-            indicator.classList.remove('hidden');
-            printBtn.disabled = false;
-        }
-    };
-
-    const clearLastSale = () => {
-        lastSaleId = null;
-        lastSaleFolio = null;
-        lastSaleData = null;
-        renderLastSalePayment();
-
-        const indicator = document.getElementById('last-sale-indicator');
-        const printBtn = document.getElementById('pos-print-ticket');
-
-        if (indicator) {
-            indicator.classList.add('hidden');
-        }
-
-        if (printBtn) {
-            printBtn.disabled = true;
-        }
-    };
-
-    let ticketPrintFrame = null;
 
     const printTicketById = (saleId) => {
-        if (!saleId || !config.routes.ticket || ticketPrintFrame) {
+        if (! saleId || ! permissions.tickets_own || ! config.routes.ticket) {
             return;
         }
 
-        clearError();
-        const frame = document.createElement('iframe');
-        frame.className = 'pos-ticket-frame';
-        frame.title = 'Impresión de ticket';
-        frame.tabIndex = -1;
-        frame.setAttribute('aria-hidden', 'true');
-        frame.addEventListener('load', async () => {
-            try {
-                const ticket = frame.contentDocument?.getElementById('sale-ticket');
-                if (!ticket) {
-                    showError('No se pudo abrir el comprobante para imprimir.');
-                    return;
-                }
+        const url = `${config.routes.ticket.replace('__SALE__', saleId)}?print=1`;
+        const ticketWindow = window.open('', '_blank');
+        if (ticketWindow) {
+            ticketWindow.opener = null;
+            ticketWindow.location.replace(url);
+            return;
+        }
 
-                await Promise.all(Array.from(ticket.querySelectorAll('img'), (image) => image.decode()));
-                frame.contentWindow.print();
-            } catch {
-                showError('No se pudo preparar el comprobante para imprimir.');
-            } finally {
-                frame.remove();
-                ticketPrintFrame = null;
-            }
-        }, { once: true });
-
-        frame.src = config.routes.ticket.replace('__SALE__', saleId);
-        ticketPrintFrame = frame;
-        document.body.appendChild(frame);
+        const warning = items.length > 0 ? ' Se perderán los productos no guardados del carrito.' : '';
+        if (window.confirm(`El navegador bloqueó la nueva pestaña. ¿Abrir el ticket en esta pestaña?${warning}`)) {
+            window.location.assign(url);
+        }
     };
-
-    const printLastSaleTicket = () => printTicketById(lastSaleId);
 
     const selectedDaySale = () => daySales.find((sale) => sale.id === selectedDaySaleId) ?? null;
 
@@ -336,7 +289,7 @@ if (configElement) {
             daySalesCancel.disabled = ! sale || sale.cancelled;
         }
         if (daySalesPrint) {
-            daySalesPrint.disabled = ! sale || ! config.routes.ticket;
+            daySalesPrint.disabled = ! sale || ! permissions.tickets_own || ! config.routes.ticket;
         }
     };
 
@@ -1039,17 +992,20 @@ if (configElement) {
             paymentDialog.close();
 
             if (data?.sale) {
-                showLastSaleIndicator(data.sale.id, data.sale.folio);
+                lastSale = data.sale;
+                renderLastSale();
 
-                if (config.routes.ticketData) {
+                if (permissions.tickets_own && config.routes.ticketData) {
                     try {
                         const ticketResponse = await fetch(config.routes.ticketData.replace('__SALE__', data.sale.id), {
                             headers: { Accept: 'application/json' },
                         });
 
                         if (ticketResponse.ok) {
-                            lastSaleData = await ticketResponse.json();
-                            renderLastSalePayment();
+                            const { sale } = await ticketResponse.json();
+                            lastSale.amount_paid = sale.amount_paid;
+                            lastSale.change_amount = sale.change_amount;
+                            renderLastSale();
                         }
                     } catch (error) {
                         // No bloquea el flujo si no se pueden cargar los detalles del ticket
@@ -1605,20 +1561,16 @@ if (configElement) {
         }
     });
 
-    document.getElementById('pos-new-sale')?.addEventListener('click', () => {
-        resetSale();
-        clearLastSale();
-    });
+    document.getElementById('pos-new-sale')?.addEventListener('click', resetSale);
     document.getElementById('pos-clear')?.addEventListener('click', () => {
         if (items.length > 0 && !window.confirm('¿Eliminar la venta actual?')) {
             return;
         }
 
         resetSale();
-        clearLastSale();
     });
 
-    document.getElementById('pos-print-ticket')?.addEventListener('click', printLastSaleTicket);
+    document.getElementById('pos-print-ticket')?.addEventListener('click', () => printTicketById(lastSale?.id));
 
     paymentConfirm?.addEventListener('click', () => {
         updateChange();
@@ -1886,6 +1838,7 @@ if (configElement) {
 
     paymentMethod?.addEventListener('change', updateChange);
 
+    renderLastSale();
     renderCart();
     refreshPendingSales().catch(() => {});
 

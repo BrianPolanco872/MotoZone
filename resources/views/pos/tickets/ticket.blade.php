@@ -55,5 +55,20 @@
     </div>
 
     @include('pos.tickets.receipt')
+
+    <script>
+        const receiptQr = document.querySelector('.receipt-qr');
+        if (receiptQr) {
+            const hideBrokenQr = () => { receiptQr.parentElement.hidden = true; };
+            receiptQr.addEventListener('error', hideBrokenQr, { once: true });
+            if (receiptQr.complete && !receiptQr.naturalWidth) {
+                hideBrokenQr();
+            }
+        }
+
+        @if (request()->query('print') === '1')
+            window.addEventListener('load', () => window.print(), { once: true });
+        @endif
+    </script>
 </body>
 </html>

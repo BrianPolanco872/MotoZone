@@ -296,3 +296,13 @@ plan-tickets-58mm-predeterminado-01 -> implementa_feature -> feature-tickets-ter
 plan-tickets-58mm-predeterminado-01 -> se_apoya_en -> fix-tickets-termicos-5sprinter-etapa1-01
 plan-tickets-58mm-predeterminado-01 -> implementado_por -> fix-tickets-58mm-predeterminado-01
 fix-tickets-58mm-predeterminado-01 -> implementa_feature -> feature-tickets-termicos-5sprinter-01
+bug-pos-reimpresion-01 -> tiene_plan -> plan-pos-reimpresion-01
+plan-pos-reimpresion-01 -> se_apoya_en -> plan-pos-ultima-venta-pendientes-01
+plan-pos-reimpresion-01 -> se_apoya_en -> plan-pos-ventas-dia-devoluciones-01
+plan-pos-reimpresion-01 -> implementado_por -> fix-pos-reimpresion-01
+bug-pos-reimpresion-01 -> corregido_en_fuente_por -> fix-pos-reimpresion-01
+bug-tickets-ancho-impresion-01 -> tiene_plan -> plan-tickets-formato-termico-02
+plan-tickets-formato-termico-02 -> propone_fix_para -> hipotesis-H1-tickets-ancho-impresion-01
+plan-tickets-formato-termico-02 -> se_apoya_en -> plan-tickets-58mm-predeterminado-01
+plan-tickets-formato-termico-02 -> se_apoya_en -> plan-pos-reimpresion-01
+plan-tickets-formato-termico-02 -> implementado_por -> fix-tickets-formato-termico-02

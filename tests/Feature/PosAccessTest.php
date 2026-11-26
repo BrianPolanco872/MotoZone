@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Sale;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use DOMDocument;
@@ -54,6 +55,67 @@ class PosAccessTest extends TestCase
         $admin = User::factory()->create()->assignRole('admin');
 
         $this->actingAs($admin)->get(route('pos.index'))->assertOk();
+    }
+
+    #[TestWith(['pos.tickets.print.own'])]
+    #[TestWith(['pos.tickets.print.any'])]
+    public function test_pos_recovers_only_the_cashiers_latest_paid_ticket(string $printPermission): void
+    {
+        $employee = User::factory()->create()->assignRole('empleado');
+        $employee->givePermissionTo(['pos.access', $printPermission]);
+        $other = User::factory()->create()->assignRole('empleado');
+        $other->givePermissionTo('pos.access');
+        $samePaymentTime = now()->subHour();
+
+        foreach ([
+            ['V-SAME-TIME', $employee, Sale::STATUS_PAID, $samePaymentTime],
+            ['V-LAST', $employee, Sale::STATUS_PAID, $samePaymentTime],
+            ['V-OLDER', $employee, Sale::STATUS_PAID, now()->subHours(2)],
+            ['V-PENDING', $employee, Sale::STATUS_PENDING, null],
+            ['V-CANCELLED', $employee, Sale::STATUS_CANCELLED, now()],
+            ['V-OTHER', $other, Sale::STATUS_PAID, now()],
+        ] as [$folio, $cashier, $status, $paidAt]) {
+            Sale::query()->create([
+                'folio' => $folio,
+                'user_id' => $cashier->id,
+                'idempotency_key' => $folio,
+                'status' => $status,
+                'paid_at' => $paidAt,
+                'total' => 70,
+                'amount_paid' => 100,
+                'change_amount' => 30,
+            ]);
+        }
+
+        $this->actingAs($employee)->get(route('pos.index'))->assertOk()
+            ->assertViewHas('lastSale', fn (array $sale): bool => $sale['folio'] === 'V-LAST'
+                && $sale['amount_paid'] === '100.00' && $sale['change_amount'] === '30.00');
+
+        $this->actingAs($other)->get(route('pos.index'))->assertOk()
+            ->assertViewHas('lastSale', fn (?array $sale): bool => $sale === null)
+            ->assertDontSee('V-OTHER');
+    }
+
+    public function test_ticket_auto_printing_is_opt_in_and_keeps_the_manual_button(): void
+    {
+        $employee = User::factory()->create()->assignRole('empleado');
+        $employee->givePermissionTo(['pos.access', 'pos.tickets.print.own']);
+        $sale = Sale::query()->create([
+            'user_id' => $employee->id,
+            'idempotency_key' => 'opt-in-ticket-print',
+            'paid_at' => now(),
+        ]);
+
+        $this->actingAs($employee)->get(route('pos.sales.ticket', $sale))->assertOk()
+            ->assertDontSee("window.addEventListener('load'", false);
+
+        $this->get(route('pos.sales.ticket', ['sale' => $sale, 'print' => 1]))->assertOk()
+            ->assertSee("window.addEventListener('load'", false)
+            ->assertSee('onclick="window.print()"', false);
+
+        $other = User::factory()->create()->assignRole('empleado');
+        $other->givePermissionTo(['pos.access', 'pos.tickets.print.own']);
+        $this->actingAs($other)->get(route('pos.sales.ticket', ['sale' => $sale, 'print' => 1]))->assertForbidden();
     }
 
     public function test_pos_uses_full_width_and_keeps_authorized_navigation_in_desktop_menu(): void

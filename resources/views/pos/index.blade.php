@@ -198,9 +198,11 @@
                         <div class="flex size-6 items-center justify-center rounded-full bg-mz-success text-white">
                             <x-icon name="check" class="size-4" />
                         </div>
-                        <span>Venta guardada con éxito: Folio <span id="last-sale-folio" class="font-bold text-white font-mono"></span></span>
+                        <span>Última venta cobrada: Folio <span id="last-sale-folio" class="font-bold text-white font-mono"></span></span>
                     </div>
-                    <span class="text-xs text-mz-text-muted hidden sm:inline">Listo para imprimir ticket</span>
+                    @if ($permissions['tickets_own'])
+                        <span class="text-xs text-mz-text-muted hidden sm:inline">Listo para imprimir ticket</span>
+                    @endif
                     <div class="mt-2 flex w-full flex-wrap gap-x-4 gap-y-1 border-t border-mz-success/20 pt-2 font-semibold text-mz-text-secondary">
                         <span>Pago con: <span id="last-sale-paid" class="font-mono text-white">—</span></span>
                         <span>Cambio: <span id="last-sale-change" class="font-mono text-white">—</span></span>
@@ -738,7 +740,6 @@
     <style>
         /* Tailwind genera .inline-flex después de .hidden: hace falta especificidad para ocultar de verdad. */
         #pos-reopen-day.hidden { display: none; }
-        .pos-ticket-frame { position: fixed; top: 0; left: 0; width: 1px; height: 1px; border: 0; opacity: 0; pointer-events: none; }
     </style>
 
     <script type="application/json" id="pos-config">
@@ -760,9 +761,10 @@
                 'reopen_my_day' => route('pos.cuts.reopen-my-day'),
             ],
             'permissions' => $permissions,
+            'lastSale' => $lastSale,
             'currency' => $currency,
             'csrf' => csrf_token(),
             'storeEnabled' => (bool) ($settings['enabled'] ?? true),
-        ], JSON_UNESCAPED_UNICODE) !!}
+        ], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) !!}
     </script>
 @endsection
