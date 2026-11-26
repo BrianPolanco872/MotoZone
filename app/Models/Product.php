@@ -196,6 +196,31 @@ class Product extends Model
         });
     }
 
+    public function scopeSearchExactCodes(Builder $query, string $term, bool $includeSku = false): void
+    {
+        if ($term === '') {
+            return;
+        }
+
+        $numericCode = ctype_digit($term);
+        $matchesBarcode = fn (Builder $query): Builder => $query->where('barcode', $term)->orWhere('barcode2', $term);
+
+        if ((! $includeSku && $numericCode) || (clone $query)->where($matchesBarcode)->exists()) {
+            $query->where($matchesBarcode);
+
+            return;
+        }
+
+        if ($includeSku && ($numericCode || (clone $query)->where('sku', $term)->exists())) {
+            $query->where('sku', $term);
+
+            return;
+        }
+
+        $query->where(fn (Builder $query): Builder => $query->where('name', 'like', "%{$term}%")
+            ->orWhere('brand', 'like', "%{$term}%"));
+    }
+
     public function availableStock(): int|float|null
     {
         if (! $this->isKit()) {

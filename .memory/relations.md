@@ -315,3 +315,9 @@ bug-tickets-leyenda-qr-01 -> tiene_plan -> plan-tickets-leyenda-qr-01
 plan-tickets-leyenda-qr-01 -> propone_fix_para -> hipotesis-H1-tickets-leyenda-qr-01
 plan-tickets-leyenda-qr-01 -> implementado_por -> fix-tickets-leyenda-qr-01
 bug-tickets-leyenda-qr-01 -> corregido_en_fuente_por -> fix-tickets-leyenda-qr-01
+feature-busqueda-codigo-exacto-pos-productos-01 -> implemented_by_plan -> plan-busqueda-codigo-exacto-pos-productos-01
+plan-busqueda-codigo-exacto-pos-productos-01 -> implementa_feature -> feature-busqueda-codigo-exacto-pos-productos-01
+plan-busqueda-codigo-exacto-pos-productos-01 -> se_apoya_en -> plan-barcode2-productos-01
+plan-busqueda-codigo-exacto-pos-productos-01 -> considera_bug_activo -> bug-productos-costo-vacio-01
+plan-busqueda-codigo-exacto-pos-productos-01 -> implementado_por -> fix-busqueda-codigo-exacto-pos-productos-01
+fix-busqueda-codigo-exacto-pos-productos-01 -> implementa_feature -> feature-busqueda-codigo-exacto-pos-productos-01

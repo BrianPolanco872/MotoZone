@@ -31,6 +31,7 @@ class PosProductSearchTest extends TestCase
             'barcode' => '0001234567890',
             'barcode2' => 'A(02)+#',
         ]);
+        Product::factory()->create(['name' => 'Pieza A(02)+# extendida']);
         $employee = User::factory()->create()->assignRole('empleado');
         $employee->givePermissionTo('pos.access');
 
@@ -38,6 +39,7 @@ class PosProductSearchTest extends TestCase
             $this->actingAs($employee)
                 ->getJson(route('pos.products.search', ['q' => $code]))
                 ->assertOk()
+                ->assertJsonCount(1, 'products')
                 ->assertJsonPath('products.0.id', $product->id)
                 ->assertJsonPath('products.0.sale_mode', Product::MODE_UNIT);
         }
@@ -46,6 +48,26 @@ class PosProductSearchTest extends TestCase
             ->getJson(route('pos.products.search', ['q' => 'INTERNAL-ONLY-01']))
             ->assertOk()
             ->assertJsonCount(0, 'products');
+    }
+
+    #[TestWith(['barcode'])]
+    #[TestWith(['barcode2'])]
+    #[TestWith([null])]
+    public function test_pos_numeric_search_never_suggests_products_without_the_exact_barcode(?string $exactField): void
+    {
+        Product::factory()->count(3)->sequence(
+            ['barcode' => '39', 'sku' => '039'],
+            ['barcode' => '1039', 'name' => 'Balata 039'],
+            ['barcode2' => '039A', 'brand' => 'Serie 039'],
+        )->create();
+        $exactProduct = $exactField === null ? null : Product::factory()->create([$exactField => '039']);
+        $employee = User::factory()->create()->assignRole('empleado');
+        $employee->givePermissionTo('pos.access');
+
+        $response = $this->actingAs($employee)->getJson(route('pos.products.search', ['q' => '039']));
+
+        $response->assertOk();
+        $this->assertSame($exactProduct === null ? [] : [$exactProduct->id], array_column($response->json('products'), 'id'));
     }
 
     #[TestWith([false])]
@@ -117,7 +139,7 @@ class PosProductSearchTest extends TestCase
         $employee = User::factory()->create()->assignRole('empleado');
         $employee->givePermissionTo('pos.access');
 
-        foreach (['Balata especial', 'Marca única'] as $term) {
+        foreach (['Balata especial', 'Marca única', 'Balata', 'única'] as $term) {
             $this->actingAs($employee)
                 ->getJson(route('pos.products.search', ['q' => $term]))
                 ->assertOk()

@@ -35,11 +35,11 @@ class ProductController extends Controller
 
         $products = Product::query()
             ->with('kitItems')
-            ->search($search)
             ->when($stockFilter === 'bajo', fn (Builder $query) => $query->active()->lowStock())
             ->when($stockFilter === 'agotado', fn (Builder $query) => $query->active()->outOfStock())
             ->when($reviewFilter === 'sin-foto', fn (Builder $query) => $query->active()->missingPhoto())
             ->when($reviewFilter === 'sin-precio', fn (Builder $query) => $query->active()->missingPrice())
+            ->searchExactCodes($search, includeSku: true)
             ->orderBy('name')
             ->paginate(15)
             ->withQueryString();

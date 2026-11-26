@@ -376,9 +376,40 @@ class AdminProductTest extends TestCase
     public function test_admin_product_search_finds_a_product_by_its_second_barcode(): void
     {
         $product = Product::factory()->create(['barcode2' => 'SECONDARY(03)+#']);
+        Product::factory()->create(['name' => 'Pieza SECONDARY(03)+# larga', 'barcode' => 'SECONDARY(03)+#A']);
 
         $response = $this->actingAs($this->admin())
             ->get(route('admin.products.index', ['search' => 'SECONDARY(03)+#']));
+
+        $response->assertOk();
+        $this->assertSame([$product->id], $response->viewData('products')->getCollection()->modelKeys());
+    }
+
+    #[TestWith(['barcode'])]
+    #[TestWith(['barcode2'])]
+    #[TestWith([null])]
+    public function test_admin_numeric_search_never_suggests_products_with_partial_matches(?string $exactField): void
+    {
+        Product::factory()->count(3)->sequence(
+            ['barcode' => '39', 'sku' => $exactField === null ? 'SKU-039' : '039'],
+            ['barcode' => '1039', 'name' => 'Balata 039'],
+            ['barcode2' => '039A', 'brand' => 'Serie 039'],
+        )->create();
+        $exactProduct = $exactField === null ? null : Product::factory()->create([$exactField => '039']);
+
+        $response = $this->actingAs($this->admin())->get(route('admin.products.index', ['search' => '039']));
+
+        $response->assertOk();
+        $this->assertSame($exactProduct === null ? [] : [$exactProduct->id], $response->viewData('products')->getCollection()->modelKeys());
+    }
+
+    #[TestWith(['Balata'])]
+    #[TestWith(['única'])]
+    public function test_admin_product_search_still_matches_partial_name_and_brand(string $term): void
+    {
+        $product = Product::factory()->create(['name' => 'Balata especial', 'brand' => 'Marca única']);
+
+        $response = $this->actingAs($this->admin())->get(route('admin.products.index', ['search' => $term]));
 
         $response->assertOk();
         $this->assertSame([$product->id], $response->viewData('products')->getCollection()->modelKeys());

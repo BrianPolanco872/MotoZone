@@ -76,14 +76,7 @@ class PosController extends Controller
         $products = Product::query()
             ->with(['kitItems', 'category'])
             ->active()
-            ->where(function ($query) use ($term): void {
-                $query->where('barcode', $term)
-                    ->orWhere('barcode2', $term)
-                    ->orWhere('sku', $term)
-                    ->orWhere('name', 'like', "%{$term}%")
-                    ->orWhere('brand', 'like', "%{$term}%");
-            })
-            ->orderByRaw('CASE WHEN barcode = ? OR barcode2 = ? OR sku = ? THEN 0 ELSE 1 END', [$term, $term, $term])
+            ->searchExactCodes($term)
             ->orderBy('name')
             ->limit(12)
             ->get();
