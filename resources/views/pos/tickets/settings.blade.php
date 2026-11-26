@@ -156,8 +156,7 @@
                             <p data-ticket-text="ticket.footer" class="receipt-footer"></p>
                             <p data-ticket-text="ticket.policy" class="muted receipt-footer"></p>
                             <div data-ticket-visible="show_qr" class="receipt-qr-block" hidden>
-                                <img data-ticket-qr hidden alt="Código QR de soporte o facturación" class="receipt-qr">
-                                <p class="muted">Facturación / Soporte</p>
+                                <img data-ticket-qr hidden alt="Código QR" class="receipt-qr">
                             </div>
                         </div>
                     </article>

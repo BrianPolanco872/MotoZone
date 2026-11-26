@@ -74,8 +74,7 @@
         @endif
         @if ($settings['ticket']['show_qr'] && $settings['ticket']['qr_image_url'])
             <div class="receipt-qr-block">
-                <img src="{{ $settings['ticket']['qr_image_url'] }}" alt="Código QR de facturación o soporte" class="receipt-qr">
-                <p class="muted">Facturación / Soporte</p>
+                <img src="{{ $settings['ticket']['qr_image_url'] }}" alt="Código QR" class="receipt-qr">
             </div>
         @endif
     </div>

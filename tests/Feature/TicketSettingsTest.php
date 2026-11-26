@@ -141,9 +141,19 @@ class TicketSettingsTest extends TestCase
 
         $this->get(route('pos.sales.ticket', $sale))->assertOk()
             ->assertSee('SKU-OCULTO')->assertSee('Atendió:')->assertSee('IVA incluido')
-            ->assertSee('data:image/png;base64,', false)->assertSee('80mm');
+            ->assertSee('data:image/png;base64,', false)->assertSee('80mm')
+            ->assertSee('alt="Código QR" class="receipt-qr"', false)
+            ->assertDontSee('Facturación / Soporte');
+        $this->get(route('pos.tickets.edit'))->assertOk()
+            ->assertSee('data-ticket-qr hidden alt="Código QR"', false)
+            ->assertDontSee('Facturación / Soporte');
+
         $this->put(route('pos.tickets.update'), $this->payload(['show_qr' => true]))->assertSessionHasNoErrors();
         $this->assertStringStartsWith('data:image/png;base64,', app(TicketSettings::class)->current()['ticket']['qr_image_url']);
+
+        $this->put(route('pos.tickets.update'), $this->payload(['show_qr' => false]))->assertSessionHasNoErrors();
+        $this->get(route('pos.sales.ticket', $sale))->assertOk()
+            ->assertDontSee('class="receipt-qr"', false);
     }
 
     public function test_bulk_ticket_payload_and_receipt_keep_fractional_sold_and_returned_quantities(): void

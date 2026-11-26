@@ -306,3 +306,12 @@ plan-tickets-formato-termico-02 -> propone_fix_para -> hipotesis-H1-tickets-anch
 plan-tickets-formato-termico-02 -> se_apoya_en -> plan-tickets-58mm-predeterminado-01
 plan-tickets-formato-termico-02 -> se_apoya_en -> plan-pos-reimpresion-01
 plan-tickets-formato-termico-02 -> implementado_por -> fix-tickets-formato-termico-02
+bug-tickets-ancho-impresion-01 -> causa_confirmada -> hipotesis-H2-tickets-ancho-impresion-01
+bug-tickets-ancho-impresion-01 -> tiene_plan -> plan-tickets-adaptacion-impresion-03
+plan-tickets-adaptacion-impresion-03 -> propone_fix_para -> hipotesis-H2-tickets-ancho-impresion-01
+plan-tickets-adaptacion-impresion-03 -> se_apoya_en -> plan-tickets-formato-termico-02
+bug-tickets-leyenda-qr-01 -> causa_confirmada -> hipotesis-H1-tickets-leyenda-qr-01
+bug-tickets-leyenda-qr-01 -> tiene_plan -> plan-tickets-leyenda-qr-01
+plan-tickets-leyenda-qr-01 -> propone_fix_para -> hipotesis-H1-tickets-leyenda-qr-01
+plan-tickets-leyenda-qr-01 -> implementado_por -> fix-tickets-leyenda-qr-01
+bug-tickets-leyenda-qr-01 -> corregido_en_fuente_por -> fix-tickets-leyenda-qr-01
