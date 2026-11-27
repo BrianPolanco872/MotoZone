@@ -126,7 +126,7 @@ if (configElement) {
 
     let items = [];
     let pendingSaleId = null;
-    let wholesaleMode = false;
+    let selectedCartIndex = null;
     let idempotencyKey = uuid();
     let productCache = new Map();
     let searchTimer = null;
@@ -412,6 +412,33 @@ if (configElement) {
         emptyState.classList.toggle('hidden', items.length > 0);
     };
 
+    const syncWholesaleToggle = () => {
+        const item = items[selectedCartIndex];
+        const eligible = Boolean(item) && item.wholesale_price != null && item.manual_price === null;
+
+        wholesaleToggle.checked = Boolean(item?.wholesale);
+        wholesaleToggle.disabled = !permissions.wholesale || pendingSaleId !== null || !eligible;
+    };
+
+    const selectCartItem = (index) => {
+        if (!items[index]) {
+            return;
+        }
+
+        selectedCartIndex = index;
+
+        cartBody.querySelectorAll('[data-cart-row]').forEach((row) => {
+            const active = Number(row.dataset.cartRow) === index;
+            row.classList.toggle('bg-mz-accent-primary/5', active);
+            row.classList.toggle('ring-1', active);
+            row.classList.toggle('ring-inset', active);
+            row.classList.toggle('ring-mz-accent-primary/40', active);
+            row.dataset.selected = active ? 'true' : 'false';
+        });
+
+        syncWholesaleToggle();
+    };
+
     const renderCart = () => {
         cartBody.innerHTML = '';
         cartTable.classList.toggle('h-full', items.length === 0);
@@ -421,7 +448,11 @@ if (configElement) {
 
         items.forEach((item, index) => {
             const row = document.createElement('tr');
-            row.className = 'group transition-colors duration-150 hover:bg-mz-bg-surface-2/40 border-b border-mz-border-light/50 last:border-b-0';
+            const selected = index === selectedCartIndex;
+            row.className = `group cursor-pointer transition-colors duration-150 border-b border-mz-border-light/50 last:border-b-0 ${selected ? 'bg-mz-accent-primary/5 ring-1 ring-inset ring-mz-accent-primary/40' : 'hover:bg-mz-bg-surface-2/40'}`;
+            row.dataset.cartRow = String(index);
+            row.dataset.selected = selected ? 'true' : 'false';
+            row.tabIndex = 0;
             const locked = pendingSaleId !== null;
             const priceControl = permissions.price_edit && !locked
                 ? `<input type="number" step="0.01" min="0" value="${item.unit_price.toFixed(2)}" data-action="price" data-index="${index}" class="h-9 w-24 rounded-lg border border-mz-border-light bg-mz-bg-surface-2 px-2.5 text-right text-sm font-semibold tabular-nums text-mz-text-primary focus:border-mz-accent-primary focus:bg-mz-bg-surface focus:outline-none focus:ring-2 focus:ring-mz-accent-primary/20 transition-all">`
@@ -458,16 +489,11 @@ if (configElement) {
             cartBody.appendChild(row);
         });
 
+        syncWholesaleToggle();
         renderTotals();
     };
 
-    const priceFor = (product) => {
-        if (wholesaleMode && product.wholesale_price !== null && product.wholesale_price !== undefined) {
-            return round(product.wholesale_price);
-        }
-
-        return round(product.price);
-    };
+    const priceFor = (product) => round(product.price);
 
     const isBulkProduct = (product) => {
         if (!product) return false;
@@ -526,6 +552,7 @@ if (configElement) {
                 wholesale_price: product.wholesale_price === null ? null : round(product.wholesale_price),
                 unit_price: priceFor(product),
                 manual_price: null,
+                wholesale: false,
                 sale_mode: product.sale_mode ?? 'unit',
                 quantity,
                 tax_rate: Number(product.tax_rate) || 0,
@@ -813,38 +840,16 @@ if (configElement) {
     };
 
     const setWholesale = (enabled) => {
-        wholesaleMode = enabled;
+        const item = items[selectedCartIndex];
 
-        items.forEach((item) => {
-            if (item.manual_price !== null) {
-                return;
-            }
+        if (!item || item.manual_price !== null || item.wholesale_price == null) {
+            syncWholesaleToggle();
+            return;
+        }
 
-            item.unit_price = enabled && item.wholesale_price !== null ? item.wholesale_price : item.price;
-        });
-
+        item.wholesale = enabled;
+        item.unit_price = enabled ? round(item.wholesale_price) : item.price;
         renderCart();
-
-        if (!resultsBox.classList.contains('hidden')) {
-            resultsBox.querySelectorAll('[data-result-price]').forEach((cell) => {
-                cell.textContent = formatMoney(priceFor(productCache.get(Number(cell.dataset.resultPrice))));
-            });
-        }
-
-        if (bulkDialog?.open && bulkProduct) {
-            const unitPrice = priceFor(bulkProduct);
-            if (bulkPrice) {
-                bulkPrice.textContent = formatMoney(unitPrice);
-            }
-            const qty = parseFloat(bulkQuantity?.value) || 1;
-            const amount = Math.round(qty * unitPrice * 100) / 100;
-            if (bulkAmount) {
-                bulkAmount.value = amount.toFixed(2);
-            }
-            if (bulkTotal) {
-                bulkTotal.textContent = formatMoney(amount);
-            }
-        }
     };
 
     const hasStockValue = (value) => value != null && value !== '';
@@ -982,10 +987,8 @@ if (configElement) {
     const resetSale = () => {
         items = [];
         pendingSaleId = null;
-        wholesaleMode = false;
+        selectedCartIndex = null;
         idempotencyKey = uuid();
-        wholesaleToggle.checked = false;
-        wholesaleToggle.disabled = !permissions.wholesale;
         pendingBanner.classList.add('hidden');
         searchInput.value = '';
         closeSearch();
@@ -1006,7 +1009,7 @@ if (configElement) {
             custom_price: item.is_custom ? item.unit_price : null,
             quantity: item.quantity,
             unit_price: item.manual_price,
-            wholesale: wholesaleMode,
+            wholesale: Boolean(item.wholesale),
         })),
     });
 
@@ -1199,12 +1202,12 @@ if (configElement) {
 
             pendingSaleId = Number(sale.id);
             items = mapSaleItems(sale.items);
+            selectedCartIndex = null;
             paymentTotal.dataset.total = String(sale.total);
             if (paymentMethod) {
                 paymentMethod.value = sale.payment_method || 'cash';
             }
             pendingBanner.classList.remove('hidden');
-            wholesaleToggle.disabled = true;
             renderCart();
             openPayment();
         } catch (error) {
@@ -1460,6 +1463,8 @@ if (configElement) {
         if (input.dataset.action === 'price') {
             item.unit_price = round(Math.max(0, Number(input.value) || 0));
             item.manual_price = item.unit_price;
+            item.wholesale = false;
+            syncWholesaleToggle();
         }
 
         renderTotals();
@@ -1477,11 +1482,36 @@ if (configElement) {
         const button = event.target.closest('[data-action="remove"]');
 
         if (!button) {
+            if (!event.target.closest('input, button, select, textarea')) {
+                const row = event.target.closest('[data-cart-row]');
+
+                if (row) {
+                    selectCartItem(Number(row.dataset.cartRow));
+                }
+            }
+
             return;
+        }
+
+        if (selectedCartIndex !== null && selectedCartIndex >= Number(button.dataset.index)) {
+            selectedCartIndex = null;
         }
 
         items.splice(Number(button.dataset.index), 1);
         renderCart();
+    });
+
+    cartBody?.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') {
+            return;
+        }
+
+        const row = event.target.closest('[data-cart-row]');
+
+        if (row && !event.target.closest('input, button, select, textarea')) {
+            event.preventDefault();
+            selectCartItem(Number(row.dataset.cartRow));
+        }
     });
 
     wholesaleToggle?.addEventListener('change', () => setWholesale(wholesaleToggle.checked));
@@ -1901,7 +1931,7 @@ if (configElement) {
 
         if (event.key === 'F11') {
             event.preventDefault();
-            if (permissions.wholesale) {
+            if (!wholesaleToggle.disabled) {
                 wholesaleToggle.checked = !wholesaleToggle.checked;
                 setWholesale(wholesaleToggle.checked);
             }
@@ -1912,6 +1942,7 @@ if (configElement) {
             if (items.length > 0 && !pendingSaleId) {
                 if (window.confirm('¿Eliminar el último artículo de la venta?')) {
                     items.pop();
+                    selectedCartIndex = null;
                     renderCart();
                 }
             }

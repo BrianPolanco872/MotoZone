@@ -577,6 +577,28 @@ class PosSalesTest extends TestCase
         $this->assertDatabaseCount('cash_movements', 0);
     }
 
+    public function test_wholesale_flag_applies_per_line_and_leaves_other_lines_at_catalog_price(): void
+    {
+        $wholesaleProduct = $this->createProduct(['sku' => 'MAY-001', 'barcode' => '7500000000001', 'price' => 100, 'wholesale_price' => 80]);
+        $regularProduct = $this->createProduct(['sku' => 'REG-001', 'barcode' => '7500000000002', 'price' => 50, 'wholesale_price' => 40]);
+
+        $this->actingAs($this->employee(['pos.wholesale']))
+            ->postJson(route('pos.sales.store'), [
+                'idempotency_key' => 'wholesale-per-line',
+                'status' => 'paid',
+                'amount_paid' => 130,
+                'items' => [
+                    ['product_id' => $wholesaleProduct->id, 'quantity' => 1, 'wholesale' => true],
+                    ['product_id' => $regularProduct->id, 'quantity' => 1],
+                ],
+            ])
+            ->assertOk()
+            ->assertJsonPath('sale.total', 130);
+
+        $this->assertDatabaseHas('sale_items', ['product_id' => $wholesaleProduct->id, 'unit_price' => 80]);
+        $this->assertDatabaseHas('sale_items', ['product_id' => $regularProduct->id, 'unit_price' => 50]);
+    }
+
     public function test_sale_cannot_exceed_available_stock(): void
     {
         $employee = $this->employee();

@@ -82,7 +82,7 @@
                     </div>
 
                     <div class="flex items-center gap-2">
-                        <label class="inline-flex h-10 cursor-pointer select-none items-center gap-2 rounded-lg border border-mz-border-light bg-mz-bg-surface px-3 text-xs font-bold text-mz-text-primary transition-colors hover:bg-mz-bg-surface-2 pos-night:bg-mz-bg-surface-2 pos-night:hover:bg-mz-border-light">
+                        <label class="inline-flex h-10 cursor-pointer select-none items-center gap-2 rounded-lg border border-mz-border-light bg-mz-bg-surface px-3 text-xs font-bold text-mz-text-primary transition-colors hover:bg-mz-bg-surface-2 pos-night:bg-mz-bg-surface-2 pos-night:hover:bg-mz-border-light" title="Selecciona un producto del carrito para aplicar mayoreo">
                             <input id="pos-wholesale" type="checkbox" @disabled(! $permissions['wholesale']) class="size-4 accent-orange-700">
                             <span>Mayoreo</span>
                         </label>
@@ -588,12 +588,12 @@
             </button>
         </div>
 
-        <div class="grid max-h-[78dvh] grid-cols-1 gap-4 overflow-y-auto p-4 lg:grid-cols-2 lg:overflow-hidden">
+        <div class="grid max-h-[min(78dvh,calc(100dvh_-_6rem))] grid-cols-1 gap-4 overflow-y-auto p-4 lg:h-[78dvh] lg:grid-cols-2 lg:grid-rows-[minmax(0,1fr)]">
             <section class="flex min-h-0 flex-col gap-3 rounded-xl border border-mz-border-light bg-mz-bg-surface-2/30 p-3">
                 <label for="day-sales-search" class="text-xs font-bold text-mz-text-secondary">Buscar por código del producto o descripción de la venta</label>
                 <input id="day-sales-search" type="search" autocomplete="off" placeholder="Código o descripción" class="mz-input h-10 w-full text-sm">
 
-                <div class="min-h-0 flex-1 overflow-auto rounded-xl border border-mz-border-light pos-scrollbar">
+                <div role="region" aria-label="Lista de ventas del día" tabindex="0" class="min-h-0 flex-1 overflow-auto rounded-xl border border-mz-border-light focus-visible:outline-2 focus-visible:outline-mz-accent-primary pos-scrollbar">
                     <table class="w-full text-left text-xs">
                         <thead class="sticky top-0 bg-mz-bg-surface-2 text-mz-text-muted">
                             <tr>

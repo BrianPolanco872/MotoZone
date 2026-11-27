@@ -343,3 +343,10 @@ plan-pos-impresion-iframe-01 -> implementado_por -> fix-pos-impresion-iframe-01
 fix-pos-impresion-iframe-01 -> implementa_feature -> feature-pos-impresion-iframe-01
 plan-tickets-ancho-default-unificado-01 -> se_apoya_en -> plan-tickets-58mm-predeterminado-01
 plan-tickets-ancho-default-unificado-01 -> implementado_por -> fix-tickets-ancho-default-unificado-01
+plan-pos-scroll-ventas-dia-01 -> se_apoya_en -> plan-pos-vista-amplia-existencias-01
+plan-pos-scroll-ventas-dia-01 -> implementado_por -> fix-pos-scroll-ventas-dia-01
+feature-pos-mayoreo-por-renglon-01 -> implemented_by_plan -> plan-pos-mayoreo-por-renglon-01
+plan-pos-mayoreo-por-renglon-01 -> implementa_feature -> feature-pos-mayoreo-por-renglon-01
+plan-pos-mayoreo-por-renglon-01 -> se_apoya_en -> plan-pos-vista-amplia-existencias-01
+plan-pos-mayoreo-por-renglon-01 -> implementado_por -> fix-pos-mayoreo-por-renglon-01
+fix-pos-mayoreo-por-renglon-01 -> implementa_feature -> feature-pos-mayoreo-por-renglon-01

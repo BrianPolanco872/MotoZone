@@ -98,6 +98,8 @@ async function pos({ pending = null, ticket = null, lastSale = null, daySales = 
                 if (selector === '[data-action]' && this.dataset.action) return this;
                 if (selector === '[data-action="remove"]' && this.dataset.action === 'remove') return this;
                 if (selector === '[data-product-id]' && this.dataset.productId) return this;
+                if (selector === '[data-cart-row]' && this.dataset.cartRow !== undefined) return this;
+                if (selector === 'input, button, select, textarea' && ['INPUT', 'BUTTON', 'SELECT', 'TEXTAREA'].includes(this.tagName)) return this;
                 if (selector === '[data-search-more]' && 'searchMore' in this.dataset) return this;
                 if (selector === '[data-day-sale]' && this.dataset.daySale) return this;
                 if (selector === '[data-view-image]' && this.dataset.viewImage !== undefined) return this;
@@ -261,6 +263,11 @@ async function pos({ pending = null, ticket = null, lastSale = null, daySales = 
             input.value = String(quantity);
             await get('pos-cart-body').emit('change', { target: input });
             return input;
+        },
+        async selectCartRow(index) {
+            const row = element('TR');
+            row.dataset.cartRow = String(index);
+            await get('pos-cart-body').emit('click', { target: row });
         },
         async custom(name, price) {
             get('custom-product-name').value = name;
@@ -446,7 +453,7 @@ test('any open dialog blocks all global shortcuts without preventing native Esca
             const event = await ui.key(key);
             assert.equal(event.defaultPrevented, undefined);
             assert.equal(ui.get('pos-cart-body').children.length, 1);
-            assert.equal(ui.get('pos-wholesale').checked, undefined);
+            assert.equal(ui.get('pos-wholesale').checked, false);
         }
         dialog.close(); // Native cancellation itself requires a browser, not this DOM stub.
     }
@@ -484,7 +491,7 @@ test('editing blocks shortcuts; focused scanner search still supports function k
     assert.equal(ui.get('cash-type').value, 'out');
     ui.get('cash-dialog').close();
     await ui.key('F11', ui.get('pos-search'));
-    assert.equal(ui.get('pos-total').textContent, '$80.00');
+    assert.equal(ui.get('pos-total').textContent, '$100.00');
     await ui.key('F6', ui.get('pos-search'));
     assert.equal(ui.requests[0].payload.status, 'pending');
     assert.equal(ui.confirmations.length, 1);
@@ -567,12 +574,15 @@ for (const cancellation of ['button', 'Escape']) {
     });
 }
 
-test('bulk readding uses wholesale or overridden price and sums thousandths only on confirmation', async () => {
+test('bulk readding uses the selected line wholesale or overridden price and sums thousandths only on confirmation', async () => {
     const ui = await pos({ products: [bulkProduct] });
-    await ui.key('F11');
     await ui.scan();
-    assert.equal(ui.get('bulk-price').textContent, '$12.00');
+    assert.equal(ui.get('bulk-price').textContent, '$14.10');
     await ui.bulk(0.1);
+    await ui.selectCartRow(0);
+    ui.get('pos-wholesale').checked = true;
+    await ui.get('pos-wholesale').emit('change');
+    assert.equal(ui.get('pos-total').textContent, '$1.20');
     const price = ui.element('INPUT');
     price.dataset = { action: 'price', index: '0' };
     price.value = '15.25';
@@ -586,7 +596,7 @@ test('bulk readding uses wholesale or overridden price and sums thousandths only
     await ui.get('pos-pending').click();
     assert.equal(ui.requests[0].payload.items[0].quantity, 0.3);
     assert.equal(ui.requests[0].payload.items[0].unit_price, 15.25);
-    assert.equal(ui.requests[0].payload.items[0].wholesale, true);
+    assert.equal(ui.requests[0].payload.items[0].wholesale, false);
 });
 
 test('bulk edits retain fractions and invalid quantities never truncate or clamp', async () => {
@@ -804,27 +814,77 @@ test('search renders product metadata without an action column and hides empty s
     assert.match(ui.get('pos-results').innerHTML, />-<\/td>/);
 });
 
-test('clicking any result cell adds one product at its effective wholesale price', async () => {
+test('clicking any result cell adds one product at catalog price; wholesale applies only after selecting its line', async () => {
     const ui = await pos();
     await ui.results();
-    const priceCell = ui.element('TD');
-    priceCell.dataset.resultPrice = '7';
-    ui.get('pos-results').querySelectorAll = (selector) => selector === '[data-result-price]' ? [priceCell] : [];
-    await ui.key('F11');
-    assert.equal(priceCell.textContent, '$80.00');
-    assert.equal(ui.get('pos-cart-body').children.length, 0);
     const row = ui.element('TR');
     row.dataset.productId = '7';
     const cell = ui.element('TD');
     cell.closest = (selector) => selector === '[data-product-id]' ? row : null;
     await ui.get('pos-results').emit('click', { target: cell });
     assert.equal(ui.get('pos-cart-body').children.length, 1);
+    assert.equal(ui.get('pos-total').textContent, '$100.00');
+    assert.equal(ui.get('pos-wholesale').disabled, true);
+    await ui.selectCartRow(0);
+    assert.equal(ui.get('pos-wholesale').disabled, false);
+    ui.get('pos-wholesale').checked = true;
+    await ui.get('pos-wholesale').emit('change');
     assert.equal(ui.get('pos-total').textContent, '$80.00');
     await ui.get('pos-pending').click();
     assert.equal(ui.requests[0].payload.items[0].quantity, 1);
+    assert.equal(ui.requests[0].payload.items[0].wholesale, true);
 });
 
-test('scrolling appends the next page once and keeps later rows selectable at the wholesale price', async () => {
+test('wholesale applies only to the selected cart line and never carries to new lines', async () => {
+    const products = [
+        { id: 7, name: 'Aceite', price: 100, wholesale_price: 80, tax_rate: 0, track_inventory: false, sale_mode: 'unit' },
+        { id: 9, name: 'Casco', price: 50, wholesale_price: 40, tax_rate: 0, track_inventory: false, sale_mode: 'unit' },
+        { id: 11, name: 'Guantes', price: 30, wholesale_price: 20, tax_rate: 0, track_inventory: false, sale_mode: 'unit' },
+    ];
+    const ui = await pos({ products });
+    await ui.scan();
+    await ui.search(1);
+    assert.equal(ui.get('pos-total').textContent, '$150.00');
+    await ui.selectCartRow(0);
+    ui.get('pos-wholesale').checked = true;
+    await ui.get('pos-wholesale').emit('change');
+    assert.equal(ui.get('pos-total').textContent, '$130.00');
+    await ui.selectCartRow(1);
+    assert.equal(ui.get('pos-wholesale').checked, false);
+    ui.get('pos-wholesale').checked = true;
+    await ui.get('pos-wholesale').emit('change');
+    assert.equal(ui.get('pos-total').textContent, '$120.00');
+    await ui.search(2);
+    assert.equal(ui.get('pos-total').textContent, '$150.00');
+    await ui.get('pos-charge').click();
+    await ui.get('payment-confirm').click();
+    assert.deepEqual(ui.requests[0].payload.items.map(({ product_id, wholesale }) => [product_id, wholesale]), [
+        [7, true], [9, true], [11, false],
+    ]);
+});
+
+test('manual price and removing a line clear the selected wholesale line', async () => {
+    const ui = await pos();
+    await ui.scan();
+    await ui.selectCartRow(0);
+    ui.get('pos-wholesale').checked = true;
+    await ui.get('pos-wholesale').emit('change');
+    assert.equal(ui.get('pos-total').textContent, '$80.00');
+    const price = ui.element('INPUT');
+    price.dataset = { action: 'price', index: '0' };
+    price.value = '90';
+    await ui.get('pos-cart-body').emit('change', { target: price });
+    assert.equal(ui.get('pos-total').textContent, '$90.00');
+    assert.equal(ui.get('pos-wholesale').checked, false);
+    assert.equal(ui.get('pos-wholesale').disabled, true);
+    const remove = ui.element('BUTTON');
+    remove.dataset = { action: 'remove', index: '0' };
+    await ui.get('pos-cart-body').emit('click', { target: remove });
+    assert.equal(ui.get('pos-cart-body').children.length, 0);
+    assert.equal(ui.get('pos-wholesale').disabled, true);
+});
+
+test('scrolling appends the next page once and keeps later rows selectable at catalog price', async () => {
     const first = { id: 7, name: 'Casco abierto', price: 100, wholesale_price: 80 };
     const later = { ...first, id: 8, name: 'Casco integral', store_2_stock: '3.000' };
     const following = Promise.withResolvers();
@@ -837,7 +897,6 @@ test('scrolling appends the next page once and keeps later rows selectable at th
         },
     });
     await ui.results('cas');
-    await ui.key('F11');
     const box = ui.get('pos-results');
     Object.assign(box, { clientHeight: 300, scrollHeight: 700, scrollTop: 200 });
     await box.emit('scroll');
@@ -860,7 +919,7 @@ test('scrolling appends the next page once and keeps later rows selectable at th
     const laterRow = ui.element('TR');
     laterRow.dataset.productId = '8';
     await box.emit('keydown', { key: 'Enter', target: laterRow });
-    assert.equal(ui.get('pos-total').textContent, '$80.00');
+    assert.equal(ui.get('pos-total').textContent, '$100.00');
     assert.match(ui.get('pos-cart-body').children[0].innerHTML, /Casco integral/);
 });
 

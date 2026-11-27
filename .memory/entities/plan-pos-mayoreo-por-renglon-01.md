@@ -1,0 +1,18 @@
+---
+entity: plan-pos-mayoreo-por-renglon-01
+type: plan
+---
+
+- Tipo: feature.
+- Objetivo: Convertir Mayoreo global en una acción exclusiva del renglón seleccionado en el carrito.
+- Evidencia: `setWholesale` recorre todos los renglones y repinta precios de búsqueda; `buildPayload` manda el mismo indicador a todos. El backend ya acepta la bandera `wholesale` por ítem y `PricingService` valida `pos.wholesale` y la existencia de precio de mayoreo.
+- Paso 1: Mantener el control Mayoreo, claro y deshabilitado sin un renglón elegible seleccionado. En el carrito, permitir seleccionar explícitamente un producto (clic o teclado en su nombre, sin interferir con editar cantidad, quitar ni abrir la foto). Mostrar qué renglón está seleccionado y sincronizar la casilla con su precio. F11 conserva el atajo solo para esa acción y nunca cambia otros renglones.
+- Paso 2: Guardar Mayoreo por renglón y constatar que su activación cambia solo su precio y total; desactivarlo restaura su precio normal. Las adquisiciones nuevas no heredan Mayoreo de otro renglón. Reagregar el mismo producto mantiene el estado de su renglón existente, incluido granel. Conservar el precio manual sin sobrescribirlo, impedir cambios sin permiso, en productos sin tarifa, en artículos libres y en pendientes bloqueadas. Limpiar selección al quitar el renglón o reiniciar la venta; no recalcular precios de búsqueda.
+- Paso 3: Enviar al servidor el indicador individual por ítem al cobrar o guardar y conservar la validación de precios y permisos en el backend existente. No cambiar esquema ni reglas de venta, duplicar productos ni cambiar importes históricos.
+- Alcance: `resources/js/pos/pos.js`, `resources/views/pos/index.blade.php`, `tests/pos.test.js` y assets generados. Añadir solo la regresión PHP de integración en `tests/Feature/PosSalesTest.php` si no hay cobertura para mezclar precio normal y mayoreo. Regenerar con `./build.sh` tras verificar versión/tag.
+- Criterios de aceptación: En un carrito con A y B, activar Mayoreo de A cambia solo A; B conserva normal y puede activarse por separado. Sin selección, sin permiso o sin tarifa no hay cambio. Se verifica el envío de flags distintos, precio manual, granel, eliminación/reinicio y pendientes. Testing por solicitud explícita.
+- Plan de rollback: Restaurar las fuentes previstas, sus pruebas y el build/manifiesto anterior en conjunto. Sin migraciones ni cambios de datos que revertir.
+- Estado: IMPLEMENTADO
+- Cambios aplicados: Mayoreo pasó de modo global a estado por renglón. La casilla queda deshabilitada sin un renglón elegible seleccionado y refleja el estado del renglón elegido. El carrito permite seleccionar con clic o Enter/Espacio y resalta el renglón; F11 solo alterna el renglón seleccionado. Los productos nuevos entran a precio de catálogo, el precio manual desactiva mayoreo y quitar/reiniciar limpia la selección. `buildPayload` envía `wholesale` por ítem; el backend no cambió. Pruebas JS actualizadas y dos nuevas; regresión PHP de líneas mixtas agregada. Build regenerado con `./build.sh` (versión 1.0.1, tag en HEAD).
+- Desviaciones del plan original: El precio de búsqueda ahora siempre muestra catálogo (antes reflejaba el modo global); es consistente con la nueva regla. La selección se limita a filas del carrito, no al nombre. `public/build` está ignorado por git: los assets nuevos no quedan rastreados salvo que se agreguen con `-f` o se suban al servidor.
+- Verificación: `node --test "tests/*.test.js"` 81/81; `php artisan test --compact tests/Feature/PosSalesTest.php` 44/44; Pint, Blade compilada y `git diff --check` sin errores. Sin verificación en navegador de caja; Testing solo por solicitud explícita.
