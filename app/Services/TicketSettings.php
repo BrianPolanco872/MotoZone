@@ -14,7 +14,7 @@ class TicketSettings
             ? json_decode($disk->get('pos/ticket-settings.json'), true, 512, JSON_THROW_ON_ERROR)
             : [];
 
-        return array_replace_recursive(config('pos'), ['ticket' => ['width_mm' => 58]], $saved);
+        return array_replace_recursive(config('pos'), $saved);
     }
 
     public function save(array $settings): void

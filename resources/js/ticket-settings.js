@@ -1,4 +1,5 @@
 import { formatearTicket } from './ticket-text.js';
+import { printTicketFrame } from './ticket-print.js';
 
 const ticketSettings = document.querySelector('[data-ticket-settings]');
 
@@ -185,7 +186,10 @@ if (ticketSettings) {
     ticketSettings.querySelectorAll('[data-ticket-print]').forEach((button) => {
         button.addEventListener('click', () => {
             updatePreview();
-            window.print();
+            printTicketFrame({
+                content: printMode.value === 'graphic' ? paper : textPreview,
+                styles: document.getElementById('ticket-preview-styles'),
+            });
         });
     });
     window.addEventListener('beforeprint', () => {

@@ -16,6 +16,7 @@
         $cashOut = $totals['cash_out'] ?? [];
         $money = fn ($value) => '$'.number_format((float) $value, 2);
         $cut = $cut ?? null;
+        $paperWidth = (int) ($settings['cut']['width_mm'] ?? 80);
         $generatedAt = $cut ? $cut->generated_at?->format('d/m/Y H:i') : now()->format('d/m/Y H:i');
     @endphp
     <style>
@@ -59,7 +60,7 @@
             background: #EA580C;
         }
         .sheet {
-            width: {{ (int) ($settings['ticket']['width_mm'] ?? 80) }}mm;
+            width: {{ $paperWidth }}mm;
             max-width: 100%;
             margin: 0 auto;
             padding: 6mm 3mm;
@@ -105,8 +106,8 @@
         @media print {
             body { padding: 0; background: #fff; font-size: 11px; }
             .toolbar { display: none; }
-            .sheet { box-shadow: none; max-width: none; padding: 0; width: {{ (int) ($settings['ticket']['width_mm'] ?? 80) }}mm; }
-            @page { size: {{ (int) ($settings['ticket']['width_mm'] ?? 80) }}mm auto; margin: 4mm; }
+            .sheet { box-shadow: none; max-width: none; padding: 0; width: {{ $paperWidth }}mm; }
+            @page { size: {{ $paperWidth }}mm auto; margin: 4mm; }
         }
     </style>
 </head>

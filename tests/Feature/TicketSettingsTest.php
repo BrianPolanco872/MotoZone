@@ -12,7 +12,9 @@ use DOMXPath;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\TestWith;
+use Symfony\Component\Process\Process;
 use Tests\TestCase;
 
 class TicketSettingsTest extends TestCase
@@ -59,6 +61,21 @@ class TicketSettingsTest extends TestCase
         return Sale::findOrFail($response->json('sale.id'));
     }
 
+    private function assertPrintedColumns(TestResponse $response, int $columns): void
+    {
+        $document = new DOMDocument;
+        $document->loadHTML($response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+        $receipt = $document->getElementById('ticket')->getAttribute('data-receipt');
+        $formatter = new Process(['node', '--input-type=module', '--eval', <<<'JS'
+            import { readFileSync } from 'node:fs';
+            import { formatearTicket } from './resources/js/ticket-text.js';
+            process.stdout.write(formatearTicket(JSON.parse(readFileSync(0, 'utf8'))));
+            JS], base_path(), input: $receipt);
+        $lines = explode("\n", $formatter->mustRun()->getOutput());
+        $this->assertContains(str_repeat('=', $columns), $lines);
+        $this->assertSame($columns, max(array_map('strlen', $lines)));
+    }
+
     public function test_guests_must_log_in_to_configure_tickets(): void
     {
         $this->get(route('pos.tickets.edit'))->assertRedirect(route('login'));
@@ -90,12 +107,31 @@ class TicketSettingsTest extends TestCase
     public function test_ticket_settings_default_to_58_mm_without_a_saved_preference(): void
     {
         $admin = User::factory()->create()->assignRole('admin');
+        $sale = $this->sale($admin, 'Cadena reforzada con una descripcion suficientemente larga para un ticket');
+        $this->assertSame(58, config('pos.ticket.width_mm'));
+        Storage::disk('local')->assertMissing('pos/ticket-settings.json');
 
-        $this->actingAs($admin)->get(route('pos.tickets.edit'))->assertOk()
+        $this->get(route('pos.tickets.edit'))->assertOk()
             ->assertSee('value="58" selected', false)
+            ->assertSee('value="80"', false)
             ->assertSee('value="text" selected', false)
             ->assertSee('style="--ticket-width: 58mm"', false)
+            ->assertSee('data-ticket-text-preview data-paper-width="58"', false)
             ->assertSee('data-ticket-width-label>58</span>', false);
+        $ticket = $this->get(route('pos.sales.ticket', ['sale' => $sale, 'embed' => 1]))->assertOk()
+            ->assertViewIs('pos.tickets.text-print')->assertSee('data-paper-width="58"', false);
+        $this->assertPrintedColumns($ticket, 32);
+        Storage::disk('local')->assertMissing('pos/ticket-settings.json');
+    }
+
+    public function test_printed_cash_cut_keeps_80_mm_when_sales_tickets_default_to_58_mm(): void
+    {
+        $admin = User::factory()->create()->assignRole('admin');
+
+        $cut = $this->actingAs($admin)->get(route('pos.cuts.print'))->assertOk()->assertViewIs('pos.cuts.print');
+
+        $this->assertMatchesRegularExpression('/\.sheet\s*{\s*width:\s*80mm;/', $cut->getContent());
+        $cut->assertSee('padding: 0; width: 80mm;', false)->assertDontSee('width: 58mm;', false);
     }
 
     public function test_legacy_settings_default_to_text_and_updates_keep_new_preferences(): void
@@ -165,6 +201,37 @@ class TicketSettingsTest extends TestCase
             'sale_mode' => Product::MODE_BULK,
             'returned_quantity' => '0.125',
         ], $receipt['sale']['items'][0]);
+    }
+
+    public function test_embedded_sale_print_uses_the_saved_mode_without_autoprint_and_limits_58_mm_to_32_columns(): void
+    {
+        $admin = User::factory()->create()->assignRole('admin');
+        $sale = $this->sale($admin, 'Cadena reforzada con una descripcion suficientemente larga para envolverla en el ticket');
+        $url = route('pos.sales.ticket', ['sale' => $sale, 'embed' => 1]);
+        $this->put(route('pos.tickets.update'), $this->payload(['print_mode' => 'text', 'width_mm' => 80]))
+            ->assertSessionHasNoErrors();
+        $wideTicket = $this->get($url)->assertOk()->assertSee('data-paper-width="80"', false);
+        $this->assertPrintedColumns($wideTicket, 42);
+        $this->put(route('pos.tickets.update'), $this->payload(['print_mode' => 'text', 'width_mm' => 58, 'full_description' => true]))
+            ->assertSessionHasNoErrors();
+
+        $text = $this->get($url)->assertOk()->assertViewIs('pos.tickets.text-print')
+            ->assertSee('data-ticket-embedded', false)->assertSee('data-paper-width="58"', false)
+            ->assertDontSee('data-ticket-auto-print', false)->assertDontSee('window.print()', false);
+        $this->assertStringContainsString('no-store', $text->headers->get('Cache-Control'));
+        $this->get($url.'&print=1')->assertOk()->assertDontSee('data-ticket-auto-print', false);
+        $this->assertPrintedColumns($text, 32);
+
+        $this->put(route('pos.tickets.update'), $this->payload(['print_mode' => 'graphic']))
+            ->assertSessionHasNoErrors();
+        foreach ([$url, $url.'&print=1'] as $embeddedUrl) {
+            $this->get($embeddedUrl)->assertOk()->assertViewIs('pos.tickets.ticket')
+                ->assertSee('data-ticket-embedded', false)
+                ->assertSee('class="ticket ticket-sheet"', false)->assertSee('class="receipt-logo">MZ', false)
+                ->assertDontSee('data-ticket-print-document', false)->assertDontSee('window.print()', false);
+        }
+        $this->actingAs(User::factory()->create()->assignRole('empleado')->givePermissionTo(['pos.access', 'pos.tickets.print.own']))
+            ->get($url)->assertForbidden();
     }
 
     public function test_saved_settings_reach_both_pos_printing_paths_without_changing_sale_totals(): void

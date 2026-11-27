@@ -127,7 +127,7 @@ test('complete descriptions and unit prices switch independently and optional he
 test('the text document writes the formatted ticket as text before requesting one print', () => {
     const printed = [];
     const paper = {
-        dataset: { receipt: JSON.stringify(example) },
+        dataset: { receipt: JSON.stringify(example), ticketAutoPrint: '' },
         ownerDocument: { readyState: 'loading' },
         set innerHTML(_) { throw new Error('Do not parse ticket data as HTML'); },
     };
@@ -141,10 +141,20 @@ test('the text document writes the formatted ticket as text before requesting on
     assert.deepEqual(printed, [snapshot]);
 });
 
+test('the embedded text document renders 32 columns and never requests printing itself', () => {
+    const paper = { dataset: { receipt: JSON.stringify(example) }, ownerDocument: { readyState: 'complete' } };
+    const browser = Object.assign(new EventTarget(), { print: () => assert.fail('The embedding page owns printing') });
+
+    mountTicketPrint(paper, browser);
+    browser.dispatchEvent(new Event('load'));
+    assert.equal(paper.textContent, snapshot);
+    assert.equal(Math.max(...paper.textContent.split('\n').map((line) => line.length)), 32);
+});
+
 test('configuration prints the exact text preview or the same legacy graphic example according to the draft mode', () => {
     const source = readFileSync(new URL('../resources/js/ticket-settings.js', import.meta.url), 'utf8')
-        .replace("import { formatearTicket } from './ticket-text.js';", '');
-    let printRoot;
+        .replace("import { formatearTicket } from './ticket-text.js';", '')
+        .replace("import { printTicketFrame } from './ticket-print.js';", '');
     const printed = [];
     const element = (attributes = {}) => {
         const events = new Map();
@@ -154,9 +164,6 @@ test('configuration prints the exact text preview or the same legacy graphic exa
             addEventListener: (type, handler) => events.set(type, handler),
             emit: (type, event) => events.get(type)?.(event),
             removeAttribute() {},
-            cloneNode() {
-                return { tagName: this.tagName, textContent: this.textContent, dataset: { ...this.dataset }, remove: () => { printRoot = null; } };
-            },
         }, attributes);
     };
     const mode = element({ value: 'text' });
@@ -179,20 +186,14 @@ test('configuration prints the exact text preview or the same legacy graphic exa
         querySelector: (selector) => elements[selector],
         querySelectorAll: (selector) => selector === '[data-ticket-print]' ? [printButton] : [],
     });
-    const classes = new Set();
+    const styles = element({ id: 'ticket-preview-styles' });
     const document = {
         querySelector: () => settings,
-        getElementById: () => printRoot,
-        body: { append: (node) => { printRoot = node; }, classList: { add: (name) => classes.add(name), remove: (name) => classes.delete(name) } },
+        getElementById: (id) => id === styles.id ? styles : null,
     };
     const window = element({
         matchMedia: () => element({ matches: true }),
-        print() {
-            this.emit('beforeprint');
-            assert.ok(classes.has('ticket-example-print'));
-            printed.push(printRoot);
-            this.emit('afterprint');
-        },
+        print() { assert.fail('The settings page must not print itself'); },
     });
     const fields = new Map([
         ['business[name]', 'MotoZóne'], ['ticket[width_mm]', '58'], ['ticket[lines_below]', '0'], ['ticket[show_cashier]', '1'],
@@ -201,7 +202,12 @@ test('configuration prints the exact text preview or the same legacy graphic exa
         get(key) { return fields.get(key) ?? null; }
         getAll(key) { return fields.has(key) ? [fields.get(key)] : []; }
     }
-    vm.runInNewContext(source, { document, window, FormData, formatearTicket });
+    const printTicketFrame = ({ content, styles: draftStyles, url }) => {
+        assert.equal(draftStyles, styles);
+        assert.equal(url, undefined);
+        printed.push({ tagName: content.tagName, textContent: content.textContent, dataset: { ...content.dataset } });
+    };
+    vm.runInNewContext(source, { document, window, FormData, formatearTicket, printTicketFrame });
     const draft = textPreview.textContent;
     assert.match(draft, /MotoZone/);
     assert.match(draft, /Atendio: motozone/);
@@ -209,7 +215,6 @@ test('configuration prints the exact text preview or the same legacy graphic exa
     assert.equal(printed[0].tagName, 'PRE');
     assert.equal(printed[0].textContent, draft);
     assert.equal(printed[0].dataset.paperWidth, '58');
-    assert.equal(printRoot, null);
 
     mode.value = 'graphic';
     form.emit('change');

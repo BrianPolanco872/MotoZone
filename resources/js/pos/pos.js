@@ -1,4 +1,5 @@
 import numeral from 'numeral';
+import { printTicketFrame } from '../ticket-print.js';
 
 const configElement = document.getElementById('pos-config');
 
@@ -191,18 +192,10 @@ if (configElement) {
             return;
         }
 
-        const url = `${config.routes.ticket.replace('__SALE__', saleId)}?print=1`;
-        const ticketWindow = window.open('', '_blank');
-        if (ticketWindow) {
-            ticketWindow.opener = null;
-            ticketWindow.location.replace(url);
-            return;
-        }
-
-        const warning = items.length > 0 ? ' Se perderán los productos no guardados del carrito.' : '';
-        if (window.confirm(`El navegador bloqueó la nueva pestaña. ¿Abrir el ticket en esta pestaña?${warning}`)) {
-            window.location.assign(url);
-        }
+        printTicketFrame({
+            url: config.routes.ticket.replace('__SALE__', saleId),
+            onError: daySalesDialog?.open ? undefined : showError,
+        });
     };
 
     const selectedDaySale = () => daySales.find((sale) => sale.id === selectedDaySaleId) ?? null;
@@ -1077,27 +1070,30 @@ if (configElement) {
             paymentDialog.close();
 
             if (data?.sale) {
-                lastSale = data.sale;
-                renderLastSale();
+                if (status === 'paid') {
+                    lastSale = data.sale;
+                    renderLastSale();
 
-                if (permissions.tickets_own && config.routes.ticketData) {
-                    try {
-                        const ticketResponse = await fetch(config.routes.ticketData.replace('__SALE__', data.sale.id), {
-                            headers: { Accept: 'application/json' },
-                        });
+                    if (permissions.tickets_own && config.routes.ticketData) {
+                        try {
+                            const ticketResponse = await fetch(config.routes.ticketData.replace('__SALE__', data.sale.id), {
+                                headers: { Accept: 'application/json' },
+                            });
 
-                        if (ticketResponse.ok) {
-                            const { sale } = await ticketResponse.json();
-                            lastSale.amount_paid = sale.amount_paid;
-                            lastSale.change_amount = sale.change_amount;
-                            renderLastSale();
+                            if (ticketResponse.ok) {
+                                const { sale } = await ticketResponse.json();
+                                lastSale.amount_paid = sale.amount_paid;
+                                lastSale.change_amount = sale.change_amount;
+                                renderLastSale();
+                            }
+                        } catch (error) {
+                            // No bloquea el flujo si no se pueden cargar los detalles del ticket
                         }
-                    } catch (error) {
-                        // No bloquea el flujo si no se pueden cargar los detalles del ticket
                     }
                 }
 
                 resetSale();
+                if (status === 'paid') printTicketById(data.sale.id);
             } else if (data?.redirect) {
                 window.location.href = data.redirect;
             }

@@ -18,7 +18,7 @@
         ];
     @endphp
 
-    <style>
+    <style id="ticket-preview-styles">
         @include('pos.tickets.receipt-styles')
         @include('pos.tickets.text-styles')
         .ticket-settings-tab[aria-selected="true"] {

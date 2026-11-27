@@ -13,10 +13,12 @@
     </style>
     @vite('resources/js/ticket-text.js')
 </head>
-<body>
-    <pre id="ticket" class="ticket-text" data-ticket-print-document data-paper-width="{{ $receipt['ticket']['width_mm'] }}" data-receipt="{{ json_encode($receipt, JSON_THROW_ON_ERROR) }}"></pre>
+<body @if ($embedded) data-ticket-embedded @endif>
+    <pre id="ticket" class="ticket-text" data-ticket-print-document @if ($autoPrint) data-ticket-auto-print @endif data-paper-width="{{ $receipt['ticket']['width_mm'] }}" data-receipt="{{ json_encode($receipt, JSON_THROW_ON_ERROR) }}"></pre>
+    @unless ($embedded)
     <div class="print-actions">
         <button type="button" onclick="window.print()">Imprimir</button>
     </div>
+    @endunless
 </body>
 </html>

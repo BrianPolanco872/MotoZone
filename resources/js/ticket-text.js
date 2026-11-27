@@ -117,6 +117,8 @@ export function formatearTicket({ business, ticket, sale }) {
 
 export function mountTicketPrint(paper, browser) {
     paper.textContent = formatearTicket(JSON.parse(paper.dataset.receipt));
+    if (!('ticketAutoPrint' in paper.dataset)) return;
+
     const print = () => browser.print();
     if (paper.ownerDocument.readyState === 'complete') print();
     else browser.addEventListener('load', print, { once: true });

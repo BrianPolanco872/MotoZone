@@ -108,11 +108,11 @@
                             <td class="whitespace-nowrap px-5 py-3.5 text-right">
                                 <div class="flex items-center justify-end gap-2">
                                     @if (auth()->user()->can('pos.tickets.print.any') || $sale->user_id === auth()->id())
-                                        <a href="{{ route('pos.sales.ticket', $sale) }}" target="_blank"
+                                        <button type="button" data-print-sale-ticket="{{ route('pos.sales.ticket', $sale) }}"
                                            class="inline-flex items-center gap-1 rounded-lg border border-mz-border-light bg-mz-bg-surface-2/80 hover:bg-mz-bg-surface-2 px-2.5 py-1.5 text-xs font-bold text-mz-text-secondary hover:text-white transition-all shadow-xs active:scale-95">
                                             <x-icon name="printer" class="size-3.5 text-mz-accent-primary" />
                                             Ticket
-                                        </a>
+                                        </button>
                                     @endif
 
                                     @if ($canRequestReturns && $sale->items->contains(fn ($item) => $item->availableReturnQuantity() > 0))

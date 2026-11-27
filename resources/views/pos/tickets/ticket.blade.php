@@ -48,7 +48,8 @@
         }
     </style>
 </head>
-<body id="sale-ticket">
+<body id="sale-ticket" @if ($embedded) data-ticket-embedded @endif>
+    @unless ($embedded)
     <div class="toolbar">
         @if ($settings['ticket']['print_mode'] === 'text')
             <a class="primary" href="{{ route('pos.sales.ticket', ['sale' => $sale, 'print' => 1]) }}">Imprimir</a>
@@ -57,6 +58,7 @@
         @endif
         <a href="{{ route('pos.index') }}">Nueva venta</a>
     </div>
+    @endunless
 
     @include('pos.tickets.receipt')
 
@@ -70,7 +72,7 @@
             }
         }
 
-        @if (request()->query('print') === '1')
+        @if ($autoPrint)
             window.addEventListener('load', () => window.print(), { once: true });
         @endif
     </script>

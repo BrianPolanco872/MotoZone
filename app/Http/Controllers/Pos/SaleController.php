@@ -20,6 +20,7 @@ use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
 
@@ -344,18 +345,22 @@ class SaleController extends Controller
         ]);
     }
 
-    public function ticket(Request $request, Sale $sale, TicketSettings $tickets): View
+    public function ticket(Request $request, Sale $sale, TicketSettings $tickets): View|Response
     {
         $this->authorizeTicket($request->user(), $sale);
 
         $sale->load('items', 'user');
         $settings = $tickets->current();
+        $embedded = $request->query('embed') === '1';
+        $autoPrint = ! $embedded && $request->query('print') === '1';
 
-        if ($settings['ticket']['print_mode'] === 'text' && $request->query('print') === '1') {
+        if ($settings['ticket']['print_mode'] === 'text' && ($embedded || $autoPrint)) {
             $date = $sale->paid_at ?? $sale->created_at;
             $method = $sale->payment_method ?? 'cash';
 
-            return view('pos.tickets.text-print', [
+            $view = view('pos.tickets.text-print', [
+                'embedded' => $embedded,
+                'autoPrint' => $autoPrint,
                 'receipt' => [
                     'business' => $settings['business'],
                     'ticket' => array_diff_key($settings['ticket'], array_flip(['show_logo', 'show_qr', 'qr_image_url'])),
@@ -381,12 +386,16 @@ class SaleController extends Controller
                     ],
                 ],
             ]);
+        } else {
+            $view = view('pos.tickets.ticket', [
+                'sale' => $sale,
+                'settings' => $settings,
+                'embedded' => $embedded,
+                'autoPrint' => $autoPrint,
+            ]);
         }
 
-        return view('pos.tickets.ticket', [
-            'sale' => $sale,
-            'settings' => $settings,
-        ]);
+        return $embedded ? response($view)->header('Cache-Control', 'private, no-store') : $view;
     }
 
     public function ticketData(Request $request, Sale $sale, TicketSettings $tickets): JsonResponse

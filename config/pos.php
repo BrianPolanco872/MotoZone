@@ -14,7 +14,7 @@ return [
     'currency' => 'MXN',
 
     'ticket' => [
-        'width_mm' => 80,
+        'width_mm' => 58,
         'print_mode' => 'text',
         'uppercase' => false,
         'lines_above' => 0,
@@ -30,6 +30,10 @@ return [
         'show_tax' => true,
         'show_qr' => false,
         'qr_image_url' => null,
+    ],
+
+    'cut' => [
+        'width_mm' => 80,
     ],
 
     'folio' => [

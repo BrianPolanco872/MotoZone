@@ -335,3 +335,11 @@ plan-tickets-texto-termico-01 -> implementado_por -> fix-tickets-texto-termico-0
 fix-tickets-texto-termico-01 -> implementa_feature -> feature-tickets-texto-termico-01
 plan-pos-granel-limite-acumulado-01 -> se_apoya_en -> fix-pos-vista-amplia-existencias-07
 plan-pos-granel-limite-acumulado-01 -> implementado_por -> fix-pos-granel-limite-acumulado-01
+feature-pos-impresion-iframe-01 -> implemented_by_plan -> plan-pos-impresion-iframe-01
+plan-pos-impresion-iframe-01 -> implementa_feature -> feature-pos-impresion-iframe-01
+plan-pos-impresion-iframe-01 -> se_apoya_en -> plan-tickets-texto-termico-01
+plan-pos-impresion-iframe-01 -> se_apoya_en -> plan-pos-reimpresion-01
+plan-pos-impresion-iframe-01 -> implementado_por -> fix-pos-impresion-iframe-01
+fix-pos-impresion-iframe-01 -> implementa_feature -> feature-pos-impresion-iframe-01
+plan-tickets-ancho-default-unificado-01 -> se_apoya_en -> plan-tickets-58mm-predeterminado-01
+plan-tickets-ancho-default-unificado-01 -> implementado_por -> fix-tickets-ancho-default-unificado-01

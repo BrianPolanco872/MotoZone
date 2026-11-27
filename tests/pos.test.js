@@ -6,7 +6,8 @@ import vm from 'node:vm';
 import numeral from 'numeral';
 
 const source = readFileSync(new URL('../resources/js/pos/pos.js', import.meta.url), 'utf8')
-    .replace("import numeral from 'numeral';", '');
+    .replace("import numeral from 'numeral';", '')
+    .replace("import { printTicketFrame } from '../ticket-print.js';", '');
 
 test('the POS starts each login in day mode and remembers manual changes during the session', () => {
     const layout = readFileSync(new URL('../resources/views/layouts/admin.blade.php', import.meta.url), 'utf8');
@@ -55,13 +56,12 @@ test('the POS starts each login in day mode and remembers manual changes during 
     assert.equal(blocked.root.dataset.posTheme, 'dark');
 });
 
-async function pos({ pending = null, ticket = null, lastSale = null, daySales = [], canPrint = true, popupBlocked = false, confirm = true,
+async function pos({ pending = null, ticket = null, lastSale = null, daySales = [], canPrint = true, rejectPayment = false, confirm = true,
     products = [{ id: 7, name: 'Aceite', price: 100, wholesale_price: 80, tax_rate: 0, track_inventory: false, sale_mode: 'unit' }], searchPage } = {}) {
     const elements = new Map();
     const requests = [];
     const confirmations = [];
-    const ticketTabs = [];
-    const sameTabNavigations = [];
+    const printRequests = [];
     const timers = new Set();
     const element = (tagName = 'DIV') => {
         const listeners = new Map();
@@ -195,23 +195,19 @@ async function pos({ pending = null, ticket = null, lastSale = null, daySales = 
             dayList: '/day-sales', ticket: '/ticket/__SALE__', ticketData: ticket ? '/ticket-data/__SALE__' : undefined },
     });
     vm.runInNewContext(source, {
-        document, numeral, URLSearchParams,
+        document, numeral, URLSearchParams, printTicketFrame: (request) => printRequests.push(request),
         setTimeout: (callback) => { timers.add(callback); return callback; },
         clearTimeout: (callback) => timers.delete(callback),
         window: {
-            location: { search: pending ? '?pending=41' : '', assign: (url) => sameTabNavigations.push(url) },
+            location: { search: pending ? '?pending=41' : '', assign() { assert.fail('Printing must not navigate the POS'); } },
             confirm: (message) => { confirmations.push(message); return confirm; },
-            open: (_, target) => {
-                if (popupBlocked) return null;
-                const tab = { target, opener: true, location: { replace: (url) => { tab.url = url; } } };
-                ticketTabs.push(tab);
-                return tab;
-            },
+            open() { assert.fail('Printing must not open another window'); },
         },
         fetch: async (url, options) => {
             if (options?.method === 'POST') {
                 requests.push({ url, payload: JSON.parse(options.body) });
-                return { ok: true, json: async () => ({ sale: { id: 42, folio: 'TEST' } }) };
+                if (rejectPayment) return { ok: false, status: 422, json: async () => ({ message: 'Cobro rechazado.' }) };
+                return { ok: true, json: async () => ({ sale: { id: url.endsWith('/charge') ? 41 : 42, folio: 'TEST' } }) };
             }
             if (url === '/ticket-data/42') {
                 return { ok: true, json: async () => ticket };
@@ -230,7 +226,7 @@ async function pos({ pending = null, ticket = null, lastSale = null, daySales = 
     }, { filename: 'resources/js/pos/pos.js' });
     await setImmediate();
     return {
-        get, requests, confirmations, ticketTabs, sameTabNavigations, document, element, exact, frequentButtons, moreButton, resultStatus,
+        get, requests, confirmations, printRequests, document, element, exact, frequentButtons, moreButton, resultStatus,
         async selectDaySale(id) {
             const row = element('TR');
             row.dataset.daySale = String(id);
@@ -295,8 +291,7 @@ test('the restored last paid ticket survives a new cart and updates after anothe
 
     assert.equal(ui.get('last-sale-folio').textContent, 'TEST');
     assert.equal(ui.get('last-sale-paid').textContent, '$100.00');
-    assert.deepEqual(ui.ticketTabs.map(({ url }) => url), ['/ticket/16?print=1', '/ticket/42?print=1', '/ticket/42?print=1']);
-    assert.ok(ui.ticketTabs.every(({ target, opener }) => target === '_blank' && opener === null));
+    assert.deepEqual(ui.printRequests.map(({ url }) => url), ['/ticket/16', '/ticket/42', '/ticket/42', '/ticket/42']);
     assert.equal(ui.requests.length, 1);
 });
 
@@ -307,7 +302,7 @@ test('the day sales modal prints the selected ticket, not the last sale', async 
     await ui.selectDaySale(15);
     await ui.get('day-sales-print').click();
 
-    assert.deepEqual(ui.ticketTabs.map(({ url }) => url), ['/ticket/15?print=1']);
+    assert.deepEqual(ui.printRequests.map(({ url }) => url), ['/ticket/15']);
     assert.deepEqual(ui.requests, []);
 });
 
@@ -319,20 +314,39 @@ test('both buttons refuse to print without permission', async () => {
         assert.equal(ui.get(id).disabled, true);
         await ui.get(id).emit('click');
     }
-    assert.deepEqual(ui.ticketTabs, []);
+    await ui.scan();
+    await ui.get('pos-charge').click();
+    await ui.get('payment-confirm').click();
+    assert.deepEqual(ui.printRequests, []);
 });
 
-for (const confirm of [true, false]) {
-    test(`a blocked ticket tab only navigates within the POS after confirmation (${confirm})`, async () => {
-        const ui = await pos({ lastSale: { id: 16 }, popupBlocked: true, confirm });
-        await ui.scan();
-        await ui.get('pos-print-ticket').click();
+test('a failed print reports the error without discarding the cart or recording another sale', async () => {
+    const ui = await pos({ lastSale: { id: 16 } });
+    await ui.scan();
+    await ui.get('pos-print-ticket').click();
+    ui.printRequests[0].onError('No se pudo imprimir el ticket.');
 
-        assert.match(ui.confirmations[0], /Se perderán los productos no guardados/);
-        assert.deepEqual(ui.sameTabNavigations, confirm ? ['/ticket/16?print=1'] : []);
-        assert.deepEqual(ui.requests, []);
-    });
-}
+    assert.match(ui.get('pos-error').innerHTML, /No se pudo imprimir el ticket/);
+    assert.equal(ui.get('pos-cart-body').children.length, 1);
+    assert.deepEqual(ui.requests, []);
+});
+
+test('saving a pending sale or failing to charge never requests printing', async () => {
+    const pending = await pos({ lastSale: { id: 16 } });
+    await pending.scan();
+    await pending.get('pos-pending').click();
+    assert.equal(pending.requests[0].payload.status, 'pending');
+    assert.deepEqual(pending.printRequests, []);
+    await pending.get('pos-print-ticket').click();
+    assert.deepEqual(pending.printRequests.map(({ url }) => url), ['/ticket/16']);
+
+    const rejected = await pos({ rejectPayment: true });
+    await rejected.scan();
+    await rejected.get('pos-charge').click();
+    await rejected.get('payment-confirm').click();
+    assert.match(rejected.get('pos-error').innerHTML, /Cobro rechazado/);
+    assert.deepEqual(rejected.printRequests, []);
+});
 
 for (const method of ['card', 'transfer']) {
     test(`${method}: changing from insufficient cash enables confirmation and submits the total`, async () => {
@@ -714,6 +728,7 @@ test('pending bulk stays fractional and locked while charge sends only payment i
     await ui.get('pos-charge').click();
     await ui.get('payment-confirm').click();
     assert.deepEqual(ui.requests, [{ url: '/sale/41/charge', payload: { amount_paid: 1.76, payment_method: 'cash' } }]);
+    assert.deepEqual(ui.printRequests.map(({ url }) => url), ['/ticket/41']);
 });
 
 test('bulk modal bidirectional calculation updates amount from quantity and quantity from amount', async () => {
